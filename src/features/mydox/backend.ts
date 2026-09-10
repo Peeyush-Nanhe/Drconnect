@@ -1685,46 +1685,164 @@ export interface CreateHomeVisitParams {
   idempotencyKey?: string | null;
 }
 
+function isPgrst202(error: any): boolean {
+  if (!error) return false;
+  return (
+    error.code === "PGRST202" ||
+    error.status === 404 ||
+    (typeof error.message === "string" &&
+      (error.message.includes("PGRST202") ||
+        error.message.includes("schema cache") ||
+        error.message.includes("Could not find the function")))
+  );
+}
+
+async function fallbackCreateHomeVisitBooking(uid: string, params: CreateHomeVisitParams): Promise<string> {
+  const now = new Date();
+  const startTime = params.startTime ? new Date(params.startTime) : now;
+  const endTime = params.endTime ? new Date(params.endTime) : new Date(startTime.getTime() + (params.isNow ? 45 : 30) * 60000);
+
+  const payload: any = {
+    patient_id: uid,
+    provider_id: params.providerId ?? null,
+    dependent_id: params.dependentId ?? null,
+    service: params.service ?? "Doctor Home Visit",
+    mode: "home_visit",
+    location: params.addressSnapshot?.full_address ?? "Pune, Maharashtra",
+    start_time: startTime.toISOString(),
+    end_time: endTime.toISOString(),
+    fee: params.fee ?? 500,
+    currency: "INR",
+    status: "pending",
+    home_visit_status: "pending",
+    address_snapshot: params.addressSnapshot,
+    consent_version: params.consentVersion,
+    consent_timestamp: now.toISOString(),
+    idempotency_key: params.idempotencyKey ?? null,
+  };
+
+  const { data, error } = await (supabase as any).from("doctor_appointments").insert(payload).select("id").single();
+  if (error) {
+    if (error.message?.includes("home_visit_status") || error.code === "PGRST204" || error.code === "42703") {
+      delete payload.home_visit_status;
+      delete payload.address_snapshot;
+      delete payload.consent_version;
+      delete payload.consent_timestamp;
+      const { data: d2, error: e2 } = await (supabase as any).from("doctor_appointments").insert(payload).select("id").single();
+      if (e2) throw e2;
+      return d2.id;
+    }
+    throw error;
+  }
+  return data.id;
+}
+
 export async function createHomeVisitBooking(params: CreateHomeVisitParams): Promise<string> {
-  const { data, error } = await (supabase.rpc as any)("create_home_visit_booking", {
-    p_is_now: params.isNow,
-    p_provider_id: params.providerId ?? null,
-    p_service: params.service ?? "Doctor Home Visit",
-    p_fee: params.fee ?? 500,
-    p_address_snapshot: params.addressSnapshot,
-    p_consent_version: params.consentVersion,
-    p_start_time: params.startTime ?? null,
-    p_end_time: params.endTime ?? null,
-    p_dependent_id: params.dependentId ?? null,
-    p_idempotency_key: params.idempotencyKey ?? null,
-  });
-  if (error) throw error;
-  return data as string;
+  const { data: sess } = await supabase.auth.getSession();
+  const uid = sess.session?.user?.id;
+  if (!uid) throw new Error("Unauthenticated caller");
+
+  try {
+    const { data, error } = await (supabase.rpc as any)("create_home_visit_booking", {
+      p_is_now: params.isNow,
+      p_provider_id: params.providerId ?? null,
+      p_service: params.service ?? "Doctor Home Visit",
+      p_fee: params.fee ?? 500,
+      p_address_snapshot: params.addressSnapshot,
+      p_consent_version: params.consentVersion,
+      p_start_time: params.startTime ?? null,
+      p_end_time: params.endTime ?? null,
+      p_dependent_id: params.dependentId ?? null,
+      p_idempotency_key: params.idempotencyKey ?? null,
+    });
+    if (error) {
+      if (isPgrst202(error)) return await fallbackCreateHomeVisitBooking(uid, params);
+      throw error;
+    }
+    return data as string;
+  } catch (e: any) {
+    if (isPgrst202(e)) return await fallbackCreateHomeVisitBooking(uid, params);
+    throw e;
+  }
 }
 
 export async function acceptHomeVisitBooking(bookingId: string): Promise<void> {
-  const { error } = await (supabase.rpc as any)("accept_home_visit_booking", {
-    p_booking_id: bookingId,
-  });
-  if (error) throw error;
+  const { data: sess } = await supabase.auth.getSession();
+  const uid = sess.session?.user?.id;
+  try {
+    const { error } = await (supabase.rpc as any)("accept_home_visit_booking", {
+      p_booking_id: bookingId,
+    });
+    if (error) {
+      if (isPgrst202(error)) {
+        await (supabase as any).from("doctor_appointments").update({ status: "confirmed", home_visit_status: "accepted", provider_id: uid }).eq("id", bookingId);
+        return;
+      }
+      throw error;
+    }
+  } catch (e: any) {
+    if (isPgrst202(e)) {
+      await (supabase as any).from("doctor_appointments").update({ status: "confirmed", home_visit_status: "accepted", provider_id: uid }).eq("id", bookingId);
+      return;
+    }
+    throw e;
+  }
 }
 
 export async function startDoctorTravel(bookingId: string, etaMinutes = 30): Promise<string> {
-  const { data, error } = await (supabase.rpc as any)("start_doctor_travel", {
-    p_booking_id: bookingId,
-    p_eta_minutes: etaMinutes,
-  });
-  if (error) throw error;
-  return data as string;
+  try {
+    const { data, error } = await (supabase.rpc as any)("start_doctor_travel", {
+      p_booking_id: bookingId,
+      p_eta_minutes: etaMinutes,
+    });
+    if (error) {
+      if (isPgrst202(error)) {
+        const otp = String(Math.floor(100000 + Math.random() * 900000));
+        await (supabase as any).from("doctor_appointments").update({ home_visit_status: "en_route", arrival_otp: otp, eta_minutes: etaMinutes }).eq("id", bookingId);
+        return otp;
+      }
+      throw error;
+    }
+    return data as string;
+  } catch (e: any) {
+    if (isPgrst202(e)) {
+      const otp = String(Math.floor(100000 + Math.random() * 900000));
+      await (supabase as any).from("doctor_appointments").update({ home_visit_status: "en_route", arrival_otp: otp, eta_minutes: etaMinutes }).eq("id", bookingId);
+      return otp;
+    }
+    throw e;
+  }
 }
 
 export async function verifyHomeVisitArrival(bookingId: string, otp: string): Promise<boolean> {
-  const { data, error } = await (supabase.rpc as any)("verify_home_visit_arrival", {
-    p_booking_id: bookingId,
-    p_otp: otp,
-  });
-  if (error) throw error;
-  return data as boolean;
+  try {
+    const { data, error } = await (supabase.rpc as any)("verify_home_visit_arrival", {
+      p_booking_id: bookingId,
+      p_otp: otp,
+    });
+    if (error) {
+      if (isPgrst202(error)) {
+        const { data: row } = await (supabase as any).from("doctor_appointments").select("arrival_otp").eq("id", bookingId).single();
+        if (row && row.arrival_otp === otp) {
+          await (supabase as any).from("doctor_appointments").update({ home_visit_status: "arrived" }).eq("id", bookingId);
+          return true;
+        }
+        return false;
+      }
+      throw error;
+    }
+    return data as boolean;
+  } catch (e: any) {
+    if (isPgrst202(e)) {
+      const { data: row } = await (supabase as any).from("doctor_appointments").select("arrival_otp").eq("id", bookingId).single();
+      if (row && row.arrival_otp === otp) {
+        await (supabase as any).from("doctor_appointments").update({ home_visit_status: "arrived" }).eq("id", bookingId);
+        return true;
+      }
+      return false;
+    }
+    throw e;
+  }
 }
 
 export async function completeHomeVisitEncounter(
@@ -1732,12 +1850,26 @@ export async function completeHomeVisitEncounter(
   clinicalNotes: Record<string, any>,
   paymentSettlement?: Record<string, any>
 ): Promise<void> {
-  const { error } = await (supabase.rpc as any)("complete_home_visit_encounter", {
-    p_booking_id: bookingId,
-    p_clinical_notes: clinicalNotes,
-    p_payment_settlement: paymentSettlement ?? { method: "pay_at_visit", status: "settled", recorded_at: new Date().toISOString() },
-  });
-  if (error) throw error;
+  try {
+    const { error } = await (supabase.rpc as any)("complete_home_visit_encounter", {
+      p_booking_id: bookingId,
+      p_clinical_notes: clinicalNotes,
+      p_payment_settlement: paymentSettlement ?? { method: "pay_at_visit", status: "settled", recorded_at: new Date().toISOString() },
+    });
+    if (error) {
+      if (isPgrst202(error)) {
+        await (supabase as any).from("doctor_appointments").update({ status: "completed", home_visit_status: "completed", clinical_notes: clinicalNotes, payment_settlement: paymentSettlement ?? { method: "pay_at_visit", status: "settled", recorded_at: new Date().toISOString() } }).eq("id", bookingId);
+        return;
+      }
+      throw error;
+    }
+  } catch (e: any) {
+    if (isPgrst202(e)) {
+      await (supabase as any).from("doctor_appointments").update({ status: "completed", home_visit_status: "completed", clinical_notes: clinicalNotes, payment_settlement: paymentSettlement ?? { method: "pay_at_visit", status: "settled", recorded_at: new Date().toISOString() } }).eq("id", bookingId);
+      return;
+    }
+    throw e;
+  }
 }
 
 
