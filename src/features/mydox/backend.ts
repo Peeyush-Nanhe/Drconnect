@@ -1804,23 +1804,8 @@ export async function createHomeVisitBooking(params: CreateHomeVisitParams): Pro
   // Tier 3: Minimal payload (strip mode if constrained)
   delete basePayload.mode;
   const { data: d3, error: e3 } = await (supabase as any).from("doctor_appointments").insert(basePayload).select("id").single();
-  if (!e3 && d3?.id) return d3.id;
-
-  // Final fallback to RPC if table insert fails
-  const { data: rpcData, error: rpcErr } = await (supabase.rpc as any)("create_home_visit_booking", {
-    p_is_now: params.isNow,
-    p_provider_id: params.providerId ?? null,
-    p_service: params.service ?? "Doctor Home Visit",
-    p_fee: params.fee ?? 500,
-    p_address_snapshot: params.addressSnapshot,
-    p_consent_version: params.consentVersion,
-    p_start_time: params.startTime ?? null,
-    p_end_time: params.endTime ?? null,
-    p_dependent_id: params.dependentId ?? null,
-    p_idempotency_key: params.idempotencyKey ?? null,
-  });
-  if (rpcErr) throw e1 || e2 || e3 || rpcErr;
-  return rpcData as string;
+  if (e3) throw e1 || e2 || e3;
+  return d3.id;
 }
 
 export async function acceptHomeVisitBooking(bookingId: string): Promise<void> {
@@ -1830,9 +1815,7 @@ export async function acceptHomeVisitBooking(bookingId: string): Promise<void> {
   const { error: e1 } = await (supabase as any).from("doctor_appointments").update({ status: "confirmed", home_visit_status: "accepted", provider_id: uid }).eq("id", bookingId);
   if (e1) {
     const { error: e2 } = await (supabase as any).from("doctor_appointments").update({ status: "confirmed", provider_id: uid }).eq("id", bookingId);
-    if (e2) {
-      await (supabase.rpc as any)("accept_home_visit_booking", { p_booking_id: bookingId });
-    }
+    if (e2) throw e1 || e2;
   }
 }
 
@@ -1840,12 +1823,7 @@ export async function startDoctorTravel(bookingId: string, etaMinutes = 30): Pro
   const otp = String(Math.floor(100000 + Math.random() * 900000));
   const { error: e1 } = await (supabase as any).from("doctor_appointments").update({ home_visit_status: "en_route", arrival_otp: otp, eta_minutes: etaMinutes }).eq("id", bookingId);
   if (e1) {
-    try {
-      const { data } = await (supabase.rpc as any)("start_doctor_travel", { p_booking_id: bookingId, p_eta_minutes: etaMinutes });
-      if (data) return data as string;
-    } catch {
-      void 0;
-    }
+    await (supabase as any).from("doctor_appointments").update({ status: "confirmed" }).eq("id", bookingId);
   }
   return otp;
 }
@@ -1855,12 +1833,6 @@ export async function verifyHomeVisitArrival(bookingId: string, otp: string): Pr
   if (row && (row.arrival_otp === otp || otp === "123456")) {
     await (supabase as any).from("doctor_appointments").update({ home_visit_status: "arrived" }).eq("id", bookingId);
     return true;
-  }
-  try {
-    const { data } = await (supabase.rpc as any)("verify_home_visit_arrival", { p_booking_id: bookingId, p_otp: otp });
-    if (typeof data === "boolean") return data;
-  } catch {
-    void 0;
   }
   return otp === "123456";
 }
@@ -1874,9 +1846,7 @@ export async function completeHomeVisitEncounter(
   const { error: e1 } = await (supabase as any).from("doctor_appointments").update({ status: "completed", home_visit_status: "completed", clinical_notes: clinicalNotes, payment_settlement: settlement }).eq("id", bookingId);
   if (e1) {
     const { error: e2 } = await (supabase as any).from("doctor_appointments").update({ status: "completed" }).eq("id", bookingId);
-    if (e2) {
-      await (supabase.rpc as any)("complete_home_visit_encounter", { p_booking_id: bookingId, p_clinical_notes: clinicalNotes, p_payment_settlement: settlement });
-    }
+    if (e2) throw e1 || e2;
   }
 }
 
