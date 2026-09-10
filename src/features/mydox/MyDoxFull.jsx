@@ -7208,11 +7208,12 @@ function DoctorApp({ req, hubReq, online, setOnline, onAccept, sevaActions }) {
 
   const realBookings = (liveApps || []).map(app => {
     const st = new Date(app.start_time);
+    const modeLabel = app.mode === 'home_visit' || app.mode === 'home' ? 'Home visit' : app.mode || 'Consultation';
     return {
       id: app.id,
       date: st,
       title: patientNames[app.patient_id] || `Patient ID: ${app.patient_id.slice(0, 6)}`,
-      sub: app.service, 
+      sub: `${app.service} • ${modeLabel}`,
       status: app.status === 'confirmed' || app.status === 'rescheduled' ? 'Confirmed' : app.status === 'cancelled' ? 'Cancelled' : app.status,
       color: app.status === 'cancelled' ? C.emerg : C.primary,
     };
@@ -7220,13 +7221,13 @@ function DoctorApp({ req, hubReq, online, setOnline, onAccept, sevaActions }) {
 
   const DOC_BOOKINGS = [
     ...realBookings,
-    calBk(0, 9, 0, "Priya Sharma", "Follow-up · MyDox Hub Koregaon Park", "Confirmed", C.primary),
-    calBk(0, 11, 30, "Rahul Verma", "New consult · Video", "Confirmed", C.primary),
-    calBk(0, 16, 0, "Meena Tiwari", "Home visit · Bavdhan", "Confirmed", "#2563EB"),
-    calBk(1, 10, 0, "Arjun Rao", "Diabetes review · MyDox Hub", "Scheduled", C.primary),
-    calBk(1, 14, 0, "Sneha Patil", "Fever & cold · Walk-in", "Scheduled", C.clinic),
-    calBk(3, 12, 0, "Imran Sheikh", "Post-op check · Home visit", "Scheduled", "#2563EB"),
-    calBk(-1, 15, 0, "Kavya Reddy", "General consult · Video", "Completed", C.faint),
+    calBk(0, 9, 0, "Priya Sharma", "Follow-up • MyDox Hub Koregaon Park", "Confirmed", C.primary),
+    calBk(0, 11, 30, "Rahul Verma", "New consult • Video", "Confirmed", C.primary),
+    calBk(0, 16, 0, "Meena Tiwari", "Home visit • Bavdhan", "Confirmed", "#2563EB"),
+    calBk(1, 10, 0, "Arjun Rao", "Diabetes review • MyDox Hub", "Scheduled", C.primary),
+    calBk(1, 14, 0, "Sneha Patil", "Fever & cold • Walk-in", "Scheduled", C.clinic),
+    calBk(3, 12, 0, "Imran Sheikh", "Post-op check • Home visit", "Scheduled", "#2563EB"),
+    calBk(-1, 15, 0, "Kavya Reddy", "General consult • Video", "Completed", C.faint),
   ].sort((a, b) => a.date.getTime() - b.date.getTime());
 
   // Live subscription to real broadcast care_requests inserted by patients on other devices.
