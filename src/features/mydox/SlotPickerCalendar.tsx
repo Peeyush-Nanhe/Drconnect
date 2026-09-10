@@ -44,9 +44,9 @@ interface SlotPickerCalendarStandaloneProps {
  */
 
 const BUCKETS = [
-  { key: "morning",   label: "Morning",   emoji: "🌅", from: 9,  to: 12, sub: "9 AM – 12 PM" },
+  { key: "morning", label: "Morning", emoji: "🌅", from: 9, to: 12, sub: "9 AM – 12 PM" },
   { key: "afternoon", label: "Afternoon", emoji: "☀️", from: 12, to: 17, sub: "12 PM – 5 PM" },
-  { key: "evening",   label: "Evening",   emoji: "🌆", from: 17, to: 21, sub: "5 PM – 9 PM"  },
+  { key: "evening", label: "Evening", emoji: "🌆", from: 17, to: 21, sub: "5 PM – 9 PM" },
 ];
 
 export const fmtSlotTime = (t: SlotTime) => {
@@ -160,9 +160,9 @@ export function SlotPickerCalendar({
                   {inBucket.map(({ t, i }) => {
                     let unavail = true;
                     if (availableSlots) {
-                       unavail = !availableSlots.some(s => s.dateIdx === schedDate && s.h === t.h && s.m === t.m);
+                      unavail = !availableSlots.some(s => s.dateIdx === schedDate && s.h === t.h && s.m === t.m);
                     } else {
-                       unavail = isSlotUnavailable(seed, schedDate, t.h, t.m);
+                      unavail = isSlotUnavailable(seed, schedDate, t.h, t.m);
                     }
                     const a = schedTime === i;
                     return (
