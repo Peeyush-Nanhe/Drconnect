@@ -2147,7 +2147,7 @@ function calBk(days, h, m, title, sub, status, color) {
   const d = new Date(); d.setDate(d.getDate() + days); d.setHours(h, m, 0, 0);
   return { date: d, title, sub, status, color };
 }
-function BookingCalendar({ title, subtitle, accent, bookings, onClose }) {
+function BookingCalendar({ title = "My Schedule", subtitle = "Your patient appointments", accent = "#0D9488", bookings, onClose }) {
   const today = new Date();
   const [vy, setVy] = useState(today.getFullYear());
   const [vm, setVm] = useState(today.getMonth());
@@ -2155,7 +2155,7 @@ function BookingCalendar({ title, subtitle, accent, bookings, onClose }) {
   const keyOf = (d) => d.toDateString();
   const byDay = {};
   (bookings || []).forEach(b => { const k = keyOf(b.date); (byDay[k] = byDay[k] || []).push(b); });
-  Object.values(byDay).forEach(list => list.sort((a, b) => a.date - b.date));
+  Object.values(byDay).forEach(list => list.sort((a, b) => a.date.getTime() - b.date.getTime()));
   const firstDow = new Date(vy, vm, 1).getDay();
   const dim = new Date(vy, vm + 1, 0).getDate();
   const cells = []; for (let i = 0; i < firstDow; i++) cells.push(null); for (let d = 1; d <= dim; d++) cells.push(new Date(vy, vm, d));
@@ -2166,56 +2166,104 @@ function BookingCalendar({ title, subtitle, accent, bookings, onClose }) {
   const selDate = new Date(sel);
   const selList = byDay[sel] || [];
   const fmtTime = (d) => d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
-  const arrowBtn = { width: 30, height: 30, borderRadius: "50%", background: C.surface, border: `1px solid ${C.line}`, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: C.ink };
+  const arrowBtn = { width: 34, height: 34, borderRadius: "50%", background: "#fff", border: "1px solid #E2E8F0", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "#0F172A", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" };
+  
   return (
-    <div style={{ position: "absolute", inset: 0, zIndex: 60, background: C.canvas, display: "flex", flexDirection: "column" }}>
-      <div style={{ background: accent, padding: "14px 16px 16px", color: "#fff", display: "flex", alignItems: "center", gap: 10 }}>
-        <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: "50%", background: "rgba(255,255,255,.2)", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", flexShrink: 0 }}><ChevronLeft size={18} /></button>
-        <div style={{ minWidth: 0 }}><p style={{ margin: 0, fontWeight: 800, fontSize: 17 }}>{title}</p><p style={{ margin: "1px 0 0", fontSize: 11, opacity: .85 }}>{subtitle}</p></div>
+    <div style={{ position: "absolute", inset: 0, zIndex: 60, background: "#EEF4F1", display: "flex", flexDirection: "column", fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+      {/* Top Header Bar */}
+      <div style={{ background: accent, padding: "18px 20px 20px", color: "#fff", display: "flex", alignItems: "center", gap: 14 }}>
+        <button onClick={onClose} aria-label="Go back" style={{ width: 38, height: 38, borderRadius: "50%", background: "rgba(255,255,255,0.22)", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", flexShrink: 0 }}>
+          <ChevronLeft size={22} />
+        </button>
+        <div style={{ minWidth: 0 }}>
+          <p style={{ margin: 0, fontWeight: 800, fontSize: 20, lineHeight: 1.2 }}>{title}</p>
+          <p style={{ margin: "3px 0 0", fontSize: 12.5, opacity: 0.88 }}>{subtitle}</p>
+        </div>
       </div>
-      <div style={{ flex: 1, overflowY: "auto", padding: "14px" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-          <button onClick={prev} style={arrowBtn}><ChevronLeft size={16} /></button>
-          <p style={{ margin: 0, fontWeight: 800, color: C.ink, fontSize: 14 }}>{monthName}</p>
-          <button onClick={next} style={arrowBtn}><ChevronRight size={16} /></button>
+
+      {/* Calendar & Schedule Body */}
+      <div style={{ flex: 1, overflowY: "auto", padding: "18px 16px" }}>
+        {/* Month Navigation */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+          <button onClick={prev} style={arrowBtn} aria-label="Previous month"><ChevronLeft size={18} /></button>
+          <p style={{ margin: 0, fontWeight: 800, color: "#0F172A", fontSize: 17 }}>{monthName}</p>
+          <button onClick={next} style={arrowBtn} aria-label="Next month"><ChevronRight size={18} /></button>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 3, marginBottom: 4 }}>
-          {["S", "M", "T", "W", "T", "F", "S"].map((d, i) => <div key={i} style={{ textAlign: "center", fontSize: 9.5, fontWeight: 700, color: C.faint }}>{d}</div>)}
+
+        {/* Day-of-week headers */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 6, marginBottom: 8 }}>
+          {["S", "M", "T", "W", "T", "F", "S"].map((d, i) => (
+            <div key={i} style={{ textAlign: "center", fontSize: 12, fontWeight: 700, color: "#64748B" }}>{d}</div>
+          ))}
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 3, marginBottom: 16 }}>
+
+        {/* Calendar days grid */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 6, marginBottom: 24 }}>
           {cells.map((d, i) => {
             if (!d) return <div key={i} />;
             const k = keyOf(d); const has = byDay[k]; const isSel = k === sel; const isTod = k === todKey;
+            let bg = "transparent";
+            let fg = "#0F172A";
+            let border = "1.5px solid transparent";
+            let dotColor = accent;
+
+            if (isSel) {
+              bg = accent;
+              fg = "#ffffff";
+              dotColor = "#ffffff";
+            } else if (has) {
+              bg = "#D1FAE5";
+              fg = "#0F172A";
+              if (isTod) border = `2px solid ${accent}`;
+            } else if (isTod) {
+              border = `2px solid ${accent}`;
+            }
+
             return (
-              <button key={i} onClick={() => setSel(k)} style={{ height: 34, borderRadius: 9, border: isTod && !isSel ? `1.5px solid ${accent}` : "1px solid transparent", background: isSel ? accent : (has ? `${accent}16` : "transparent"), cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, fontFamily: "'Plus Jakarta Sans',sans-serif", padding: 0 }}>
-                <span style={{ fontSize: 11.5, fontWeight: isSel ? 800 : 600, color: isSel ? "#fff" : C.ink }}>{d.getDate()}</span>
-                {has && <span style={{ width: 4, height: 4, borderRadius: "50%", background: isSel ? "#fff" : accent }} />}
+              <button key={i} onClick={() => setSel(k)} style={{ height: 44, borderRadius: 16, border, background: bg, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", fontFamily: "inherit", padding: 0, transition: "all 0.15s" }}>
+                <span style={{ fontSize: 14.5, fontWeight: isSel ? 800 : (has || isTod ? 700 : 600), color: fg }}>{d.getDate()}</span>
+                {has && <span style={{ width: 4, height: 4, borderRadius: "50%", background: dotColor, marginTop: 2 }} />}
               </button>
             );
           })}
         </div>
-        <p style={{ margin: "0 0 8px", fontWeight: 800, color: C.ink, fontSize: 13 }}>{selDate.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })}{sel === todKey ? " · Today" : ""}</p>
+
+        {/* Selected Date Header */}
+        <p style={{ margin: "0 0 12px 4px", fontWeight: 800, color: "#0F172A", fontSize: 15.5 }}>
+          {selDate.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })}{sel === todKey ? " · Today" : ""}
+        </p>
+
+        {/* Appointments List for Selected Date */}
         {selList.length === 0 ? (
-          <div style={{ textAlign: "center", padding: "22px 0", color: C.faint }}>
-            <Calendar size={26} style={{ opacity: .5 }} />
-            <p style={{ margin: "8px 0 0", fontSize: 12 }}>No bookings on this day</p>
+          <div style={{ background: "#fff", borderRadius: 20, padding: "28px 16px", textAlign: "center", color: "#64748B", boxShadow: "0 2px 8px rgba(0,0,0,0.03)" }}>
+            <Calendar size={32} style={{ opacity: 0.4, margin: "0 auto 8px" }} />
+            <p style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>No appointments scheduled for this day</p>
           </div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {selList.map((b, i) => (
-              <div key={i} style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 13, padding: "11px 12px", display: "flex", alignItems: "center", gap: 10 }}>
-                <div style={{ width: 44, flexShrink: 0, textAlign: "center" }}>
-                  <p style={{ margin: 0, fontWeight: 800, color: b.color, fontSize: 12 }}>{fmtTime(b.date).split(" ")[0]}</p>
-                  <p style={{ margin: 0, fontSize: 8.5, color: C.faint, fontWeight: 700 }}>{fmtTime(b.date).split(" ")[1]}</p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {selList.map((b, i) => {
+              const timeParts = fmtTime(b.date).split(" ");
+              return (
+                <div key={i} style={{ background: "#ffffff", borderRadius: 20, padding: "14px 16px", display: "flex", alignItems: "center", gap: 14, boxShadow: "0 4px 14px rgba(15,23,42,0.04)", border: "1px solid #E2E8F0" }}>
+                  {/* Left Column: Time */}
+                  <div style={{ width: 50, flexShrink: 0, textAlign: "center" }}>
+                    <p style={{ margin: 0, fontWeight: 800, color: b.color || "#2563EB", fontSize: 15, lineHeight: 1.1 }}>{timeParts[0]}</p>
+                    <p style={{ margin: "2px 0 0", fontSize: 10, color: "#64748B", fontWeight: 800, letterSpacing: 0.5 }}>{timeParts[1]}</p>
+                  </div>
+                  {/* Vertical Accent Line */}
+                  <div style={{ width: 3.5, height: 34, borderRadius: 2, background: b.color || "#2563EB", flexShrink: 0 }} />
+                  {/* Middle Column: Details */}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ margin: 0, fontWeight: 800, color: "#0F172A", fontSize: 14.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{b.title}</p>
+                    <p style={{ margin: "2px 0 0", fontSize: 12, color: "#64748B", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{b.sub}</p>
+                  </div>
+                  {/* Right Column: Status Badge */}
+                  <span style={{ flexShrink: 0, fontSize: 11.5, fontWeight: 700, color: b.color === C.emerg ? "#DC2626" : "#2563EB", background: b.color === C.emerg ? "#FEE2E2" : "#DBEAFE", borderRadius: 999, padding: "5px 13px" }}>
+                    {b.status}
+                  </span>
                 </div>
-                <div style={{ width: 3, height: 34, borderRadius: 2, background: b.color, flexShrink: 0 }} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ margin: 0, fontWeight: 800, color: C.ink, fontSize: 12.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{b.title}</p>
-                  <p style={{ margin: "1px 0 0", fontSize: 10.5, color: C.sub, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{b.sub}</p>
-                </div>
-                <span style={{ flexShrink: 0, fontSize: 9, fontWeight: 800, color: b.color, background: `${b.color}1A`, borderRadius: 99, padding: "3px 8px" }}>{b.status}</span>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
