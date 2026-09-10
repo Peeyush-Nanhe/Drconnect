@@ -2243,22 +2243,31 @@ function BookingCalendar({ title = "My Schedule", subtitle = "Your patient appoi
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {selList.map((b, i) => {
               const timeParts = fmtTime(b.date).split(" ");
+              const subLower = (b.sub || "").toLowerCase();
+              const modeLower = (b.mode || "").toLowerCase();
+              const isHomeVisit = modeLower === "home_visit" || modeLower === "home" || subLower.includes("home");
+              const isEmerg = b.color === C.emerg || modeLower === "emergency" || subLower.includes("emergency");
+              const badgeBg = isEmerg ? "#FEE2E2" : isHomeVisit ? "#DBEAFE" : "#E4F6EE";
+              const badgeFg = isEmerg ? "#DC2626" : isHomeVisit ? "#2563EB" : "#0C9668";
+              const timeFg = isEmerg ? "#DC2626" : isHomeVisit ? "#2563EB" : "#0C9668";
+              const barBg = isEmerg ? "#DC2626" : isHomeVisit ? "#2563EB" : "#0C9668";
+
               return (
                 <div key={i} style={{ background: "#ffffff", borderRadius: 20, padding: "14px 16px", display: "flex", alignItems: "center", gap: 14, boxShadow: "0 4px 14px rgba(15,23,42,0.04)", border: "1px solid #E2E8F0" }}>
                   {/* Left Column: Time */}
                   <div style={{ width: 50, flexShrink: 0, textAlign: "center" }}>
-                    <p style={{ margin: 0, fontWeight: 800, color: b.color || "#2563EB", fontSize: 15, lineHeight: 1.1 }}>{timeParts[0]}</p>
+                    <p style={{ margin: 0, fontWeight: 800, color: timeFg, fontSize: 15, lineHeight: 1.1 }}>{timeParts[0]}</p>
                     <p style={{ margin: "2px 0 0", fontSize: 10, color: "#64748B", fontWeight: 800, letterSpacing: 0.5 }}>{timeParts[1]}</p>
                   </div>
                   {/* Vertical Accent Line */}
-                  <div style={{ width: 3.5, height: 34, borderRadius: 2, background: b.color || "#2563EB", flexShrink: 0 }} />
+                  <div style={{ width: 3.5, height: 34, borderRadius: 2, background: barBg, flexShrink: 0 }} />
                   {/* Middle Column: Details */}
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <p style={{ margin: 0, fontWeight: 800, color: "#0F172A", fontSize: 14.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{b.title}</p>
                     <p style={{ margin: "2px 0 0", fontSize: 12, color: "#64748B", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{b.sub}</p>
                   </div>
                   {/* Right Column: Status Badge */}
-                  <span style={{ flexShrink: 0, fontSize: 11.5, fontWeight: 700, color: b.color === C.emerg ? "#DC2626" : "#2563EB", background: b.color === C.emerg ? "#FEE2E2" : "#DBEAFE", borderRadius: 999, padding: "5px 13px" }}>
+                  <span style={{ flexShrink: 0, fontSize: 11.5, fontWeight: 700, color: badgeFg, background: badgeBg, borderRadius: 999, padding: "5px 13px" }}>
                     {b.status}
                   </span>
                 </div>
@@ -13747,7 +13756,30 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
   const [dispatchFlow, setDispatchFlow] = useState(null); // shared centre dispatch (broadcast + OTP) for care referrals
   const [showEmergency, setShowEmergency] = useState(false); // emergency care pathways
   const [notifs, setNotifs] = useState(PATIENT_NOTIFS);
+  const { session } = useSession();
+  const { rows: patientLiveApps } = useLiveDoctorAppointments(session?.user?.id);
+  const realPatientBookings = (patientLiveApps || []).map(app => {
+    const st = new Date(app.start_time);
+    const isHome = app.mode === "home_visit" || app.mode === "home" || (app.service && app.service.toLowerCase().includes("home"));
+    const isVideo = app.mode === "video" || (app.service && app.service.toLowerCase().includes("video"));
+    const modeLabel = isHome ? "Home visit" : isVideo ? "Video" : "MyDox Hub";
+    const rawSvc = app.service || "Doctor Consultation";
+    const parts = rawSvc.split(/·|•/);
+    const titleName = parts[0]?.trim() || rawSvc;
+    const subLabel = parts.length > 1 ? rawSvc : `${titleName} · ${modeLabel}`;
+    return {
+      id: app.id,
+      date: st,
+      title: titleName,
+      sub: subLabel,
+      status: app.status === "confirmed" || app.status === "rescheduled" ? "Confirmed" : app.status === "cancelled" ? "Cancelled" : app.status === "pending" ? "Scheduled" : app.status,
+      color: app.status === "cancelled" ? C.emerg : isHome ? "#2563EB" : C.primary,
+      mode: app.mode,
+    };
+  });
+
   const PATIENT_BOOKINGS = [
+    ...realPatientBookings,
     calBk(-3, 16, 30, "Dr. Sara Deshpande", "General Physician · MyDox Hub", "Completed", C.faint),
     calBk(0, 10, 0, "Dr. Sara Deshpande", "General Physician · MyDox Hub", "Confirmed", C.primary),
     calBk(0, 18, 0, "CBC + Thyroid", "Lab test · Home collection", "Scheduled", C.clinic),
@@ -14162,6 +14194,7 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
           const end = new Date(start.getTime() + 30 * 60000); // 30 min default duration
 
           const isHome = visitMode === "home" || spec.visitMode === "home";
+          const isVideo = visitMode === "online" || spec.visitMode === "online";
           let data;
           if (isHome) {
             data = await createHomeVisitBooking({
@@ -14175,16 +14208,21 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
               endTime: end.toISOString(),
             });
           } else {
+            const modeSuffix = isVideo ? " • Video" : " • MyDox Hub";
+            const serviceTitle = spec.name ? (spec.name.includes("•") || spec.name.includes("·") ? spec.name : `${spec.name}${modeSuffix}`) : `Consultation${modeSuffix}`;
             const { data: bId, error } = await supabase.rpc("atomic_book_appointment", {
               p_provider_id: spec.doctor.userId,
               p_patient_id: user.id,
               p_start_time: start.toISOString(),
               p_end_time: end.toISOString(),
-              p_service: spec.name || "Consultation",
+              p_service: serviceTitle,
               p_fee: spec.base || 500
             });
             if (error) throw error;
             data = bId;
+            if (isVideo) {
+              await supabase.from("doctor_appointments").update({ mode: "video" }).eq("id", bId);
+            }
           }
 
           setConfirmedBooking({ name: spec.name, label: spec.scheduled.label, doctor: spec.doctor || null, bookingId: data });
