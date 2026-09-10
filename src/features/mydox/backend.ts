@@ -1663,3 +1663,81 @@ export async function listVerifiedProviders() {
   if (error) throw error;
   return (data || []) as { id: string; name: string; specialty: string; hospital: string | null; city: string }[];
 }
+
+export interface CreateHomeVisitParams {
+  isNow: boolean;
+  providerId?: string | null;
+  service?: string;
+  fee?: number;
+  addressSnapshot: {
+    full_address: string;
+    locality?: string;
+    pincode?: string;
+    landmark?: string;
+    phone?: string;
+    patient_name?: string;
+    notes?: string;
+  };
+  consentVersion: string;
+  startTime?: string | null;
+  endTime?: string | null;
+  dependentId?: string | null;
+  idempotencyKey?: string | null;
+}
+
+export async function createHomeVisitBooking(params: CreateHomeVisitParams): Promise<string> {
+  const { data, error } = await (supabase.rpc as any)("create_home_visit_booking", {
+    p_is_now: params.isNow,
+    p_provider_id: params.providerId ?? null,
+    p_service: params.service ?? "Doctor Home Visit",
+    p_fee: params.fee ?? 500,
+    p_address_snapshot: params.addressSnapshot,
+    p_consent_version: params.consentVersion,
+    p_start_time: params.startTime ?? null,
+    p_end_time: params.endTime ?? null,
+    p_dependent_id: params.dependentId ?? null,
+    p_idempotency_key: params.idempotencyKey ?? null,
+  });
+  if (error) throw error;
+  return data as string;
+}
+
+export async function acceptHomeVisitBooking(bookingId: string): Promise<void> {
+  const { error } = await (supabase.rpc as any)("accept_home_visit_booking", {
+    p_booking_id: bookingId,
+  });
+  if (error) throw error;
+}
+
+export async function startDoctorTravel(bookingId: string, etaMinutes = 30): Promise<string> {
+  const { data, error } = await (supabase.rpc as any)("start_doctor_travel", {
+    p_booking_id: bookingId,
+    p_eta_minutes: etaMinutes,
+  });
+  if (error) throw error;
+  return data as string;
+}
+
+export async function verifyHomeVisitArrival(bookingId: string, otp: string): Promise<boolean> {
+  const { data, error } = await (supabase.rpc as any)("verify_home_visit_arrival", {
+    p_booking_id: bookingId,
+    p_otp: otp,
+  });
+  if (error) throw error;
+  return data as boolean;
+}
+
+export async function completeHomeVisitEncounter(
+  bookingId: string,
+  clinicalNotes: Record<string, any>,
+  paymentSettlement?: Record<string, any>
+): Promise<void> {
+  const { error } = await (supabase.rpc as any)("complete_home_visit_encounter", {
+    p_booking_id: bookingId,
+    p_clinical_notes: clinicalNotes,
+    p_payment_settlement: paymentSettlement ?? { method: "pay_at_visit", status: "settled", recorded_at: new Date().toISOString() },
+  });
+  if (error) throw error;
+}
+
+
