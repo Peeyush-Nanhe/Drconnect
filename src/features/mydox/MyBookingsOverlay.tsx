@@ -107,7 +107,7 @@ export default function MyBookingsOverlay({ onClose, onRebook }: { onClose: () =
         supabase.from("blood_bank_activity").select("id, activity_type, blood_group, units, hospital, status, created_at").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
         supabase.from("surgery_bookings").select("id, procedure, patient_name, mode, status, created_at").eq("facility_id", uid).order("created_at", { ascending: false }).limit(100),
         supabase.from("medicine_orders").select("id, pharmacy_name, delivery_speed, items, prescription_attached, total, status, created_at").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
-        supabase.from("doctor_appointments").select("id, service, status, home_visit_status, address_snapshot, arrival_otp, eta_minutes, start_time, end_time, created_at, provider_id").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
+        supabase.from("doctor_appointments").select("id, service, mode, status, home_visit_status, address_snapshot, arrival_otp, eta_minutes, start_time, end_time, created_at, provider_id").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
       ]);
 
       const rows: Item[] = [];
@@ -118,7 +118,21 @@ export default function MyBookingsOverlay({ onClose, onRebook }: { onClose: () =
       for (const r of (bb.data as any[] | null) ?? []) rows.push({ id: `bb:${r.id}`, module: "Blood Bank", title: `${r.activity_type}${r.blood_group ? ` · ${r.blood_group}` : ""}${r.units ? ` · ${r.units}u` : ""}`, subtitle: r.hospital ?? undefined, status: r.status, createdAt: r.created_at, raw: r });
       for (const r of (sb.data as any[] | null) ?? []) rows.push({ id: `sb:${r.id}`, module: "Surgery", title: r.procedure, subtitle: `${r.patient_name} · ${r.mode}`, status: r.status, createdAt: r.created_at, raw: r });
       for (const r of (mo.data as any[] | null) ?? []) rows.push({ id: `mo:${r.id}`, module: "Medicines", title: `Medicine delivery${Array.isArray(r.items) && r.items.length ? ` · ${r.items.length} item${r.items.length !== 1 ? "s" : ""}` : r.prescription_attached ? " · prescription" : ""}`, subtitle: `${r.pharmacy_name} · ${r.delivery_speed}${r.total ? ` · ₹${Math.round(Number(r.total)).toLocaleString("en-IN")}` : ""}`, status: r.status, createdAt: r.created_at, raw: r });
-      for (const r of (da.data as any[] | null) ?? []) rows.push({ id: `da:${r.id}`, module: "Doctor / Nurse", title: r.service || "Doctor Appointment", subtitle: `${r.service} · ${new Date(r.start_time).toLocaleDateString()} ${new Date(r.start_time).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}`, status: r.home_visit_status || r.status, createdAt: r.created_at, raw: r });
+      for (const r of (da.data as any[] | null) ?? []) {
+        const isHome = r.mode === "home_visit" || r.mode === "home" || (r.service && r.service.toLowerCase().includes("home"));
+        const baseTitle = r.service || "Doctor Appointment";
+        const title = isHome && !baseTitle.toLowerCase().includes("home") ? `${baseTitle} • Home visit` : baseTitle;
+        const timeStr = `${new Date(r.start_time).toLocaleDateString("en-US", { month: "short", day: "numeric" })} at ${new Date(r.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+        rows.push({
+          id: `da:${r.id}`,
+          module: isHome ? "Home Care" : "Doctor / Nurse",
+          title,
+          subtitle: `${timeStr}${r.address_snapshot?.full_address ? ` · ${r.address_snapshot.full_address}` : ""}`,
+          status: r.home_visit_status || r.status,
+          createdAt: r.created_at,
+          raw: r
+        });
+      }
 
       rows.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
       if (mounted) { setItems(rows); setLoading(false); }

@@ -14161,23 +14161,35 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
           if (isNaN(start.getTime())) throw new Error("Invalid date selected");
           const end = new Date(start.getTime() + 30 * 60000); // 30 min default duration
 
-          const { data, error } = await supabase.rpc("atomic_book_appointment", {
-            p_provider_id: spec.doctor.userId,
-            p_patient_id: user.id,
-            p_start_time: start.toISOString(),
-            p_end_time: end.toISOString(),
-            p_service: spec.name || "Consultation",
-            p_fee: spec.base || 500
-          });
-
-          if (error) {
-            console.error("Booking failed:", error);
-            toast("⚠️ " + (error.message || "Failed to book appointment. Please try again."));
+          const isHome = visitMode === "home" || spec.visitMode === "home";
+          let data;
+          if (isHome) {
+            data = await createHomeVisitBooking({
+              isNow: false,
+              providerId: spec.doctor.userId,
+              service: `${spec.name || "Doctor Consultation"} • Home visit`,
+              fee: spec.base || 500,
+              addressSnapshot: { full_address: `${area || "Pune"}, Maharashtra` },
+              consentVersion: HOME_VISIT_CONSENT.version,
+              startTime: start.toISOString(),
+              endTime: end.toISOString(),
+            });
           } else {
-            setConfirmedBooking({ name: spec.name, label: spec.scheduled.label, doctor: spec.doctor || null, bookingId: data });
-            setSelectedSpec(null);
-            if (fromOverlay) setServiceView(null);
+            const { data: bId, error } = await supabase.rpc("atomic_book_appointment", {
+              p_provider_id: spec.doctor.userId,
+              p_patient_id: user.id,
+              p_start_time: start.toISOString(),
+              p_end_time: end.toISOString(),
+              p_service: spec.name || "Consultation",
+              p_fee: spec.base || 500
+            });
+            if (error) throw error;
+            data = bId;
           }
+
+          setConfirmedBooking({ name: spec.name, label: spec.scheduled.label, doctor: spec.doctor || null, bookingId: data });
+          setSelectedSpec(null);
+          if (fromOverlay) setServiceView(null);
         } catch (e) {
           toast("⚠️ " + (e.message || "An unexpected error occurred"));
         }
