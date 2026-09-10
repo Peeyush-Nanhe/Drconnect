@@ -1,0 +1,209 @@
+/* Approved Stitch patient theme. Detailed booking/provider screens keep their own styles. */
+.mdx-dashboard,
+.mdx-header,
+.mdx-bottom-nav {
+  --mdx-teal: #177b94;
+  --mdx-ink: #131b2e;
+  --mdx-muted: #667285;
+  --mdx-line: #dce9ef;
+  --mdx-soft: #eaf2f6;
+  --sp-deep: #10576e;
+  --sp-action-gradient: linear-gradient(120deg, #105b75 0%, #1b758f 52%, #277d91 100%);
+}
+.mdx-scroll {
+  background: linear-gradient(160deg, #eaf3f7, #f2f7fa 64%, #e7f1f5);
+}
+.mdx-stitch-header {
+  min-height: 76px;
+  padding: max(14px, env(safe-area-inset-top)) 20px 14px;
+  gap: 10px;
+  background: linear-gradient(110deg, #f7fcff, #e2f0f6 60%, #d1e7ef);
+}
+.mdx-stitch-header[data-home="true"] {
+  background: linear-gradient(115deg, #145c76, #276f86 65%, #2b7489);
+  color: #f5fdff;
+}
+.mdx-stitch-brand {
+  margin-right: auto;
+  min-width: 0;
+}
+.mdx-stitch-brand > strong {
+  display: block;
+  font-size: 22px;
+  line-height: 1.1;
+  letter-spacing: -0.7px;
+}
+.mdx-stitch-brand .mdx-location {
+  color: inherit;
+  gap: 2px;
+}
+.mdx-stitch-brand select {
+  height: 28px;
+  font-size: 11px;
+  font-weight: 500;
+  max-width: 135px;
+  color: inherit;
+}
+.mdx-stitch-brand option {
+  color: #131b2e;
+  background: #fff;
+}
+.mdx-stitch-header .mdx-icon-button {
+  border: 0;
+  background: linear-gradient(140deg, #ffffff80, #ffffff2b);
+  color: inherit;
+}
+.mdx-stitch-avatar {
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: linear-gradient(140deg, #f9fcff, #b9dfe9);
+  color: #10576e;
+  font:
+    700 11px "Plus Jakarta Sans",
+    sans-serif;
+  cursor: pointer;
+}
+.mdx-dashboard[data-tab="home"] {
+  padding: 0 0 20px;
+}
+.mdx-stitch-home.sp-preview {
+  min-height: 0;
+  background: transparent;
+}
+.mdx-stitch-home .sp-home-glow > .sp-heading h2,
+.mdx-stitch-home .sp-home-glow > .sp-heading .sp-text-button {
+  color: #10384a !important;
+}
+.mdx-stitch-home .sp-appointment-person p {
+  margin-top: 5px;
+}
+.mdx-stitch-appointment-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 9px;
+}
+.mdx-stitch-appointment-actions button {
+  min-width: 0;
+  padding: 11px 5px;
+  font-size: 11px;
+}
+.mdx-stitch-care-team {
+  margin-bottom: 12px;
+}
+.mdx-stitch-care-team > div {
+  margin: 0 !important;
+  background: linear-gradient(140deg, #ffffffed, #deeff4e6) !important;
+}
+.mdx-stitch-home .mdx-action-row {
+  width: 100%;
+  background: linear-gradient(140deg, #fff, #deeff4e6);
+  border: 1px solid #fff;
+  border-radius: 20px;
+  padding: 13px;
+}
+.mdx-stitch-home .mdx-row-copy {
+  text-align: left;
+}
+.mdx-stitch-home .sp-doctor-photo > img[src$="/charlotte.jpg"] {
+  object-position: 25% top;
+}
+.mdx-bottom-nav {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 3px;
+  margin: 8px 16px max(14px, env(safe-area-inset-bottom));
+  border: 1px solid #fff;
+  background: linear-gradient(115deg, #ffffffe8, #e8f4f8db 52%, #cfe5eedb);
+  border-radius: 40px;
+  padding: 6px;
+  box-shadow:
+    inset 0 1px 0 #fff,
+    0 10px 30px -8px #214e6c38;
+  backdrop-filter: blur(20px);
+}
+.mdx-bottom-nav button {
+  min-width: 0;
+  min-height: 51px;
+  padding: 8px 1px;
+  gap: 4px;
+  border-radius: 30px;
+  font-size: 10px;
+  color: #536674;
+}
+.mdx-bottom-nav button > span {
+  width: auto;
+  height: auto;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+}
+.mdx-bottom-nav button[aria-current="page"] {
+  background: var(--sp-action-gradient);
+  color: #fff;
+  box-shadow:
+    inset 0 1px 0 #ffffff44,
+    0 4px 11px #10597535;
+}
+.mdx-bottom-nav button[aria-current="page"] > span {
+  background: none;
+  color: inherit;
+}
+.mdx-dashboard:not([data-tab="home"]) {
+  padding-top: 20px;
+}
+.mdx-dashboard .mdx-service-group,
+.mdx-dashboard .mdx-action-list,
+.mdx-dashboard .mdx-disclosure,
+.mdx-dashboard .mdx-profile-card {
+  background: linear-gradient(140deg, #fffffff5, #f7fdffeb 52%, #deeff4e6);
+  border-color: #ffffffd9;
+  box-shadow:
+    inset 0 1px 0 #fff,
+    0 8px 24px -10px #1a5b7924;
+}
+.mdx-dashboard .mdx-service-search {
+  background: linear-gradient(125deg, #fbfdff, #eaf3f8 54%, #d6eaf1);
+}
+.mdx-dashboard .mdx-profile-card > span {
+  background: var(--sp-action-gradient);
+  color: #fff;
+}
+.mdx-dashboard .mdx-action-row > .sp-icon {
+  height: 39px;
+  width: 39px;
+  border-radius: 13px;
+}
+.mdx-dashboard .mdx-action-row > .sp-icon svg {
+  width: 20px;
+  height: 20px;
+}
+.mdx-dashboard .mdx-group-toggle > .sp-icon {
+  flex-shrink: 0;
+}
+.mdx-stitch-consult > h2 {
+  font-size: 16px;
+  margin: 24px 0 12px;
+}
+.mdx-dashboard .mdx-page-heading h1 {
+  letter-spacing: -0.8px;
+}
+@media (max-width: 360px) {
+  .mdx-stitch-header {
+    padding-left: 14px;
+    padding-right: 14px;
+    gap: 7px;
+  }
+  .mdx-stitch-brand select {
+    max-width: 115px;
+  }
+  .mdx-bottom-nav {
+    margin-left: 10px;
+    margin-right: 10px;
+  }
+}

@@ -1,0 +1,19 @@
+MYDOX - VERIFIED REACT + SUPABASE SOURCE
+Packaged from the current CareConnect_React_Supabase folder on 9 September 2026.
+This is the Supabase version, not the older Firebase care-connect-hub project.
+
+Extract the ZIP and open MyDox-React-Supabase in VS Code/Codex.
+Read AGENTS.md, README.md and BUILD_STATUS.md before changing code.
+Install a compatible Node.js runtime, then run npm ci.
+Copy .env.example to .env and securely configure the existing Supabase project.
+Run npm run dev and open the address it prints.
+Use npm run check for the project's full validation workflow.
+
+Local .env files, demo-account credentials, dependencies, caches, build output,
+and Git history are excluded. This archive contains source, not cloud database
+records or Storage objects. Do not apply migrations to an existing cloud project
+until its migration history has been reviewed; see staging/README.md.
+No architecture or theme changes were made while creating this archive.
+Existing source configuration identifies GitHub repository:
+https://github.com/kunal110284-sys/MyDox
+This packaging task did not push or synchronize that repository.

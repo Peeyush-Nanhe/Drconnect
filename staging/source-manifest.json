@@ -1,0 +1,398 @@
+[
+  {
+    "file": "20260702141002_5bcc805e-1870-42b5-bad2-417f45e8b0de.sql",
+    "sha256": "416ad77fd44fb480d87eddc8a4a9e5e523272b1ec704af7f57298022ad4467b9",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260702141021_346eac5e-5a84-4300-979f-04ed61f88ff5.sql",
+    "sha256": "6e9a204973dfcb56ef0fb87424074edaa9e028c62b105ebcce6d99e90c8eefa3",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260702141038_af39a8b1-731d-4d50-a200-889774fe1e27.sql",
+    "sha256": "8ddc10fff8996d9938e7580818d8ee8d140eff99a74a1fd6d4de5a92bcdd53f0",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260704062047_65c48c92-2365-455c-bdc2-da23aa5ac06e.sql",
+    "sha256": "79d3a23915e1ac8e265165e8a81f9af4b3815831a2ffc7118a4ca6f4ea68a098",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260704062101_4f52caf6-fca4-4255-a10c-6d9fbecbfa41.sql",
+    "sha256": "d9aab3b1dc3b584277d22c22e4755a3a858f76a52d3120c9c2ae65890f51861c",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260704083352_d627e27b-c38e-4130-a36c-e89e7e594ba3.sql",
+    "sha256": "9a194cdd6bedb9fefb15414eb3b28f53d2aa4836a36dcb214b74c4ff719b1bbe",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260704083408_d80d0ccf-470a-4694-be11-0421febd259c.sql",
+    "sha256": "5ff5e23b637a3353098a2e7ceeb517f7a0df3a6ec7c0c1de36b8d7da8473fd91",
+    "action": "excluded",
+    "reason": "Grants super_admin to a source-project UUID that does not exist in a fresh project."
+  },
+  {
+    "file": "20260704084203_f1ca229d-e1a4-45e9-b200-e4d5cc5cb5bc.sql",
+    "sha256": "9cf03d22ebaab4b1e00310b5dc86ba91b0b63fadb0d47288e9257e983fca0041",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260704084220_9c3c2920-c342-40d1-9be9-932d74400d12.sql",
+    "sha256": "13957ae998c050c4cbc7e7bedf67cdbdc7f6d3df7e48543142d16a7127b0c496",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260706062654_5139828d-e712-47da-9e97-813eb1058dac.sql",
+    "sha256": "410efa3f6182276553ca860f182ebf7581fe44829c2c1e0f815f85488103b0f0",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260706074042_6ca4f983-288b-43c3-b3dc-c46754a2bfb8.sql",
+    "sha256": "72dacea98a0f79d215406bb70bac37113b84fb9ccba45045340b1740ff00ffe6",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260706075540_e4bc65ec-9f0b-436c-8c8f-07f22221e60c.sql",
+    "sha256": "b8365c4d7f0a7793413a10d179b8fac00c65b101b40fff569afa5deadc6cd274",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260706075635_3afccfeb-ea8b-4906-93e4-f41e0ec09748.sql",
+    "sha256": "c893cf9d5dbdf1bfce3d630be918d7133a1f9092f72ff80df6422a1da3bc926c",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260706075723_9ca899f2-9037-4905-bc52-ee3393561341.sql",
+    "sha256": "97d87980ec171370de5ae22b3dc2be525a91f624c2ea3342c3b79201ecc4913f",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260706094206_b8c76650-e11e-45ac-9f61-3133593f196d.sql",
+    "sha256": "056bb7f8d952e4cc3ccf5a227d6f4ee825546c9579c0cae7dbf93e39a2cdf73e",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260706100634_1987627f-4b77-4e07-8973-6bb4e2a39bc0.sql",
+    "sha256": "4829227422a82bb628ac3efc2ebc883d8f03967147efbf6877d74c2f9e9fee8b",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260707052457_807b4b9f-393e-48f9-b52a-1b9844725664.sql",
+    "sha256": "1841890eb204f442ba0c6f5f64da6cd06787487742dd807615ef46d7d10696aa",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260707071944_52f5994d-5fee-4870-bc95-09e6c0818ccf.sql",
+    "sha256": "829a8a85c9998e4d6d97fabf424b85b4359d73e7a947e86bf9a4f59b3c0bbf72",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260707072001_5b603620-a18a-4f9c-96f4-ca13b478ae43.sql",
+    "sha256": "cc1f5b4117591054340d05da4aeb760b8b56b4db97665b940ad38fa09b2d5b21",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260708055206_da5c7f4d-36f5-4f96-8aa1-3fa8f445088c.sql",
+    "sha256": "23ef992ca1a42818087bf9efad53fe37f8e11205d5fe98f4390e46d006db0cad",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260708055928_6c5de206-4aeb-4d41-86a9-c05c2764cd67.sql",
+    "sha256": "b7893b9299fd9d4279f3ad5335ee1ae5dc109a245500c295ccb0b13c13d59018",
+    "action": "excluded",
+    "reason": "Creates an administrator with an embedded password. Owner bootstrap must be manual."
+  },
+  {
+    "file": "20260708072415_9a16d5dc-193a-4e1c-987a-f07df5661774.sql",
+    "sha256": "f0d05a74ff733028d6e90e72879343e9c671ff7644ff6b1806506dfc04eb314a",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260708072437_501b41c5-c40b-4404-a8d2-0a0765cbc51e.sql",
+    "sha256": "9953b079d30f5597423d3d923bf65690248b328931c40e8d0b465614d88653ce",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260709060906_0e17eca5-271b-4889-bd1e-609e7b913909.sql",
+    "sha256": "68458efda11361d1bd12918a0ea7f71c80982cce2704d991c1526b1cc3ea3553",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260709080639_329e5ca0-fc4b-45ff-a9f2-28527e657b4e.sql",
+    "sha256": "8a1213b2349b49ed2a862841e4a41832be2c308c7a99eeb816a84cffe254f0f6",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260709080703_4801434e-3327-40ae-9c8f-fbde2c7ac843.sql",
+    "sha256": "369af6db54ba43633c232a02f1ddbfc38d811fdb720ff6a28135a2de58bd9845",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260709135231_6c319a74-f82d-4f33-aeac-c2a7c88cbc73.sql",
+    "sha256": "fd32fa0a6decca977ab93167e14932b9f21ee41049bfe8baf6bf2899f607fe7f",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260711062845_e55ca05b-93cf-473e-8b1d-8a1b73a4d662.sql",
+    "sha256": "3422d541b8760b8490a6e7482baab4f708da0327be111ec83a115e0ab2c3b0c0",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260711141037_9db86ba4-ecb1-498e-938d-bfba381804cb.sql",
+    "sha256": "6cfef85f5c48319c60207ba98a34bd9a5e7b3bad19cadacd93e08ada314e2d54",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260713060703_7c8e3348-1a71-4855-b4da-df778b5d4f2e.sql",
+    "sha256": "8f4619c55a97f139fc13d1ef341a592f19cea9cf137857ac53b78530de8a1ce6",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260714093540_2c663a01-157d-494b-8ed6-d4ae8c5b9180.sql",
+    "sha256": "2993a875e7a05998f9eb5473961f5fe1a6e0dcd5bde90b54ac85ac63000112a7",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260714093954_b0bc13d3-5cbb-499f-830c-d7f85193de25.sql",
+    "sha256": "9367f0f2c9f574e1d2fa22f9e085b6f06fb2fd073298d2b5be5805eb39fbdea6",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260714094643_194a5af4-335f-45f1-b4b9-268aaf43fa57.sql",
+    "sha256": "5a32ad86514e2700bb2f482a94d4db1236da5f0971ab3055037b78f05a721078",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260714101022_5611bff2-6160-41c1-8bc0-824ec6708a73.sql",
+    "sha256": "f09fab354268026942b60725e7e3f558419a3b1ea868673a898849072b2b9e3d",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260714103136_8ddb7d55-ddc2-4e15-a062-a9fd5a43f8dd.sql",
+    "sha256": "0936cb7413c46cf3c0f6c4b45d7f2184234ef49928104b6ae18478476caf6a21",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260714103322_85f60bf6-aeb9-4a29-abcd-fb111d02b189.sql",
+    "sha256": "bda0667af5fe7410bf96501e05e9cc0cf8fc15c207f5838be00e5c2f78152c87",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260714103344_57056ffa-5424-4271-9a61-3cdf29ff5cea.sql",
+    "sha256": "44c5f10d2f5679a4329c49a219b8b344bbac0d48eca71a70215280295187beb5",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260716063915_37e99f32-b204-415e-9d96-e2b97fb4a825.sql",
+    "sha256": "3951cbe1774cdca79fecc657f03544f24d633c47242ec131248e7a76da30bbfe",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260716094106_a535c8c9-42c7-4348-8f49-c117ad10cc93.sql",
+    "sha256": "9002184dd209f0d7f67c9bee218fb0cea91a9606ac3cd8248d34cd88e3cd5162",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260716104203_80606bda-d035-40ab-a555-8140d78c0e67.sql",
+    "sha256": "5c937721b21e39808b54592442de673d9165d5ef7cfe49321306586aaa7f675f",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260716104219_4cb1d7f9-c177-41c1-adb8-876ee3971310.sql",
+    "sha256": "77e28286c5281c0f2f8a3ab53b9af9934735977b774abcb23141ad824040c23d",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260717074550_43511dca-2c6f-4d79-9474-aa4e17a77a37.sql",
+    "sha256": "b2b79ed965eb2ae07675de1e2064dad48f56b64d7e9d5b2f29c3527be2a97f4a",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260717074833_6aa1c749-938e-4b25-995b-836ee16d7474.sql",
+    "sha256": "e314f226bb248aadf3311047a9a9730e895a49586dc9217250d33341a61bcddd",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260717075905_cb8d3fdb-9446-4d5a-b5a1-5b9b35282950.sql",
+    "sha256": "a4ce8aaa02f43f8ce520fcb3792431bd9735bf573c2c4be1e0d63492cff2ade8",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260717075922_84160e43-7fbe-4f86-bc20-773ed8bb602b.sql",
+    "sha256": "d9e0faae5b504b701696eafcddedf36cc27282eb6b1e023b1f150dd93fc04ef7",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260717080817_0e5555b5-e7a5-4f08-bc4f-e8170ecfcc8d.sql",
+    "sha256": "4c6197cb7d98e501b8c4f4c65bad3fb53ce27f142fdfe37e64475d9bddec8c1a",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260717141903_61bb53b5-4c80-4c13-af2b-f646861e22c9.sql",
+    "sha256": "6359708c857f9f41ab67d395ba16b0e004e546bc1b017cd750d671235984b7fa",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260717144751_e4151809-a278-45c7-98c4-2694dbd2b129.sql",
+    "sha256": "494003cf02d2c2a400f0a9f1233b98e2042d0e6310d5b2393bbeb61f052f960d",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260717145125_88ca734b-a106-46be-b9cc-57853a05aa3d.sql",
+    "sha256": "74058449c5aee7edaff0c41e6760d647e1c07955a059080507c8aeb2205e421d",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260718043503_ff3ba5d9-580a-40f0-a1fa-f90ae1aad944.sql",
+    "sha256": "39add2140aa21a0228d0ba313ee81fae84848fe8ba50d573d63064ff4b79633f",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260720053000_8b2df252-74c4-4f0f-b8ce-0884c31d71da.sql",
+    "sha256": "80149929d7c060acd2d9c8be01e8d80f8e6c776aa121e28d8deebfc46a1c4cbf",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260721055027_675c4566-f054-413b-96bb-d67177e896dc.sql",
+    "sha256": "9bccc1581378193d446003dced8f618245b3dc1a68ae4920eaeda0db3fb30ccd",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260721062828_f264dcbe-a342-4013-8730-fa465d0fda33.sql",
+    "sha256": "5151238416d68541263ffc1d8e210a219791ed3e554c44c9cee662bc9823bd09",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260731073239_01b65954-271c-448e-8f3b-6f233571b1fa.sql",
+    "sha256": "3eaa68b1bf25f615be273a7f2a646cb35b720190547b5e433fdd3ed963b39714",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260830210405_7036f7ed-76fa-43cc-acf0-5f78d886bbb3.sql",
+    "sha256": "99bef31df0a61c6ae1dfe156ae49ffe98e0e7f10407531e8181e612ec4cd4cd1",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260830210427_5e5c6cc2-2200-4b7d-aed1-d7a9e8b6488c.sql",
+    "sha256": "7a8ad6bf5edf5747aab543bdbb6960e2f8d6838c6ade1f8e542a330587d14ce3",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260903034812_0d56c346-c6e1-4e83-a927-21cbdd9e2eb3.sql",
+    "sha256": "3ce474d8596cbc85da2fe5b5fc709f76095aba28af58b9212fde9d13f60a03c6",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260903193911_547da499-448e-4917-bb31-1b7aac43013f.sql",
+    "sha256": "d8399d9c28b943640d2ece550d0463c39a3aca05a89911ce6eed87b47d8195f4",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260904012354_586952e6-c88d-426c-9cfe-75babaeb212e.sql",
+    "sha256": "4bd206754a51ede9063da30a094d0d0db62498ee2c30958e26da0c94d3b5a349",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260904023413_a3f03a37-a214-4932-8859-15fca4909635.sql",
+    "sha256": "5d51b2bb858a4af45aad38347fa20a8e1273e6bec8c39a9743e376f55801af9f",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260904024844_3609890b-441a-4b3d-b062-11d80cf9819d.sql",
+    "sha256": "df9a8653952fb3024809671e4d75fdbb27fc8fcf28e7f772456655d89d2d89bc",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260904031959_25646d81-86fd-40df-94ec-d4799de9694f.sql",
+    "sha256": "e39c8f4d065b738bdb82239ea5273d9d9cc45ccb4a3f1759a2717a85533b84b4",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260907021000_secure_role_requests_and_signup.sql",
+    "sha256": "2c396cab43f62c679cf9621047b7414aed598d22a7ee0610f2463f1833d07623",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260907022000_scope_role_policies_to_authenticated.sql",
+    "sha256": "a1d8fc4bbd77c7b2c5ae6e67a4b4ff7668e8ce1ed57b96f7b5e2886bef679c98",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260907023000_care_physician_marketplace_and_local_capture.sql",
+    "sha256": "5fbfae41c30db5c1d7cc7f5558244b4f5033d780b607e0ebc53bd01912404c83",
+    "action": "included",
+    "reason": null
+  },
+  {
+    "file": "20260907094411_preserve_staffing_access_and_reverify_credentials.sql",
+    "sha256": "e3829d2b1b96023e28424003fc88316ffbd706463e130293949c803d067fdab1",
+    "action": "included",
+    "reason": null
+  }
+]
