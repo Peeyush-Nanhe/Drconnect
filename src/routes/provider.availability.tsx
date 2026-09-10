@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { ProviderHomeSettings } from "@/features/mydox/home-visits/HomeVisitPanel";
 
 export const Route = createFileRoute("/provider/availability")({
   head: () => ({
@@ -129,6 +130,7 @@ function ProviderAvailability() {
 
         {msg && <div style={{ ...S.card, background: msg.startsWith("Error") ? "#FEE2E2" : "#D1FAE5", color: msg.startsWith("Error") ? "#991B1B" : "#065F46", fontWeight: 700 }}>{msg}</div>}
 
+        <div className="hv"><ProviderHomeSettings /></div>
         {/* Master toggle */}
         <div style={S.card}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>

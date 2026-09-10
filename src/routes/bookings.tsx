@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useSession } from "@/features/mydox/backend";
+import { HomeVisitPanel } from "@/features/mydox/home-visits/HomeVisitPanel";
 
 export const Route = createFileRoute("/bookings")({
   head: () => ({
@@ -356,6 +357,7 @@ function BookingsPage() {
       </header>
 
       <main style={{ maxWidth: 900, margin: "0 auto", padding: "16px" }}>
+        <HomeVisitPanel audience="patient" />
         {!ready ? null : !uid ? (
           <EmptyMsg text="Sign in to see your bookings." />
         ) : loading ? (

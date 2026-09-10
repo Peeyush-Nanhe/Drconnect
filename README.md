@@ -60,7 +60,9 @@ The `supabase/migrations` folder preserves the source history, including these c
 
 The form-capture migration removes the old hidden external backend by keeping captured forms in this same Supabase project under RLS. A further source migration preserves accepted-duty visibility and clears verification when a physician changes registration identity.
 
-The deployed **MyDox Staging** project uses three migrations in `staging/supabase/migrations`, including a fresh baseline that excludes unsafe historical account creation/grants. See [staging setup](staging/README.md) for the exact history. Do not push the root migration directory into this project.
+The deployed **MyDox Staging** project uses the history in `staging/supabase/migrations`, including a fresh baseline that excludes unsafe historical account creation/grants. See [staging setup](staging/README.md) for the exact history. Do not push the root migration directory into this project.
+
+Doctor Home Visit Now/Later has a gated staging workflow at `/home-visits`, with real bookings, explicit acceptance and visit-linked records. Real-patient access remains disabled pending policy and device acceptance. See [home-visit operations](docs/home-visits/OPERATIONS.md) and [test evidence](docs/home-visits/TEST_REPORT.md).
 
 ## Setup
 

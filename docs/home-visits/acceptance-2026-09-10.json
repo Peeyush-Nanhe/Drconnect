@@ -1,0 +1,484 @@
+{
+  "recorded_at": "2026-09-10T14:41:13.835Z",
+  "source_sha256": "0b154beb425bb35cbe0cd7f02e59e1d1a503b452a79320f2baa65c7f5cac13a7",
+  "intake_commit": "f22b6e74ff0ae40729c622f04e5cd1878bbecaeb",
+  "environment": {
+    "local": "macOS; Node26.0.0; npm11.12.1; PGlite; TanStack development server",
+    "staging": "pyrlvjeectjikvfksukb",
+    "browser": "Isolated headless Chrome, separate patient/doctor contexts, America/New_York and Asia/Kolkata",
+    "frontend_origin": "http://127.0.0.1:8081",
+    "physical_device_tested": false
+  },
+  "install": {
+    "command": "npm ci --ignore-scripts --no-audit --no-fund",
+    "status": "PASS"
+  },
+  "local": {
+    "command": "npm run check",
+    "status": "PASS",
+    "typecheck": "PASS",
+    "lint": {
+      "status": "PASS",
+      "errors": 0,
+      "warnings": 137
+    },
+    "build": "PASS",
+    "tests": [
+      {
+        "name": "fresh staging creates no Auth accounts and leaves no demo signup function",
+        "status": "PASS"
+      },
+      {
+        "name": "fresh baseline refuses an existing schema",
+        "status": "PASS"
+      },
+      {
+        "name": "every application table has row-level security",
+        "status": "PASS"
+      },
+      {
+        "name": "signup ignores an administrator role in user metadata and a demo admin email",
+        "status": "PASS"
+      },
+      {
+        "name": "provider and facility signup create pending requests and only patient privileges",
+        "status": "PASS"
+      },
+      {
+        "name": "patient cannot directly grant itself a role or approve its request",
+        "status": "PASS"
+      },
+      {
+        "name": "patient role requests and submitted forms are isolated between accounts",
+        "status": "PASS"
+      },
+      {
+        "name": "patient cannot create a hospital duty or a physician profile",
+        "status": "PASS"
+      },
+      {
+        "name": "approved providers can create profiles but cannot verify themselves",
+        "status": "PASS"
+      },
+      {
+        "name": "verified hospital can post a duty; an unverified physician is blocked from ICU",
+        "status": "PASS"
+      },
+      {
+        "name": "qualified physician claims the final slot; second physician cannot claim it",
+        "status": "PASS"
+      },
+      {
+        "name": "physician still sees its assigned duty after the final slot is filled",
+        "status": "PASS"
+      },
+      {
+        "name": "editing a verified registration number requires verification again",
+        "status": "PASS"
+      },
+      {
+        "name": "qualification changes also invalidate verification; availability edits preserve it",
+        "status": "PASS"
+      },
+      {
+        "name": "anonymous callers cannot claim duties or call the private membership helper",
+        "status": "PASS"
+      },
+      {
+        "name": "family plan lookup cannot expose another patient through an RPC",
+        "status": "PASS"
+      },
+      {
+        "name": "submitting a coordinator application does not grant access to the patient queue",
+        "status": "PASS"
+      },
+      {
+        "name": "verified coordinator access requires an approved provider role",
+        "status": "PASS"
+      },
+      {
+        "name": "no privileged public function is executable anonymously and trigger functions are not RPCs",
+        "status": "PASS"
+      },
+      {
+        "name": "retired home-visit RPCs cannot bypass the canonical secured lifecycle",
+        "status": "PASS"
+      },
+      {
+        "name": "only service-role workers can claim or finish notification jobs",
+        "status": "PASS"
+      },
+      {
+        "name": "serial bounded claims exclude leased, deferred and disabled jobs",
+        "status": "PASS"
+      },
+      {
+        "name": "a failed finish persists backoff and does not immediately reclaim the job",
+        "status": "PASS"
+      },
+      {
+        "name": "an expired worker lease is replaced and a stale worker cannot finish it",
+        "status": "PASS"
+      },
+      {
+        "name": "a sent job is final for workers and duplicate finish cannot overwrite it",
+        "status": "PASS"
+      },
+      {
+        "name": "a fifth abandoned attempt becomes an operations-visible failure without a sixth send",
+        "status": "PASS"
+      },
+      {
+        "name": "notification jobs never turn absent, partial or failed transport into sent",
+        "status": "PASS"
+      },
+      {
+        "name": "failed job acknowledgement is surfaced so the persisted lease can recover",
+        "status": "PASS"
+      },
+      {
+        "name": "unapproved real-patient rollout and direct legacy home-visit RPCs are blocked",
+        "status": "PASS"
+      },
+      {
+        "name": "future home booking survives immediate offline and requires explicit named-doctor acceptance",
+        "status": "PASS"
+      },
+      {
+        "name": "immediate request saves complete details without emergency dispatch or automatic acceptance",
+        "status": "PASS"
+      },
+      {
+        "name": "wrong-role, unapproved and unverified providers cannot publish or accept home visits",
+        "status": "PASS"
+      },
+      {
+        "name": "unrelated patient and unassigned doctor cannot read private visit, consent, event or code data",
+        "status": "PASS"
+      },
+      {
+        "name": "actor-scoped idempotency and opaque recovery reject changed payload and cross-account replay",
+        "status": "PASS"
+      },
+      {
+        "name": "coverage, dependent authority, consent and stale quotes fail atomically",
+        "status": "PASS"
+      },
+      {
+        "name": "client-supplied fees cannot replace the server-reviewed quote",
+        "status": "PASS"
+      },
+      {
+        "name": "a real consent-write failure rolls back the appointment, reservation, offers and events together",
+        "status": "PASS"
+      },
+      {
+        "name": "server rejects past time, blocked date, DND and invalid occupied intervals",
+        "status": "PASS"
+      },
+      {
+        "name": "travel buffers protect pending capacity across home, clinic and video modes",
+        "status": "PASS"
+      },
+      {
+        "name": "legacy slot discovery is bounded and accounts for home-visit travel buffers",
+        "status": "PASS"
+      },
+      {
+        "name": "expiry releases only pending capacity and rejects acceptance despite a delayed expiry job",
+        "status": "PASS"
+      },
+      {
+        "name": "cancellation is version checked, recorded with reason and cannot resurrect a terminal visit",
+        "status": "PASS"
+      },
+      {
+        "name": "arrival is patient-issued, hashed at rest, visit bound and separate from consultation",
+        "status": "PASS"
+      },
+      {
+        "name": "wrong codes persist rate limits; expiry and code regeneration cannot bypass exhausted attempts",
+        "status": "PASS"
+      },
+      {
+        "name": "only assigned clinician can sign a saved encounter before completion; payment stays separate",
+        "status": "PASS"
+      },
+      {
+        "name": "cash settlement requires configured authority and exact quote; replay cannot issue duplicate receipts",
+        "status": "PASS"
+      },
+      {
+        "name": "unapproved settlement and unsupported payment/no-show callbacks cannot change clinical or payment state",
+        "status": "PASS"
+      },
+      {
+        "name": "reschedule holds preserve the accepted original until explicit acceptance and release a declined replacement",
+        "status": "PASS"
+      },
+      {
+        "name": "private consent is server-authored, audit events append only, and disabled notifications never claim delivery",
+        "status": "PASS"
+      },
+      {
+        "name": "operations access is explicitly scoped and excludes address, clinical notes, consent and OTP",
+        "status": "PASS"
+      },
+      {
+        "name": "disjoint overdue bookings cannot give one doctor two active home visits in either start order",
+        "status": "PASS"
+      },
+      {
+        "name": "late travel reserves from server time and cannot overrun a near-future commitment",
+        "status": "PASS"
+      },
+      {
+        "name": "revoked credentials block a new consultation while preserving documentation of care already started",
+        "status": "PASS"
+      },
+      {
+        "name": "the active home guard leaves generic appointments with no home status unchanged",
+        "status": "PASS"
+      },
+      {
+        "name": "expired replacement holds preserve the original and emit one versioned audit with notification jobs",
+        "status": "PASS"
+      },
+      {
+        "name": "well-formed incorrect and different-visit codes fail without consuming the correct code",
+        "status": "PASS"
+      }
+    ]
+  },
+  "hosted_existing": {
+    "command": "node --env-file=.env scripts/run-staging-tests-private.mjs existing",
+    "status": "PASS",
+    "tests": [
+      {
+        "name": "five synthetic users sign in through Supabase Auth",
+        "status": "PASS"
+      },
+      {
+        "name": "provider/facility signup grants only patient access and preserves pending requests",
+        "status": "PASS"
+      },
+      {
+        "name": "a patient cannot grant itself administrator access or approve a request",
+        "status": "PASS"
+      },
+      {
+        "name": "submitted data persists after logout and login",
+        "status": "PASS"
+      },
+      {
+        "name": "another patient cannot read or overwrite the saved form",
+        "status": "PASS"
+      },
+      {
+        "name": "family-plan RPC respects patient isolation",
+        "status": "PASS"
+      },
+      {
+        "name": "a submitted coordinator application has no patient-queue privileges",
+        "status": "PASS"
+      },
+      {
+        "name": "unverified doctors cannot claim ICU duties or verify themselves",
+        "status": "PASS"
+      },
+      {
+        "name": "two simultaneous claims produce exactly one accepted final-slot assignment",
+        "status": "PASS"
+      },
+      {
+        "name": "filled duty remains visible to its doctor and hospital, not unrelated users",
+        "status": "PASS"
+      },
+      {
+        "name": "editing registration identity revokes its previous verification",
+        "status": "PASS"
+      },
+      {
+        "name": "anonymous requests cannot call privileged staffing or family-plan RPCs",
+        "status": "PASS"
+      }
+    ],
+    "synthetic_user_cleanup": 5
+  },
+  "hosted_home": {
+    "command": "node --env-file=.env scripts/run-staging-tests-private.mjs home --browser",
+    "status": "PASS",
+    "completed_at": "2026-09-10T14:40:08.382Z",
+    "tests": [
+      {
+        "name": "scheduled booking persists across independent second-device sessions and explicit acceptance",
+        "status": "PASS"
+      },
+      {
+        "name": "unrelated users, patient acceptance and direct Data API writes cannot bypass privacy",
+        "status": "PASS"
+      },
+      {
+        "name": "simultaneous duplicate submissions return one ID; lost-response recovery uses another session",
+        "status": "PASS"
+      },
+      {
+        "name": "two independent patients racing for the same slot produce exactly one reservation",
+        "status": "PASS"
+      },
+      {
+        "name": "two doctors accepting the same pool request produce exactly one assigned doctor",
+        "status": "PASS"
+      },
+      {
+        "name": "one doctor accepting conflicting immediate requests through two sessions wins only once",
+        "status": "PASS"
+      },
+      {
+        "name": "cancellation-versus-acceptance race has one committed transition and no resurrection",
+        "status": "PASS"
+      },
+      {
+        "name": "immediate acceptance versus scheduled insertion shares one doctor capacity lock",
+        "status": "PASS"
+      },
+      {
+        "name": "overdue visits cannot both start travel, in either order or through concurrent doctor sessions",
+        "status": "PASS"
+      },
+      {
+        "name": "starting an overdue visit rechecks current time against the next confirmed commitment",
+        "status": "PASS"
+      },
+      {
+        "name": "delayed expiry and acceptance race cannot confirm an expired request or expire a confirmed one",
+        "status": "PASS"
+      },
+      {
+        "name": "failed, declined and expired rescheduling retain the original; accepted replacement releases only old capacity",
+        "status": "PASS"
+      },
+      {
+        "name": "travel, patient-only code, consultation, signed record and truthful cash settlement persist",
+        "status": "PASS"
+      },
+      {
+        "name": "visible browser UI uses the deployed API for both home-visit paths",
+        "status": "PASS"
+      },
+      {
+        "name": "Real-phone and Capacitor restart/resume/location permission acceptance",
+        "status": "BLOCKED"
+      },
+      {
+        "name": "Closed-app notification delivery and retry with approved credentials",
+        "status": "BLOCKED"
+      },
+      {
+        "name": "Online gateway signed-callback and refund integration",
+        "status": "BLOCKED"
+      }
+    ],
+    "browser_milestones": [
+      {
+        "name": "Definitive booking rejection preserves an editable form and permits corrected submission",
+        "status": "PASS"
+      },
+      {
+        "name": "Immediate request saves once and waiting does not accept it",
+        "status": "PASS"
+      },
+      {
+        "name": "Explicit doctor acceptance and both dashboards survive reload with the same ID",
+        "status": "PASS"
+      },
+      {
+        "name": "New York patient and Kolkata doctor retain the same appointment instant and provider timezone",
+        "status": "PASS"
+      },
+      {
+        "name": "Explicit travel, patient code, consultation, saved encounter and completion",
+        "status": "PASS"
+      },
+      {
+        "name": "Recorded cash receipt and clinical record persist after reload",
+        "status": "PASS"
+      },
+      {
+        "name": "Later booking, accepted reschedule and cancellation agree across both dashboards",
+        "status": "PASS"
+      }
+    ],
+    "synthetic_user_cleanup": 5,
+    "scope": "Enabled synthetic staging API and browser; blocked integrations are separate results."
+  },
+  "deployment": {
+    "migration_count": 10,
+    "source_checksums_verified": true,
+    "migrations": [
+      {
+        "name": "20260907094744_careconnect_fresh_baseline.sql",
+        "sha256": "91435d0cfe79acfe3fc1dca1891078df6b920656e1747c8c226425df9dde443a"
+      },
+      {
+        "name": "20260907095735_restrict_staging_function_access.sql",
+        "sha256": "2ebe11ea1a156b5d96f7201cb33fe99d69cd8d78cb4406ff7cc5c8978676d0a2"
+      },
+      {
+        "name": "20260907103546_rename_seed_hubs_mydox.sql",
+        "sha256": "4f41c4142823c1651caff2e4f24f10c1d9931ed8c59e4c9ac4e3c9e893151a33"
+      },
+      {
+        "name": "20260910131000_book_doctor_for_later.sql",
+        "sha256": "792c212ad301115b3c0c2e92e6b9830dd61ba6074e8367c7b700fec778f42557"
+      },
+      {
+        "name": "20260910141736_phase_f_reschedule.sql",
+        "sha256": "1812304c309340a5acace01252f561f503d92b0abe60c530169ed082b753f75f"
+      },
+      {
+        "name": "20260910183000_doctor_home_visit_flow.sql",
+        "sha256": "8d70c8af2bc56301f4d60bef8ce6bebb8a2fc5c984ad3e9f5f8d4d87987f313e"
+      },
+      {
+        "name": "20260910183100_secure_home_visit_lifecycle.sql",
+        "sha256": "4466799768ea31ff819ba9386fac79f50c5d7d61a931903983f3d10f246e6324"
+      },
+      {
+        "name": "20260910183200_home_visit_hosted_permissions.sql",
+        "sha256": "c008ab6522d3a4e8e7824229003a3d214dd32c43f68fa79a753be186000fa22d"
+      },
+      {
+        "name": "20260910183300_home_visit_active_capacity.sql",
+        "sha256": "a7709ae0d1cc14bdd1ebb7d8734fc23fc75f6c29508c5914e0cfb667b7e35790"
+      },
+      {
+        "name": "20260910183400_home_visit_hold_expiry_audit.sql",
+        "sha256": "869c736822f0df8d167ab665f685c4da2de81ad9ff0eb30f005e334643ac4119"
+      }
+    ],
+    "real_patients_enabled": false,
+    "pay_at_visit_enabled": false,
+    "notification_channel": "disabled",
+    "post_test_counts": {
+      "home_test_users": 0,
+      "original_test_users": 0,
+      "pilot_participants": 0
+    }
+  },
+  "security_advisor": {
+    "errors": 0,
+    "anonymous_elevated_rpc_warnings": 0,
+    "rls_enabled_no_policy": 15,
+    "authenticated_security_definer_function_executable": 26,
+    "auth_leaked_password_protection": 1
+  },
+  "test_harness_sha256": {
+    "scripts/test-home-visits-staging.mjs": "fa342a482e56dfbf1c3da517b3b4a221155f195bf27639a496b194fafc8d7146",
+    "scripts/test-home-visits-browser.mjs": "5c4bd875a42632fa6711913ac88e72be850c7387572ffb866d3c44263fe0c4d5",
+    "tests/home-visits.test.mjs": "587404597e859527694e0202b5e4309c943c762f92bd7d6710ea7085666e6713",
+    "tests/home-visit-jobs.test.mjs": "065268b8a9ba1b4ee43ecca23f052c46cb30138661fa45b09e5f58be8989265e",
+    "tests/home-visit-jobs-db.test.mjs": "9e6d1738dc75444907d66d71aa63c04de566544cf1aff986c382046ddb945b64",
+    "tests/database.test.mjs": "85a489bf1f4200cfcd8d53a9dbcdf4ea1a8f48e70ae8223376b90f36c0d65a02"
+  }
+}

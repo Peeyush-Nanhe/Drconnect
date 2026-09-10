@@ -14,52 +14,65 @@ export type Database = {
   }
   public: {
     Tables: {
-        doctor_appointments: {
-          Row: {
-            id: string
-            provider_id: string
-            patient_id: string
-            service: string
-            start_time: string
-            end_time: string
-            status: string
-            created_at: string
-          }
-          Insert: {
-            id?: string
-            provider_id: string
-            patient_id: string
-            service: string
-            start_time: string
-            end_time: string
-            status?: string
-            created_at?: string
-          }
-          Update: {
-            id?: string
-            provider_id?: string
-            patient_id?: string
-            service?: string
-            start_time?: string
-            end_time?: string
-            status?: string
-            created_at?: string
-          }
-          Relationships: [
-            {
-              foreignKeyName: "doctor_appointments_patient_id_fkey"
-              columns: ["patient_id"]
-              referencedRelation: "users"
-              referencedColumns: ["id"]
-            },
-            {
-              foreignKeyName: "doctor_appointments_provider_id_fkey"
-              columns: ["provider_id"]
-              referencedRelation: "users"
-              referencedColumns: ["id"]
-            }
-          ]
+      doctor_appointments: {
+        Row: {
+          id: string
+          patient_id: string
+          provider_id: string | null
+          dependent_id: string | null
+          service: string
+          mode: string | null
+          location: string | null
+          start_time: string
+          end_time: string
+          fee: number
+          currency: string
+          status: string
+          home_visit_status: string | null
+          address_snapshot: Json | null
+          provider_timezone: string | null
+          home_buffer_before_minutes: number
+          home_buffer_after_minutes: number
+          eta_minutes: number | null
+          en_route_at: string | null
+          doctor_arrived_at: string | null
+          arrived_at: string | null
+          consultation_started_at: string | null
+          completed_at: string | null
+          created_at: string
+          updated_at: string
         }
+        Insert: {
+          id?: string
+          patient_id: string
+          provider_id?: string | null
+          dependent_id?: string | null
+          service: string
+          mode?: string | null
+          location?: string | null
+          start_time: string
+          end_time: string
+          fee?: number
+          currency?: string
+          status?: string
+          created_at?: string
+        }
+        Update: {
+          provider_id?: string | null
+          service?: string
+          mode?: string | null
+          location?: string | null
+          start_time?: string
+          end_time?: string
+          fee?: number
+          currency?: string
+          status?: string
+        }
+        Relationships: [
+          { foreignKeyName: "doctor_appointments_patient_id_fkey"; columns: ["patient_id"]; referencedRelation: "users"; referencedColumns: ["id"] },
+          { foreignKeyName: "doctor_appointments_provider_id_fkey"; columns: ["provider_id"]; referencedRelation: "users"; referencedColumns: ["id"] }
+        ]
+      }
       account_role_requests: {
         Row: {
           created_at: string
@@ -2633,6 +2646,21 @@ export type Database = {
       }
     }
     Functions: {
+      hv_context: { Args: Record<PropertyKey, never>; Returns: Json }
+      hv_provider_settings: { Args: Record<PropertyKey, never>; Returns: Json }
+      hv_save_provider_settings: { Args: { p_settings: Json }; Returns: Json }
+      hv_discover: { Args: { p_query: Json }; Returns: Json }
+      hv_quote: { Args: { p_input: Json }; Returns: Json }
+      hv_create: { Args: { p_input: Json }; Returns: Json }
+      hv_recover: { Args: { p_key: string }; Returns: Json }
+      hv_list: { Args: Record<PropertyKey, never>; Returns: Json }
+      hv_action: { Args: { p_input: Json }; Returns: Json }
+      hv_arrival_code: { Args: { p_booking_id: string }; Returns: Json }
+      hv_verify_arrival: { Args: { p_input: Json }; Returns: Json }
+      hv_operations: { Args: Record<PropertyKey, never>; Returns: Json }
+      hv_expire_pending: { Args: { p_limit?: number; p_booking_ids?: string[] | null }; Returns: number }
+      hv_claim_notifications: { Args: { p_limit?: number }; Returns: Json }
+      hv_finish_notification: { Args: { p_id: string; p_lease_token: string; p_delivered: boolean; p_error?: string | null }; Returns: undefined }
         cancel_appointment: {
           Args: {
             p_appointment_id: string

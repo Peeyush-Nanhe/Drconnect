@@ -3,6 +3,8 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from "react"
 import { Link } from "@tanstack/react-router";
 import PatientDashboard, { PatientHeader, PatientBottomNav } from "@/features/mydox/PatientDashboard";
 import MyBookingsOverlay from "@/features/mydox/MyBookingsOverlay";
+import { HomeVisitBooking, HomeVisitEntry } from "@/features/mydox/home-visits/HomeVisitBooking";
+import { HomeVisitPanel, HomeVisitOperations } from "@/features/mydox/home-visits/HomeVisitPanel";
 import DrugDeliveryOverlay from "@/features/mydox/DrugDeliveryOverlay";
 import CareProgramExpansionOverlay from "@/features/mydox/CareProgramExpansionOverlay";
 import MentalWellnessHub from "@/features/mydox/MentalWellnessHub";
@@ -15,7 +17,7 @@ import { askTriage } from "@/lib/ask-ai.functions";
 import { analyzeReport } from "@/lib/report-analyzer.functions";
 import { transcribeAudio } from "@/lib/transcribe.functions";
 import { saveAiHistory, listAiHistory, getAiHistoryItem, toggleShareAiHistory, deleteAiHistory } from "@/lib/ai-history.functions";
-import { createCareRequest, cancelCareRequest, acceptCareRequest, completeCareRequest, failCareRequest, useLiveCareRequests, useRealtimeChat, useChatInbox, useRecentChatCounterparts, useMyMedicos, logRequestEvent, setRequestStage, useRequestAuditLog, useAdminAuditFeed, payAndGenerateOtp, verifyOtpAndStart, confirmOtpExchanged, TEST_DEFAULT_OTP, rateCareRequest, createCareProgramBooking, createCommunityRequest, useServiceReferrals, createServiceReferral, updateServiceReferralStatus, useRecentPatientsForDoctor, useSession, useLiveDoctorAppointments, createHomeVisitBooking, acceptHomeVisitBooking, startDoctorTravel, verifyHomeVisitArrival, completeHomeVisitEncounter } from "@/features/mydox/backend";
+import { createCareRequest, cancelCareRequest, acceptCareRequest, completeCareRequest, failCareRequest, useLiveCareRequests, useRealtimeChat, useChatInbox, useRecentChatCounterparts, useMyMedicos, logRequestEvent, setRequestStage, useRequestAuditLog, useAdminAuditFeed, payAndGenerateOtp, verifyOtpAndStart, confirmOtpExchanged, TEST_DEFAULT_OTP, rateCareRequest, createCareProgramBooking, createCommunityRequest, useServiceReferrals, createServiceReferral, updateServiceReferralStatus, useRecentPatientsForDoctor, useSession, useLiveDoctorAppointments } from "@/features/mydox/backend";
 import { SURGERY_ROLE_LABELS } from "@/features/mydox/surgery";
 import { SlotPickerCalendar } from "@/features/mydox/SlotPickerCalendar";
 import CancellationDialog from "@/features/mydox/CancellationDialog";
@@ -7232,10 +7234,8 @@ function DoctorApp({ req, hubReq, online, setOnline, onAccept, sevaActions }) {
     ...realBookings,
     calBk(0, 9, 0, "Priya Sharma", "Follow-up • MyDox Hub Koregaon Park", "Confirmed", C.primary),
     calBk(0, 11, 30, "Rahul Verma", "New consult • Video", "Confirmed", C.primary),
-    calBk(0, 16, 0, "Meena Tiwari", "Home visit • Bavdhan", "Confirmed", "#2563EB"),
     calBk(1, 10, 0, "Arjun Rao", "Diabetes review • MyDox Hub", "Scheduled", C.primary),
     calBk(1, 14, 0, "Sneha Patil", "Fever & cold • Walk-in", "Scheduled", C.clinic),
-    calBk(3, 12, 0, "Imran Sheikh", "Post-op check • Home visit", "Scheduled", "#2563EB"),
     calBk(-1, 15, 0, "Kavya Reddy", "General consult • Video", "Completed", C.faint),
   ].sort((a, b) => a.date.getTime() - b.date.getTime());
 
@@ -7313,6 +7313,7 @@ function DoctorApp({ req, hubReq, online, setOnline, onAccept, sevaActions }) {
         </div>
       </div>
       <div className="flex-1 overflow-y-auto px-5 py-4">
+        <HomeVisitPanel audience="doctor" />
         {/* Incoming alert — now at the top of the doctor view */}
         {online && activeIncoming && !acted && youCand && (
           <div className="rounded-2xl p-4 mb-4" style={{ background: C.surface, border: `1.5px solid ${activeIncoming.r.emergency ? C.emerg : activeIncoming.src === "hub" ? C.hub : C.primary}`, boxShadow: "0 8px 28px rgba(0,0,0,.12)", animation: "slidedown .35s cubic-bezier(.2,.8,.2,1)" }}>
@@ -7627,6 +7628,7 @@ function AdminApp({ req, hubReq }) {
                 ))}
               </div>
             </div>
+            <HomeVisitOperations />
             <AdminAIInsights />
             <AdminAuditFeedPanel />
           </>
@@ -13628,7 +13630,7 @@ function ProstheticsFlow({ onClose, onBook }) {
 /* ══════════════════════════════════════════════════════════════════
    PATIENT APP — PatientHome layout for "home" screen
 ══════════════════════════════════════════════════════════════════ */
-function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulanceActions, labOrder, labActions, sevaActions }) {
+function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulanceActions, labOrder, labActions, sevaActions, onHomeVisit }) {
   const [screen, setScreen] = useState("home");
   const [dashboardTab, setDashboardTab] = useState("home");
   const [bookingOpen, setBookingOpen] = useState(false);
@@ -14163,7 +14165,11 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
     return out.slice(0, 6);
   }, [q, searchActive, searchIndex]);
 
+  const openDoctorHomeVisit = (spec) => {
+    onHomeVisit({ initialProviderId: spec?.doctor ? (spec.doctor.userId || "unavailable-provider") : undefined, initialMode: spec?.scheduled ? "later" : "now" });
+  };
   const bookSvc = (svc) => {
+    if (visitMode === "home" && svc?.type === "doctor") { openDoctorHomeVisit(svc); return; }
     const homeHub = { id: "home", name: visitMode === "home" ? "Your Home" : visitMode === "online" ? "Online consult" : "MyDox Hub", type: visitMode === "home" ? "home" : "clinic", address: area + ", Pune", patEtaMin: visitMode === "home" ? 0 : 8, specialities: [], amenities: [] };
     const favKey = svc?.type === "doctor" ? ("doctor:" + (svc.id || svc.name || "gp")) : svc?.type;
     const localFavs = (favKey && preferred[favKey]) || [];
@@ -14179,12 +14185,14 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
 
   // The normal path: elective → confirm, emergency/standard → broadcast to the whole category
   const proceedNormal = (spec, fromOverlay) => {
+    if ((visitMode === "home" || spec.visitMode === "home") && (spec.type || activeTab) === "doctor") { openDoctorHomeVisit(spec); return; }
     if (spec.scheduled) {
       (async () => {
         try {
           const { data: { user } } = await supabase.auth.getUser();
           if (!user) throw new Error("Please log in to book appointments");
           if (!spec.doctor?.userId) throw new Error("Invalid provider selected");
+          if (visitMode === "home" || spec.visitMode === "home") throw new Error("Scheduled home visits for this service are unavailable. Please use its existing service booking option.");
 
           // Convert UI selected label/date/time to ISO format
           // spec.scheduled.date is e.g. "Thu Sep 10 2026"
@@ -14193,21 +14201,9 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
           if (isNaN(start.getTime())) throw new Error("Invalid date selected");
           const end = new Date(start.getTime() + 30 * 60000); // 30 min default duration
 
-          const isHome = visitMode === "home" || spec.visitMode === "home";
           const isVideo = visitMode === "online" || spec.visitMode === "online";
           let data;
-          if (isHome) {
-            data = await createHomeVisitBooking({
-              isNow: false,
-              providerId: spec.doctor.userId,
-              service: `${spec.name || "Doctor Consultation"} • Home visit`,
-              fee: spec.base || 500,
-              addressSnapshot: { full_address: `${area || "Pune"}, Maharashtra` },
-              consentVersion: HOME_VISIT_CONSENT.version,
-              startTime: start.toISOString(),
-              endTime: end.toISOString(),
-            });
-          } else {
+          {
             const modeSuffix = isVideo ? " • Video" : " • MyDox Hub";
             const serviceTitle = spec.name ? (spec.name.includes("•") || spec.name.includes("·") ? spec.name : `${spec.name}${modeSuffix}`) : `Consultation${modeSuffix}`;
             const { data: bId, error } = await supabase.rpc("atomic_book_appointment", {
@@ -14292,6 +14288,7 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
   const PREF_CATS = ["doctor", "therapist", "technician", "care", "nurse", "diet"];
   const handleBook = (spec, fromOverlay) => {
     if (!spec) return;
+    if ((visitMode === "home" || spec.visitMode === "home") && (spec.type || activeTab) === "doctor") { openDoctorHomeVisit(spec); return; }
     if (activeTab === "scan") { startScanDispatch(spec); if (fromOverlay) setServiceView(null); return; }
     if (spec.doctor) { proceedNormal(spec, fromOverlay); return; } // already chose a named doctor — no need to ask again
     const cat = activeTab;
@@ -14557,6 +14554,7 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
                   );
                 })}
               </div>
+              {visitMode === "home" && serviceView === "doctor" ? <HomeVisitEntry onOpen={onHomeVisit} /> : (
               <SpecialtyPickerModern
                 providerType={serviceView}
                 setProviderType={(t) => { setServiceView(t); setActiveTab(t); setSelectedSpec(null); }}
@@ -14572,6 +14570,7 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
                 preferredMap={preferred}
                 onTogglePreferred={(specId, name) => togglePreferred("doctor:" + specId, name)}
               />
+              )}
             </div>
           </div>
         )}
@@ -14756,7 +14755,7 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
                       })}
                 </div>
                 {/* Row 2: Book for later / Urgent pills — bigger & bolder */}
-                <div style={{ display: "flex", gap: 6 }}>
+                {!(visitMode === "home" && activeTab === "doctor") && <div style={{ display: "flex", gap: 6 }}>
                   {[{ val: false, icon: "📅", t: "Book for later", d: "Pick date & time", bg: "#2563EB" }, { val: true, icon: "⚡", t: "Urgent", d: "≤ 2 hrs · +20%", bg: "#EA580C" }].map(opt => {
                     const a = emergency === opt.val;
                     return (
@@ -14770,23 +14769,8 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
                       </button>
                     );
                   })}
-                </div>
-                {/* Home visit price slider — only when home mode selected */}
-                {visitMode === "home" && activeTab === "doctor" && (
-                  <div style={{ background: "#FFF7ED", border: "1.5px solid #FDBA74", borderRadius: 12, padding: "9px 12px" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
-                      <span style={{ fontWeight: 700, color: "#EA580C", fontSize: 11.5 }}>Home visit offer</span>
-                      <span style={{ fontWeight: 800, color: C.ink, fontSize: 16 }}>{inr(homePrice)}</span>
-                    </div>
-                    <input type="range" min="1500" max="3500" step="100" value={homePrice} onChange={e => setHomePrice(+e.target.value)}
-                      style={{ width: "100%", accentColor: "#EA580C", height: 5 }} />
-                    <div style={{ display: "flex", justifyContent: "space-between", marginTop: 2 }}>
-                      <span style={{ fontSize: 9.5, color: C.faint }}>Base ₹1,500</span>
-                      <span style={{ fontSize: 9.5, color: "#EA580C", fontWeight: 600 }}>Higher = faster accept</span>
-                      <span style={{ fontSize: 9.5, color: C.faint }}>Max ₹3,500</span>
-                    </div>
-                  </div>
-                )}
+                </div>}
+                {visitMode === "home" && activeTab === "doctor" && <HomeVisitEntry onOpen={onHomeVisit} />}
               </div>
 
 
@@ -14799,6 +14783,7 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
                 }} />
               )}
               <div style={{ padding: "10px 14px 0" }}>
+                {!(visitMode === "home" && activeTab === "doctor") && (
                 <SpecialtyPickerSimple
                   providerType={activeTab}
                   selectedSpec={selectedSpec}
@@ -14820,6 +14805,7 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
                   onTogglePreferred={(specId, name) => togglePreferred("doctor:" + specId, name)}
                   preselectedProviderName={preselProviderName}
                 />
+                )}
               </div>
 
             </div>{/* end sheet card top */}
@@ -14827,7 +14813,7 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
           </div>}
         </div>
         {/* Floating CTA — only when a service is actively selected (e.g. via AI booking); hidden in the normal picker flow */}
-        {bookingOpen && selectedService && (
+        {bookingOpen && selectedService && !(visitMode === "home" && activeTab === "doctor") && (
           <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "10px 14px 16px", background: "linear-gradient(to top,white 68%,rgba(255,255,255,0))", zIndex: 20 }}>
             {selectedService && (
               <div style={{ background: "white", border: `1px solid ${C.line}`, borderRadius: 11, padding: 4, display: "flex", gap: 4, marginBottom: 7, boxShadow: "0 2px 8px rgba(0,0,0,.05)" }}>
@@ -14852,10 +14838,10 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
               </div>
             )}
             <button disabled={!selectedService}
-              onClick={() => { if (!selectedService) return; if (visitMode === "home" && !consentOk) { setShowConsent(true); return; } setScreen("hub_discovery"); }}
+              onClick={() => { if (!selectedService) return; if (visitMode === "home" && (selectedService.type || activeTab) === "doctor") { openDoctorHomeVisit(selectedService); return; } if (visitMode === "home" && !consentOk) { setShowConsent(true); return; } setScreen("hub_discovery"); }}
               style={{ width: "100%", borderRadius: 16, padding: "13px 18px", border: "none", cursor: selectedService ? "pointer" : "default", background: selectedService ? (emergency ? `linear-gradient(135deg,${C.emerg},#FF8566)` : `linear-gradient(135deg,${C.primary},#0FB58A)`) : "#C4D0CC", color: "white", fontWeight: 800, fontSize: 14.5, display: "flex", alignItems: "center", justifyContent: "center", gap: 7, boxShadow: selectedService ? `0 8px 24px -6px ${accentCol}AA` : "none", transition: "all .2s", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
               <Navigation size={16} />
-              {selectedService ? (visitMode === "home" ? `Home Visit · ${inr(homePrice)}` : visitMode === "online" ? `Online Consult · ${selectedService.shortName || selectedService.name.split(" ")[0]}` : `Find${emergency ? " Emergency" : ""} Hubs for ${selectedService.shortName || selectedService.name.split(" ")[0]}`) : "Select a speciality above"}
+              {selectedService ? (visitMode === "home" ? (activeTab === "doctor" ? "Check home-visit availability" : `Home Visit · ${inr(homePrice)}`) : visitMode === "online" ? `Online Consult · ${selectedService.shortName || selectedService.name.split(" ")[0]}` : `Find${emergency ? " Emergency" : ""} Hubs for ${selectedService.shortName || selectedService.name.split(" ")[0]}`) : "Select a speciality above"}
             </button>
           </div>
         )}
@@ -17076,6 +17062,7 @@ export default function MyDoxFull({ initialView } = {}) {
   const [req, setReq] = useState(null);
   const [hubReq, setHubReq] = useState(null);
   // Home-visit consent gate: modal shown before actions.book fires for a home visit.
+  const [homeVisitBooking, setHomeVisitBooking] = useState(null);
   const [homeConsentGate, setHomeConsentGate] = useState(null); // { run: () => void }
   const pendingConsentRef = useRef(false);
   // Shared scan dispatch: hub broadcasts → Scan Centre receives & accepts → hub flow advances
@@ -17339,6 +17326,12 @@ export default function MyDoxFull({ initialView } = {}) {
   // (req.dbId set), we insert a consents row keyed to that booking id.
   const _bookRaw = actions.book;
   actions.book = (args) => {
+    if (args?.hub?.type === "home" && args?.spec?.type === "doctor") {
+      const namedId = args.spec.doctor?.userId || args.myDoctorId || args.preferredId;
+      const requestedNamed = args.spec.doctor || args.myDoctorName || args.preferredName || args.preferredDoctor;
+      setHomeVisitBooking({ initialProviderId: namedId || (requestedNamed ? "unavailable-provider" : undefined), initialMode: args.spec.scheduled ? "later" : "now" });
+      return;
+    }
     if (args?.hub?.type === "home") {
       setHomeConsentGate({
         run: () => {
@@ -17434,7 +17427,7 @@ export default function MyDoxFull({ initialView } = {}) {
             view === "admin" ? <AdminApp req={req} hubReq={hubReq} /> : <HubPortalApp req={req} hubReq={hubReq} hubActions={hubActions} scanDispatch={scanDispatch} scanDispatchActions={scanDispatchActions} />
           ) : (
             <div className="flex-1 min-h-0" style={{ overflowY: "auto", WebkitOverflowScrolling: "touch", paddingBottom: "env(safe-area-inset-bottom)" }}>
-              {view === "patient" ? <PatientApp req={req} actions={actions} scanDispatch={scanDispatch} scanDispatchActions={scanDispatchActions} ambulanceActions={ambulanceActions} labOrder={labOrder} labActions={labActions} sevaActions={sevaActions} />
+              {view === "patient" ? <PatientApp onHomeVisit={setHomeVisitBooking} req={req} actions={actions} scanDispatch={scanDispatch} scanDispatchActions={scanDispatchActions} ambulanceActions={ambulanceActions} labOrder={labOrder} labActions={labActions} sevaActions={sevaActions} />
                 : view === "hub" ? <HubPortalApp req={req} hubReq={hubReq} hubActions={hubActions} scanDispatch={scanDispatch} scanDispatchActions={scanDispatchActions} sevaActions={sevaActions} />
                   : view === "diagnostic" ? <DiagnosticCentreApp scanDispatch={scanDispatch} scanDispatchActions={scanDispatchActions} />
                     : view === "ambulance" ? <AmbulanceApp ambulanceJob={ambulanceJob} ambulanceActions={ambulanceActions} scanDispatch={scanDispatch} />
@@ -17450,6 +17443,7 @@ export default function MyDoxFull({ initialView } = {}) {
         </div>
       </div>
 
+      {homeVisitBooking && <HomeVisitBooking {...homeVisitBooking} onClose={() => setHomeVisitBooking(null)} />}
       {homeConsentGate && (
         <HomeVisitConsentGate
           onCancel={() => setHomeConsentGate(null)}

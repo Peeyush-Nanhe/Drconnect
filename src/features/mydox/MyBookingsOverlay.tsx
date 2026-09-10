@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useSession, cancelDoctorAppointment, rescheduleDoctorAppointment } from "@/features/mydox/backend";
 import { SlotPickerCalendarStandalone } from "./SlotPickerCalendar";
+import { HomeVisitPanel } from "./home-visits/HomeVisitPanel";
 type Module =
   | "Doctor / Nurse"
   | "Lab / Scan"
@@ -107,7 +108,7 @@ export default function MyBookingsOverlay({ onClose, onRebook }: { onClose: () =
         supabase.from("blood_bank_activity").select("id, activity_type, blood_group, units, hospital, status, created_at").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
         supabase.from("surgery_bookings").select("id, procedure, patient_name, mode, status, created_at").eq("facility_id", uid).order("created_at", { ascending: false }).limit(100),
         supabase.from("medicine_orders").select("id, pharmacy_name, delivery_speed, items, prescription_attached, total, status, created_at").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
-        supabase.from("doctor_appointments").select("id, service, mode, status, home_visit_status, address_snapshot, arrival_otp, eta_minutes, start_time, end_time, created_at, provider_id").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
+        supabase.from("doctor_appointments").select("id, service, mode, status, start_time, end_time, created_at, provider_id").eq("patient_id", uid).or("mode.is.null,mode.not.in.(home,home_visit)").order("created_at", { ascending: false }).limit(100),
       ]);
 
       const rows: Item[] = [];
@@ -193,6 +194,7 @@ export default function MyBookingsOverlay({ onClose, onRebook }: { onClose: () =
         )}
 
         <main style={{ flex: 1, overflowY: "auto", padding: 20 }}>
+          <HomeVisitPanel audience="patient" />
           {loading ? (
             <EmptyMsg text="Loading your bookings…" />
           ) : visible.length === 0 ? (
@@ -239,14 +241,7 @@ export default function MyBookingsOverlay({ onClose, onRebook }: { onClose: () =
                             </button>
                           )}
                         </div>
-                        {it.raw?.arrival_otp && ["en_route", "arrived"].includes(it.raw.home_visit_status || it.status) && (
-                          <div style={{ background: "#F0FDF4", border: "1.5px dashed #16A34A", borderRadius: 10, padding: "8px 12px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                            <span style={{ fontSize: 12, color: "#15803D", fontWeight: 700 }}>
-                              🔑 Doctor Arrival Code: <strong style={{ fontSize: 15, color: "#166534", letterSpacing: 1 }}>{it.raw.arrival_otp}</strong>
-                            </span>
-                            {it.raw?.eta_minutes && <span style={{ fontSize: 11, color: "#15803D", fontWeight: 800 }}>ETA ~{it.raw.eta_minutes}m</span>}
-                          </div>
-                        )}
+
                       </li>
                     ))}
                   </ul>

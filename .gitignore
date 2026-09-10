@@ -20,6 +20,7 @@ dist-ssr
 !.env.example
 **/supabase/.temp/
 **/supabase/.branches/
+.supabase/
 android/.gradle/
 android/build/
 android/app/build/

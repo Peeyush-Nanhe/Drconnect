@@ -1,87 +1,56 @@
-# Doctor Home Visit Implementation Plan
+# Doctor Home Visit implementation audit and plan
 
-Prepared: 10 September 2026  
-Branch: `Dev` (Working tree clean)  
-Baseline Status: `npm run check` PASSED (Typecheck, Lint, 19 DB Tests, Build)
+Audit date: 10 September 2026. This supersedes the earlier plan's unverified completion claims.
 
-## 1. Branch Audit & Environment
-- **Repository Branch**: `Dev`
-- **Target Staging Environment**: `pyrlvjeectjikvfksukb`
-- **Baseline Verification**: Ran `npm run check` synchronously — built clean with 0 TypeScript/Lint/DB errors.
+## Baseline and branch
 
-## 2. Current Capabilities & Remaining Gaps
+- Active branch at intake: `Dev`, commit `f22b6e74ff0ae40729c622f04e5cd1878bbecaeb`.
+- Fetched origin before coding. `origin/main` was `b76486d16e48ce1aaa26af7ad677076847c2fa9c`; it is an ancestor of Dev, with twelve newer commits retained. `origin/Dev` was `7c2d1133d99c85a55301f056d0967636d4a8731b`.
+- Tracked tree was clean; untracked `.supabase/` telemetry/traces are unrelated and must remain private and uncommitted.
+- Baseline `npm run check`: PASS, TypeScript, ESLint (0 errors, 157 existing warnings), 20 PGlite tests and production build. These tests did not establish confidentiality, concurrency or end-to-end safety.
+- Read workspace instructions, README, BUILD_NOTES, staging/README, Android guidance, docs/BOOK_DOCTOR_PLAN and the supplied request. The four separately named historical audit/update documents were not present.
 
-### Existing Capabilities
-1. `doctor_appointments` table & RPCs (`get_provider_slots`, `atomic_book_appointment`, `cancel_appointment`, `reschedule_appointment`) exist in migration files `20260910131000_book_doctor_for_later.sql` and `20260910141736_phase_f_reschedule.sql`.
-2. `HomeVisitConsentGate.jsx` and `HOME_VISIT_CONSENT` text versioning exist.
-3. Base `care_requests` handles immediate urgent dispatch.
+## Environment and schema mapping
 
-### Remaining Gaps
-1. **Home Visit Lifecycle Extension**: `doctor_appointments` and `care_requests` lack the explicit lifecycle states (`requested/pending` → `confirmed` → `en_route` → `arrived` → `in_consultation` → `completed`).
-2. **Arrival Verification**: No server-generated OTP check-in mechanism to transition from `arrived` to `in_consultation` securely without client spoofing or static `0000` bypasses.
-3. **Address Snapshot & Consent Linking**: Address snapshot (address, landmark, pincode) and consent metadata must be stored atomically with the booking.
-4. **Doctor Travel & Acceptance**: Visit Now immediate requests need atomic provider acceptance (`accept_home_visit_now`) with conflict checking against scheduled commitments and travel buffers.
-5. **Clinical Record & Completion**: Transition from `in_consultation` to `completed` requires saving a clinical encounter record.
-6. **Settlement**: Recorded pay-at-visit settlement must be stored truthfully upon visit completion.
+Approved staging is **`pyrlvjeectjikvfksukb`**. Management API confirmed MyDox Staging, Mumbai, PostgreSQL 17. Both current browser (`VITE_SUPABASE_URL`) and server (`SUPABASE_URL`) configuration point to it. No key values were displayed or exported.
 
----
+Android uses `com.mydox.app`. Emulator/USB preview loads the same running TanStack server at the configured development URL. No production hosted origin or installed-device build was verified; a static Capacitor bundle cannot supply TanStack server functions.
 
-## 3. Schema Mapping & Proposed Migration
+| Concern | Actual implementation at intake |
+| --- | --- |
+| Canonical future/home appointment | `doctor_appointments` |
+| Immediate generic dispatch | `care_requests` |
+| Future hours, timezone, DND and leave | `provider_availability` |
+| Medical registration verification | admin-protected `care_physician_profiles.registration_verified` |
+| Trusted account role/subtype | `user_roles`, approved `account_role_requests` |
+| Other doctor capacity | `staffing_assignments` / `staffing_jobs`, generic `care_requests` |
+| Existing clinical records | Legacy EMR/prescription UI uses demo state; no durable generic medical-record table exists in this migration history. New signed home encounters are visit-linked and do not reuse that demo prescription path. |
+| Background transport scaffold | `device_tokens`, `push_deliveries`, `src/lib/push.server.ts` |
+| Missing historical names | No `scheduled_appointments`, `scheduled_appointment_events`, scheduling directory or occupancy ledger exists in this checkout |
 
-Create `staging/supabase/migrations/20260910183000_doctor_home_visit_flow.sql`:
-- Extend `doctor_appointments` and `care_requests` to store:
-  - `home_visit_status`: `pending`, `confirmed`, `en_route`, `arrived`, `in_consultation`, `completed`, `cancelled`, `declined`, `expired`, `no_show`.
-  - `address_snapshot`: JSONB storing full address, pincode, landmark, contact phone.
-  - `arrival_otp`: TEXT (6-digit hashed OTP generated on `en_route`/`arrived`).
-  - `otp_attempts`: INT (rate limiting attempts).
-  - `clinical_notes`: JSONB (saved encounter summary).
-  - `payment_settlement`: JSONB (recorded collection details).
-  - `consent_version`: TEXT.
-  - `consent_timestamp`: TIMESTAMPTZ.
+Remote history at audit contains `20260907094744`, `20260907095735`, `20260907103546`, `20260910131000`. Local `20260910141736_phase_f_reschedule.sql` and `20260910183000_doctor_home_visit_flow.sql` were **not applied**. Preserve all existing migration bytes and the baseline source manifest. Only `staging/supabase/migrations` owns this target.
 
-- RPCs:
-  1. `create_home_visit_booking`: Atomic RPC to create Visit Now or Book for Later home visit with consent and address snapshot.
-  2. `accept_home_visit_booking`: Atomic provider claim/acceptance RPC with overlap and travel buffer checks.
-  3. `update_home_visit_travel`: Doctor starts travel, sets `en_route` and ETA, generates arrival OTP.
-  4. `verify_home_visit_arrival`: Verifies patient OTP, transitions to `in_consultation`.
-  5. `complete_home_visit_encounter`: Saves clinical notes and completes visit with settlement record.
+## Reproduced defects
 
----
+Serial PGlite reproduction against the original migration demonstrated: missing address/consent and client fees accepted; another patient could read pending private addresses and replay another actor's idempotency key; a patient with no doctor role could accept; the clinician received the arrival code; invalid-code attempts rolled back to zero; empty clinical summary could complete and default to settled.
 
-## 4. Proposed Implementation Steps & Acceptance Gates
+Frontend inspection found direct inserts followed by best-effort address/consent updates, direct status mutations, client-generated OTP and a `123456` bypass, plus legacy Now simulation/countdown dispatch. Later could display confirmed despite a pending row. Existing newer calendar styling is retained.
 
-### Gate A: Architecture & Audit (COMPLETE)
-- Created `docs/home-visits/PLAN.md`.
-- Baseline check verified clean build.
+## Implementation and acceptance gates
 
-### Gate B: Database Migration & Security
-- Add additive migration `20260910183000_doctor_home_visit_flow.sql`.
-- Apply strict RLS: Patients see own bookings; assigned providers see assigned visits; unauthorized users cannot read OTP or private addresses.
+1. Keep `doctor_appointments` as the canonical identity. Add restricted home metadata and RPCs; retire unsafe home RPC access and route doctor/home UI to a focused module.
+2. Validate actor/patient authority, approved doctor subtype and registration, configured coverage, fees, timezone, duration, travel, hours/leave/DND, and consent. Store a server quote and atomic actor-scoped idempotency fingerprint.
+3. Reserve capacity under one provider lock across appointments and relevant dispatch/staffing assignments. Verify with independent authenticated hosted sessions, not only serial PGlite.
+4. Implement explicit confirmation, travel, patient-issued server check-in, consultation, signed record, separate settlement and exceptions. Keep codes and private offer details out of doctor discovery and generic table reads.
+5. Persist expiry/outbox jobs, state/version events, rescheduling holds and recovery references; reconcile both dashboards after reconnect/restart.
+6. Run local full checks, hosted synthetic Auth/API/race tests, and browser checks. Record unexecuted mobile and integration tests as BLOCKED/NOT RUN. Deploy additive changes only after review, backup and local tests.
 
-### Gate C: Core Service Integration
-- Update `src/features/mydox/backend.ts` and `src/lib/` to invoke new atomic RPCs for Visit Now and Book for Later home visits.
-- Connect consent recording in `HomeVisitConsentGate.jsx` to atomic booking.
+## Policy decisions and release gate
 
-### Gate D: Patient & Doctor UI Workflows
-- **Patient View**: Address input, self/dependent selector, consent gate, Visit Now / Book for Later choice, live status tracking (Confirmed → En Route → Arrival OTP display → In Consultation → Completion Receipt).
-- **Doctor View**: Request accept dialog, "Start Travel" action, Arrival Code verification input, Clinical encounter note form, Complete & Record Payment action.
+Real-patient use stays disabled. Synthetic test participants can be explicitly allowlisted by the staging harness and removed afterward. New timeouts and operating limits are staging proposals, not owner-approved commercial policy.
 
-### Gate E: Automated Testing & Verification
-- Add automated PGlite integration tests in `tests/database.test.mjs` testing:
-  - Atomic booking & concurrency checks.
-  - OTP verification rate-limiting & invalid code rejection.
-  - Role-based authorization & RLS security.
-- Run `npm run check` to ensure TypeScript, Linting, 19+ DB tests, and Vite build pass 100%.
+Unresolved: coverage/service restrictions; doctor fees, buffers and hours; acceptance/cancellation/no-show evidence rules; real-patient consent wording; pay-at-visit approval; notification channel; coordinator check-in exceptions; gateway/refund integration. Do not invent triage criteria, charges, taxes or refunds.
 
----
+At audit, `FCM_SERVICE_ACCOUNT_JSON` was not valid service-account JSON and `PUSH_DISPATCH_SECRET` was missing or a placeholder. No functional background transport or registered test phone is established. Payment gateway configuration is absent. Background sends and online payment remain disabled.
 
-## 5. Acceptance Criteria Checklist
-- [ ] Self-booking and authorized dependent booking.
-- [ ] Full address snapshot and consent saved atomically.
-- [ ] Both Visit Now and Book for Later paths work with real database persistence.
-- [ ] Explicit doctor acceptance with capacity & travel buffer checks.
-- [ ] En route status with travel tracking/ETA.
-- [ ] Secure server-generated OTP arrival check-in.
-- [ ] Clinical encounter note mandatory before visit completion.
-- [ ] Truthful settlement recording on completion.
-- [ ] Automated tests pass (`npm run check`).
+Final evidence is in [TEST_REPORT.md](TEST_REPORT.md). The state matrix, configuration, deployment and recovery instructions are in [OPERATIONS.md](OPERATIONS.md).

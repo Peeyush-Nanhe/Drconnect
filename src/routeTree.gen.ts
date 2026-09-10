@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as BookingsRouteImport } from './routes/bookings'
 import { Route as DesignPreviewRouteImport } from './routes/design-preview'
+import { Route as HomeVisitsRouteImport } from './routes/home-visits'
 import { Route as MapRouteImport } from './routes/map'
 import { Route as McpRouteImport } from './routes/mcp'
 import { Route as StitchPreviewRouteImport } from './routes/stitch-preview'
@@ -35,6 +36,7 @@ import { Route as ProviderEarningsRouteImport } from './routes/provider.earnings
 import { Route as DotlovableOauthConsentRouteImport } from './routes/[.]lovable.oauth.consent'
 import { Route as Char91DotmcpChar93InvokeToolToolRouteImport } from './routes/[.mcp]/invoke-tool/$tool'
 import { Route as SharedAiTokenRouteImport } from './routes/shared.ai.$token'
+import { Route as ApiInternalHomeVisitsJobsRouteImport } from './routes/api/internal/home-visits/jobs'
 import { Route as ApiPublicPushDispatchRouteImport } from './routes/api/public/push/dispatch'
 
 const IndexRoute = IndexRouteImport.update({
@@ -55,6 +57,11 @@ const BookingsRoute = BookingsRouteImport.update({
 const DesignPreviewRoute = DesignPreviewRouteImport.update({
   id: '/design-preview',
   path: '/design-preview',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HomeVisitsRoute = HomeVisitsRouteImport.update({
+  id: '/home-visits',
+  path: '/home-visits',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MapRoute = MapRouteImport.update({
@@ -170,6 +177,12 @@ const SharedAiTokenRoute = SharedAiTokenRouteImport.update({
   path: '/shared/ai/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiInternalHomeVisitsJobsRoute =
+  ApiInternalHomeVisitsJobsRouteImport.update({
+    id: '/api/internal/home-visits/jobs',
+    path: '/api/internal/home-visits/jobs',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicPushDispatchRoute = ApiPublicPushDispatchRouteImport.update({
   id: '/api/public/push/dispatch',
   path: '/api/public/push/dispatch',
@@ -181,6 +194,7 @@ export interface FileRoutesByFullPath {
   '/auth': typeof AuthRoute
   '/bookings': typeof BookingsRoute
   '/design-preview': typeof DesignPreviewRoute
+  '/home-visits': typeof HomeVisitsRoute
   '/map': typeof MapRoute
   '/mcp': typeof McpRoute
   '/stitch-preview': typeof StitchPreviewRoute
@@ -203,6 +217,7 @@ export interface FileRoutesByFullPath {
   '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
   '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
   '/shared/ai/$token': typeof SharedAiTokenRoute
+  '/api/internal/home-visits/jobs': typeof ApiInternalHomeVisitsJobsRoute
   '/api/public/push/dispatch': typeof ApiPublicPushDispatchRoute
 }
 export interface FileRoutesByTo {
@@ -210,6 +225,7 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/bookings': typeof BookingsRoute
   '/design-preview': typeof DesignPreviewRoute
+  '/home-visits': typeof HomeVisitsRoute
   '/map': typeof MapRoute
   '/mcp': typeof McpRoute
   '/stitch-preview': typeof StitchPreviewRoute
@@ -232,6 +248,7 @@ export interface FileRoutesByTo {
   '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
   '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
   '/shared/ai/$token': typeof SharedAiTokenRoute
+  '/api/internal/home-visits/jobs': typeof ApiInternalHomeVisitsJobsRoute
   '/api/public/push/dispatch': typeof ApiPublicPushDispatchRoute
 }
 export interface FileRoutesById {
@@ -240,6 +257,7 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/bookings': typeof BookingsRoute
   '/design-preview': typeof DesignPreviewRoute
+  '/home-visits': typeof HomeVisitsRoute
   '/map': typeof MapRoute
   '/mcp': typeof McpRoute
   '/stitch-preview': typeof StitchPreviewRoute
@@ -262,6 +280,7 @@ export interface FileRoutesById {
   '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
   '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
   '/shared/ai/$token': typeof SharedAiTokenRoute
+  '/api/internal/home-visits/jobs': typeof ApiInternalHomeVisitsJobsRoute
   '/api/public/push/dispatch': typeof ApiPublicPushDispatchRoute
 }
 export interface FileRouteTypes {
@@ -271,6 +290,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/bookings'
     | '/design-preview'
+    | '/home-visits'
     | '/map'
     | '/mcp'
     | '/stitch-preview'
@@ -293,6 +313,7 @@ export interface FileRouteTypes {
     | '/.lovable/oauth/consent'
     | '/.mcp/invoke-tool/$tool'
     | '/shared/ai/$token'
+    | '/api/internal/home-visits/jobs'
     | '/api/public/push/dispatch'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -300,6 +321,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/bookings'
     | '/design-preview'
+    | '/home-visits'
     | '/map'
     | '/mcp'
     | '/stitch-preview'
@@ -322,6 +344,7 @@ export interface FileRouteTypes {
     | '/.lovable/oauth/consent'
     | '/.mcp/invoke-tool/$tool'
     | '/shared/ai/$token'
+    | '/api/internal/home-visits/jobs'
     | '/api/public/push/dispatch'
   id:
     | '__root__'
@@ -329,6 +352,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/bookings'
     | '/design-preview'
+    | '/home-visits'
     | '/map'
     | '/mcp'
     | '/stitch-preview'
@@ -351,6 +375,7 @@ export interface FileRouteTypes {
     | '/.lovable/oauth/consent'
     | '/.mcp/invoke-tool/$tool'
     | '/shared/ai/$token'
+    | '/api/internal/home-visits/jobs'
     | '/api/public/push/dispatch'
   fileRoutesById: FileRoutesById
 }
@@ -359,6 +384,7 @@ export interface RootRouteChildren {
   AuthRoute: typeof AuthRoute
   BookingsRoute: typeof BookingsRoute
   DesignPreviewRoute: typeof DesignPreviewRoute
+  HomeVisitsRoute: typeof HomeVisitsRoute
   MapRoute: typeof MapRoute
   McpRoute: typeof McpRoute
   StitchPreviewRoute: typeof StitchPreviewRoute
@@ -381,6 +407,7 @@ export interface RootRouteChildren {
   DotlovableOauthConsentRoute: typeof DotlovableOauthConsentRoute
   Char91DotmcpChar93InvokeToolToolRoute: typeof Char91DotmcpChar93InvokeToolToolRoute
   SharedAiTokenRoute: typeof SharedAiTokenRoute
+  ApiInternalHomeVisitsJobsRoute: typeof ApiInternalHomeVisitsJobsRoute
   ApiPublicPushDispatchRoute: typeof ApiPublicPushDispatchRoute
 }
 
@@ -412,6 +439,13 @@ declare module '@tanstack/react-router' {
       path: '/design-preview'
       fullPath: '/design-preview'
       preLoaderRoute: typeof DesignPreviewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/home-visits': {
+      id: '/home-visits'
+      path: '/home-visits'
+      fullPath: '/home-visits'
+      preLoaderRoute: typeof HomeVisitsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/map': {
@@ -568,6 +602,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SharedAiTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/internal/home-visits/jobs': {
+      id: '/api/internal/home-visits/jobs'
+      path: '/api/internal/home-visits/jobs'
+      fullPath: '/api/internal/home-visits/jobs'
+      preLoaderRoute: typeof ApiInternalHomeVisitsJobsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/push/dispatch': {
       id: '/api/public/push/dispatch'
       path: '/api/public/push/dispatch'
@@ -583,6 +624,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthRoute: AuthRoute,
   BookingsRoute: BookingsRoute,
   DesignPreviewRoute: DesignPreviewRoute,
+  HomeVisitsRoute: HomeVisitsRoute,
   MapRoute: MapRoute,
   McpRoute: McpRoute,
   StitchPreviewRoute: StitchPreviewRoute,
@@ -606,6 +648,7 @@ const rootRouteChildren: RootRouteChildren = {
   DotlovableOauthConsentRoute: DotlovableOauthConsentRoute,
   Char91DotmcpChar93InvokeToolToolRoute: Char91DotmcpChar93InvokeToolToolRoute,
   SharedAiTokenRoute: SharedAiTokenRoute,
+  ApiInternalHomeVisitsJobsRoute: ApiInternalHomeVisitsJobsRoute,
   ApiPublicPushDispatchRoute: ApiPublicPushDispatchRoute,
 }
 export const routeTree = rootRouteImport

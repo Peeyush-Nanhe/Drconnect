@@ -42,6 +42,7 @@ before(async () => {
     create function auth.role() returns text language sql stable as
       $$ select nullif(current_setting('request.jwt.claim.role', true), '') $$;
     grant usage on schema public, auth to anon, authenticated, service_role;
+    alter default privileges in schema public grant execute on functions to anon, authenticated, service_role;
     create publication supabase_realtime;
   `);
   const dir = new URL('../staging/supabase/migrations/', import.meta.url);
@@ -180,63 +181,13 @@ test('no privileged public function is executable anonymously and trigger functi
   assert.deepEqual(result.rows, []);
 });
 
-test('doctor home visit flow: create, accept, travel, OTP check-in, and clinical completion', async () => {
-  // 1. Patient creates a Visit Now home visit request
-  const addressJson = JSON.stringify({ full_address: '123 Main St, Pune', pincode: '411001', phone: '9876543210' });
-  const createRes = await actor(
-    ids.patient,
-    "select public.create_home_visit_booking(true, null, 'Doctor Home Visit', 500.00, $1::jsonb, 'v1.0') as id",
-    [addressJson]
-  );
-  const bookingId = createRes.rows[0].id;
-  assert.ok(bookingId);
-
-  // Check initial state
-  const initBooking = await actor(ids.patient, "select status, home_visit_status, address_snapshot from public.doctor_appointments where id=$1", [bookingId]);
-  assert.equal(initBooking.rows[0].status, 'pending');
-  assert.equal(initBooking.rows[0].home_visit_status, 'pending');
-  assert.equal(initBooking.rows[0].address_snapshot.full_address, '123 Main St, Pune');
-
-  // 2. Doctor accepts the home visit
-  await actor(ids.provider, "select public.accept_home_visit_booking($1)", [bookingId]);
-  const acceptedBooking = await actor(ids.patient, "select status, home_visit_status, provider_id from public.doctor_appointments where id=$1", [bookingId]);
-  assert.equal(acceptedBooking.rows[0].status, 'confirmed');
-  assert.equal(acceptedBooking.rows[0].home_visit_status, 'confirmed');
-  assert.equal(acceptedBooking.rows[0].provider_id, ids.provider);
-
-  // 3. Doctor starts travel, generating server-side OTP
-  const travelRes = await actor(ids.provider, "select public.start_doctor_travel($1, 20) as otp", [bookingId]);
-  const otp = travelRes.rows[0].otp;
-  assert.equal(typeof otp, 'string');
-  assert.equal(otp.length, 6);
-
-  const travelBooking = await actor(ids.patient, "select home_visit_status, eta_minutes from public.doctor_appointments where id=$1", [bookingId]);
-  assert.equal(travelBooking.rows[0].home_visit_status, 'en_route');
-  assert.equal(travelBooking.rows[0].eta_minutes, 20);
-
-  // 4. Verification with invalid OTP fails
-  await assert.rejects(
-    actor(ids.provider, "select public.verify_home_visit_arrival($1, '000000')", [bookingId]),
-    /Invalid arrival verification code/
-  );
-
-  // Verification with valid OTP succeeds
-  const verifyRes = await actor(ids.provider, "select public.verify_home_visit_arrival($1, $2)", [bookingId, otp]);
-  assert.equal(verifyRes.rows[0].verify_home_visit_arrival, true);
-
-  const arrivedBooking = await actor(ids.patient, "select home_visit_status from public.doctor_appointments where id=$1", [bookingId]);
-  assert.equal(arrivedBooking.rows[0].home_visit_status, 'in_consultation');
-
-  // 5. Clinician completes encounter with summary & settlement
-  const clinicalNotes = JSON.stringify({ summary: 'Patient treated for fever', diagnosis: 'Acute viral illness', prescription: ['Paracetamol 500mg'] });
-  const settlement = JSON.stringify({ method: 'pay_at_visit', amount: 500.00, status: 'settled' });
-
-  await actor(ids.provider, "select public.complete_home_visit_encounter($1, $2::jsonb, $3::jsonb)", [bookingId, clinicalNotes, settlement]);
-
-  const completedBooking = await actor(ids.patient, "select status, home_visit_status, clinical_notes, payment_settlement from public.doctor_appointments where id=$1", [bookingId]);
-  assert.equal(completedBooking.rows[0].status, 'completed');
-  assert.equal(completedBooking.rows[0].home_visit_status, 'completed');
-  assert.equal(completedBooking.rows[0].clinical_notes.summary, 'Patient treated for fever');
-  assert.equal(completedBooking.rows[0].payment_settlement.status, 'settled');
+test('retired home-visit RPCs cannot bypass the canonical secured lifecycle', async () => {
+  for (const name of ['create_home_visit_booking', 'accept_home_visit_booking', 'start_doctor_travel', 'verify_home_visit_arrival', 'complete_home_visit_encounter']) {
+    const result = await db.query(`select p.proname from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+      where n.nspname='public' and p.proname=$1 and has_function_privilege('authenticated',p.oid,'EXECUTE')`, [name]);
+    assert.deepEqual(result.rows, [], `${name} must not remain a client bypass`);
+  }
 });
 
+// Detailed home-visit policy, persistence and lifecycle checks live in
+// home-visits.test.mjs. Real independent-session races run in the staging suite.

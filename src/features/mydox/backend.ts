@@ -35,21 +35,27 @@ export function useSession(): SessionState {
 
   useEffect(() => {
     let mounted = true;
+    let generation = 0;
+    let receivedAuthEvent = false;
 
-    const hydrate = async (session: Session | null) => {
+    const hydrate = async (session: Session | null, currentGeneration: number) => {
       if (!session?.user) {
-        if (mounted) setState({ session: null, user: null, role: null, loading: false });
+        if (mounted && currentGeneration === generation) setState({ session: null, user: null, role: null, loading: false });
         return;
       }
       const role = await fetchRole(session.user.id);
-      if (mounted) setState({ session, user: session.user, role, loading: false });
+      if (mounted && currentGeneration === generation) setState({ session, user: session.user, role, loading: false });
     };
 
-    supabase.auth.getSession().then(({ data }) => hydrate(data.session));
+    supabase.auth.getSession().then(({ data }) => {
+      if (!receivedAuthEvent) void hydrate(data.session, ++generation);
+    });
 
     const { data: sub } = supabase.auth.onAuthStateChange((_evt, session) => {
+      receivedAuthEvent = true;
+      const currentGeneration = ++generation;
       // defer async to avoid deadlock in callback
-      setTimeout(() => hydrate(session), 0);
+      setTimeout(() => { void hydrate(session, currentGeneration); }, 0);
     });
 
     return () => {
@@ -232,29 +238,45 @@ export async function rescheduleDoctorAppointment(id: string, start: string, end
   return data;
 }
 
+// Home visits use their permission-scoped RPC panel; this hook remains for other appointments.
 export function useLiveDoctorAppointments(uid?: string) {
   const [rows, setRows] = useState<any[]>([]);
+  const [error, setError] = useState<string | null>(null);
   useEffect(() => {
+    setRows([]);
+    if (!uid) return;
     let mounted = true;
-    (async () => {
-      let q = supabase.from("doctor_appointments").select("*").order("start_time", { ascending: true });
-      if (uid) q = q.or(`patient_id.eq.${uid},provider_id.eq.${uid}`);
-      const { data } = await q;
-      if (mounted) setRows(data ?? []);
-    })();
-    const sub = supabase.channel("live_doctor_appointments").on("postgres_changes", { event: "*", schema: "public", table: "doctor_appointments" }, (payload) => {
-      setRows((current) => {
-        if (payload.eventType === "DELETE") return current.filter((r) => r.id !== payload.old.id);
-        const next = [...current];
-        const i = next.findIndex((r) => r.id === payload.new.id);
-        if (i >= 0) next[i] = payload.new;
-        else next.push(payload.new);
-        return next.sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
-      });
-    }).subscribe();
-    return () => { mounted = false; supabase.removeChannel(sub); };
+    let request = 0;
+    const refresh = async () => {
+      const sequence = ++request;
+      const { data, error: failure } = await supabase.from("doctor_appointments")
+        .select("id, patient_id, provider_id, service, mode, status, start_time, end_time, fee, currency, created_at, updated_at")
+        .or(`patient_id.eq.${uid},provider_id.eq.${uid}`)
+        .or("mode.is.null,mode.not.in.(home,home_visit)")
+        .order("start_time", { ascending: true });
+      if (!mounted || sequence !== request) return;
+      if (failure) { setError("Appointments could not be refreshed. Please retry."); return; }
+      setRows(data ?? []);
+      setError(null);
+    };
+    void refresh();
+    const poll = window.setInterval(() => { if (!document.hidden) void refresh(); }, 15000);
+    const onResume = () => { if (!document.hidden) void refresh(); };
+    window.addEventListener("focus", onResume);
+    window.addEventListener("online", onResume);
+    document.addEventListener("visibilitychange", onResume);
+    const sub = supabase.channel(`live_doctor_appointments_${uid}`).on("postgres_changes",
+      { event: "*", schema: "public", table: "doctor_appointments" }, () => { void refresh(); }).subscribe();
+    return () => {
+      mounted = false; request++;
+      clearInterval(poll);
+      window.removeEventListener("focus", onResume);
+      window.removeEventListener("online", onResume);
+      document.removeEventListener("visibilitychange", onResume);
+      void supabase.removeChannel(sub);
+    };
   }, [uid]);
-  return { rows };
+  return { rows, error };
 }
 
 // Atomic first-accept-wins. RLS + WHERE status='open' guarantee single winner.
@@ -1663,190 +1685,3 @@ export async function listVerifiedProviders() {
   if (error) throw error;
   return (data || []) as { id: string; name: string; specialty: string; hospital: string | null; city: string }[];
 }
-
-export interface CreateHomeVisitParams {
-  isNow: boolean;
-  providerId?: string | null;
-  service?: string;
-  fee?: number;
-  addressSnapshot: {
-    full_address: string;
-    locality?: string;
-    pincode?: string;
-    landmark?: string;
-    phone?: string;
-    patient_name?: string;
-    notes?: string;
-  };
-  consentVersion: string;
-  startTime?: string | null;
-  endTime?: string | null;
-  dependentId?: string | null;
-  idempotencyKey?: string | null;
-}
-
-function isPgrst202(error: any): boolean {
-  if (!error) return false;
-  return (
-    error.code === "PGRST202" ||
-    error.status === 404 ||
-    (typeof error.message === "string" &&
-      (error.message.includes("PGRST202") ||
-        error.message.includes("schema cache") ||
-        error.message.includes("Could not find the function")))
-  );
-}
-
-async function fallbackCreateHomeVisitBooking(uid: string, params: CreateHomeVisitParams): Promise<string> {
-  const now = new Date();
-  const startTime = params.startTime ? new Date(params.startTime) : now;
-  const endTime = params.endTime ? new Date(params.endTime) : new Date(startTime.getTime() + (params.isNow ? 45 : 30) * 60000);
-  const loc = params.addressSnapshot?.full_address || "Pune, Maharashtra";
-
-  // First try inserting with full extended home_visit columns
-  const extendedPayload: any = {
-    patient_id: uid,
-    provider_id: params.providerId ?? uid,
-    dependent_id: params.dependentId ?? null,
-    service: params.service ?? "Doctor Consultation • Home visit",
-    mode: "home_visit",
-    location: loc,
-    start_time: startTime.toISOString(),
-    end_time: endTime.toISOString(),
-    fee: params.fee ?? 500,
-    currency: "INR",
-    status: "pending",
-    home_visit_status: "pending",
-    address_snapshot: params.addressSnapshot,
-    consent_version: params.consentVersion,
-    consent_timestamp: now.toISOString(),
-    idempotency_key: params.idempotencyKey ?? null,
-  };
-
-  const { data, error } = await (supabase as any).from("doctor_appointments").insert(extendedPayload).select("id").single();
-  if (!error && data?.id) return data.id;
-
-  // Fallback to strict standard base columns for legacy / unmigrated database schemas (PGRST204 / unknown column error)
-  const basePayload: any = {
-    patient_id: uid,
-    provider_id: params.providerId ?? uid,
-    service: params.service ?? "Doctor Consultation • Home visit",
-    mode: "home_visit",
-    location: loc,
-    start_time: startTime.toISOString(),
-    end_time: endTime.toISOString(),
-    fee: params.fee ?? 500,
-    currency: "INR",
-    status: "pending",
-  };
-
-  const { data: d2, error: e2 } = await (supabase as any).from("doctor_appointments").insert(basePayload).select("id").single();
-  if (e2) {
-    // If mode fails on legacy schema, strip mode and retry
-    delete basePayload.mode;
-    const { data: d3, error: e3 } = await (supabase as any).from("doctor_appointments").insert(basePayload).select("id").single();
-    if (e3) throw e3;
-    return d3.id;
-  }
-  return d2.id;
-}
-
-export async function createHomeVisitBooking(params: CreateHomeVisitParams): Promise<string> {
-  const { data: sess } = await supabase.auth.getSession();
-  const uid = sess.session?.user?.id;
-  if (!uid) throw new Error("Unauthenticated caller");
-
-  const now = new Date();
-  const startTime = params.startTime ? new Date(params.startTime) : now;
-  const endTime = params.endTime ? new Date(params.endTime) : new Date(startTime.getTime() + (params.isNow ? 45 : 30) * 60000);
-  const loc = params.addressSnapshot?.full_address || "Pune, Maharashtra";
-
-  // Base payload containing standard baseline columns present on ALL database schemas
-  const basePayload: any = {
-    patient_id: uid,
-    provider_id: params.providerId ?? uid,
-    service: params.service ?? "Doctor Consultation • Home visit",
-    mode: "home_visit",
-    location: loc,
-    start_time: startTime.toISOString(),
-    end_time: endTime.toISOString(),
-    fee: params.fee ?? 500,
-    currency: "INR",
-    status: "pending",
-  };
-
-  if (params.idempotencyKey) basePayload.idempotency_key = params.idempotencyKey;
-  if (params.dependentId) basePayload.dependent_id = params.dependentId;
-
-  // Insert base columns first — 100% 201 Created success guaranteed, 0 HTTP 400 errors!
-  let bookingId: string;
-  const { data: d1, error: e1 } = await (supabase as any).from("doctor_appointments").insert(basePayload).select("id").single();
-  if (e1) {
-    delete basePayload.mode;
-    const { data: d2, error: e2 } = await (supabase as any).from("doctor_appointments").insert(basePayload).select("id").single();
-    if (e2) throw e1;
-    bookingId = d2.id;
-  } else {
-    bookingId = d1.id;
-  }
-
-  // Non-blocking update for extended migration columns if database supports them
-  (async () => {
-    try {
-      await (supabase as any).from("doctor_appointments").update({
-        home_visit_status: "pending",
-        address_snapshot: params.addressSnapshot,
-        consent_version: params.consentVersion,
-        consent_timestamp: now.toISOString(),
-      }).eq("id", bookingId);
-    } catch {
-      // Ignore if extended columns do not exist on older DB schema
-    }
-  })();
-
-  return bookingId;
-}
-
-export async function acceptHomeVisitBooking(bookingId: string): Promise<void> {
-  const { data: sess } = await supabase.auth.getSession();
-  const uid = sess.session?.user?.id;
-
-  const { error: e1 } = await (supabase as any).from("doctor_appointments").update({ status: "confirmed", home_visit_status: "accepted", provider_id: uid }).eq("id", bookingId);
-  if (e1) {
-    const { error: e2 } = await (supabase as any).from("doctor_appointments").update({ status: "confirmed", provider_id: uid }).eq("id", bookingId);
-    if (e2) throw e1 || e2;
-  }
-}
-
-export async function startDoctorTravel(bookingId: string, etaMinutes = 30): Promise<string> {
-  const otp = String(Math.floor(100000 + Math.random() * 900000));
-  const { error: e1 } = await (supabase as any).from("doctor_appointments").update({ home_visit_status: "en_route", arrival_otp: otp, eta_minutes: etaMinutes }).eq("id", bookingId);
-  if (e1) {
-    await (supabase as any).from("doctor_appointments").update({ status: "confirmed" }).eq("id", bookingId);
-  }
-  return otp;
-}
-
-export async function verifyHomeVisitArrival(bookingId: string, otp: string): Promise<boolean> {
-  const { data: row } = await (supabase as any).from("doctor_appointments").select("*").eq("id", bookingId).single();
-  if (row && (row.arrival_otp === otp || otp === "123456")) {
-    await (supabase as any).from("doctor_appointments").update({ home_visit_status: "arrived" }).eq("id", bookingId);
-    return true;
-  }
-  return otp === "123456";
-}
-
-export async function completeHomeVisitEncounter(
-  bookingId: string,
-  clinicalNotes: Record<string, any>,
-  paymentSettlement?: Record<string, any>
-): Promise<void> {
-  const settlement = paymentSettlement ?? { method: "pay_at_visit", status: "settled", recorded_at: new Date().toISOString() };
-  const { error: e1 } = await (supabase as any).from("doctor_appointments").update({ status: "completed", home_visit_status: "completed", clinical_notes: clinicalNotes, payment_settlement: settlement }).eq("id", bookingId);
-  if (e1) {
-    const { error: e2 } = await (supabase as any).from("doctor_appointments").update({ status: "completed" }).eq("id", bookingId);
-    if (e2) throw e1 || e2;
-  }
-}
-
-

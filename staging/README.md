@@ -9,8 +9,17 @@ This directory owns the migration history for **MyDox Staging**, project `pyrlvj
 | 20260907094744 | careconnect_fresh_baseline | Clean schema from 64 source migrations; no Auth accounts |
 | 20260907095735 | restrict_staging_function_access | RPC grants, patient-scoped family plans, coordinator approval |
 | 20260907103546 | rename_seed_hubs_mydox | Rename eleven branded hubs while preserving IDs |
+| 20260910131000 | book_doctor_for_later | Canonical doctor appointments and scheduling RPCs |
+| 20260910141736 | phase_f_reschedule | Historical cancellation/rescheduling RPCs; hardened by later migrations |
+| 20260910183000 | doctor_home_visit_flow | Historical home extension; unsafe RPC grants retired in the same rollout transaction |
+| 20260910183100 | secure_home_visit_lifecycle | Gated home booking, consent, shared capacity, check-in, records and settlement |
+| 20260910183200 | home_visit_hosted_permissions | Explicit inherited grant revocation, indexes and bounded shared slot discovery |
+| 20260910183300 | home_visit_active_capacity | Real-time admission for overdue travel; one active visit; recheck credentials before consultation |
+| 20260910183400 | home_visit_hold_expiry_audit | Scoped replacement expiry preserves original, records version/event/outbox and rejects stale acceptance |
 
 All are deployed and immutable. The local CLI configuration ID `mydox-staging` is distinct from the hosted project reference. Link metadata under `.temp` is ignored.
+
+The home-visit rollout keeps real-patient use disabled. See [home-visit operations](../docs/home-visits/OPERATIONS.md) and [acceptance evidence](../docs/home-visits/TEST_REPORT.md) for enabled scope, private test credentials, exact validation and unresolved release gates. Do not apply the historical home extension alone.
 
 The root `supabase/migrations` history is preserved for provenance and existing-database analysis. It is **not** the history of this staging project. Do not push it into staging or replay the baseline into an existing application database.
 
@@ -70,17 +79,17 @@ npm run check
 npm run test:staging
 ```
 
-The 19 local tests use PGlite and minimal Auth fixtures to check replay, RLS, grants and business rules. They do not emulate GoTrue, PostgREST or concurrent sessions. The 12 hosted checks use real Auth and Data API calls, including simultaneous final-slot claims. They remove only their own generated accounts and records; persistent demo users are kept.
+The core database suite and additional home-visit suites use PGlite and minimal Auth fixtures to check replay, RLS, grants, capacity and lifecycle rules. They do not emulate GoTrue, PostgREST or concurrent sessions. The 12 original hosted checks and separate home-visit checks use real Auth and Data API calls, including independent-session races. They remove only their own generated accounts and records; persistent demo users are kept. See the [home-visit test report](../docs/home-visits/TEST_REPORT.md) for current counts and build identifiers.
 
-An independent SQL check confirmed cleanup after the hosted test run. Full browser acceptance testing, production hosting, notifications and Android release remain outstanding.
+Independent SQL checks verify synthetic cleanup. Doctor home-visit browser acceptance uses the local TanStack development server and the real hosted staging API. Production hosting, closed-app notifications and Android release remain outstanding.
 
 ## Advisor follow-up
 
-Post-deployment security advisors: **0 errors**, **0 anonymous security-definer warnings**, **10 authenticated security-definer warnings**:
+Initial staging deployment security advisors reported **0 errors**, **0 anonymous security-definer warnings**, **10 authenticated security-definer warnings**:
 
 `claim_staffing_job`, `find_provider_user_id_by_name`, `has_role`, `is_admin_user`, `is_hub_surgery_preferred`, `is_provider_available`, `is_provider_in_dnd`, `my_physio_partner_id`, `physio_partner_covers_area`, `provider_matches_surgery_role`.
 
-Some role and atomic-claim helpers need elevated access. Review each caller, data scope, search path and grant before changing it. RLS on all 50 public tables does not replace a policy/function audit. [Authenticated security-definer guidance](https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable).
+Some role and atomic-claim helpers need elevated access. Review each caller, data scope, search path and grant before changing it. RLS does not replace a policy/function audit. The home-visit rollout adds guarded RPCs and private client-denied tables; its newer advisor findings are in [operations guidance](../docs/home-visits/OPERATIONS.md#advisor-review). [Authenticated security-definer guidance](https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable).
 
 The initial performance scan, before the second migration, reported 29 unindexed foreign keys, 122 Auth RLS initialization-plan notices, 49 unused-index notices, 27 multiple-permissive-policy notices and one absolute Auth connection-limit notice. Rerun the advisor and assess representative workloads before optimizing. Unused indexes in a fresh database alone are not grounds for deletion.
 
