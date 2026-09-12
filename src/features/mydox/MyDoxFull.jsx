@@ -17,12 +17,14 @@ import { askTriage } from "@/lib/ask-ai.functions";
 import { analyzeReport } from "@/lib/report-analyzer.functions";
 import { transcribeAudio } from "@/lib/transcribe.functions";
 import { saveAiHistory, listAiHistory, getAiHistoryItem, toggleShareAiHistory, deleteAiHistory } from "@/lib/ai-history.functions";
-import { createCareRequest, cancelCareRequest, acceptCareRequest, completeCareRequest, failCareRequest, useLiveCareRequests, useRealtimeChat, useChatInbox, useRecentChatCounterparts, useMyMedicos, logRequestEvent, setRequestStage, useRequestAuditLog, useAdminAuditFeed, payAndGenerateOtp, verifyOtpAndStart, confirmOtpExchanged, TEST_DEFAULT_OTP, rateCareRequest, createCareProgramBooking, createCommunityRequest, useServiceReferrals, createServiceReferral, updateServiceReferralStatus, useRecentPatientsForDoctor, useSession, useLiveDoctorAppointments } from "@/features/mydox/backend";
+import { createCareRequest, cancelCareRequest, acceptCareRequest, completeCareRequest, failCareRequest, useLiveCareRequests, useRecentChatCounterparts, useMyMedicos, logRequestEvent, setRequestStage, useRequestAuditLog, useAdminAuditFeed, payAndGenerateOtp, verifyOtpAndStart, confirmOtpExchanged, TEST_DEFAULT_OTP, rateCareRequest, createCareProgramBooking, createCommunityRequest, useServiceReferrals, createServiceReferral, updateServiceReferralStatus, useRecentPatientsForDoctor, useSession, useLiveDoctorAppointments } from "@/features/mydox/backend";
 import { SURGERY_ROLE_LABELS } from "@/features/mydox/surgery";
 import { SlotPickerCalendar } from "@/features/mydox/SlotPickerCalendar";
 import CancellationDialog from "@/features/mydox/CancellationDialog";
 import HomeVisitConsentGate from "@/features/mydox/HomeVisitConsentGate";
 import { HOME_VISIT_CONSENT } from "@/features/mydox/consent-texts";
+import { TwoWayChatModal } from "@/features/mydox/TwoWayChatModal";
+import { usePostConsultationInbox } from "@/features/mydox/post-consultation-chat/usePostConsultationChat";
 import { recordHomeVisitConsent } from "@/lib/consents.functions";
 
 /* ── Local form capture ───────────────────────────────────────────
@@ -5414,7 +5416,7 @@ function BreatheFreeFlow({ onClose, onComplete }) {
 
             <p style={{ margin: "10px 2px 0", fontSize: 11, color: "#059669", fontWeight: 600, display: "flex", alignItems: "center", gap: 5 }}><Check size={13} /> Saved to your Health Records & shown on your home</p>
 
-            {/* free 24h chat */}
+            {/* Consultation chat requires verified eligibility. */}
             <div style={{ marginTop: 12, background: "linear-gradient(135deg,#ECFEFF,#F5F3FF)", border: "1.5px solid #A5B4FC", borderRadius: 14, padding: "13px" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
                 <div style={{ width: 40, height: 40, borderRadius: 11, background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: "0 2px 6px rgba(0,0,0,.08)" }}><MessageCircle size={19} color="#7C3AED" /></div>
@@ -5422,10 +5424,10 @@ function BreatheFreeFlow({ onClose, onComplete }) {
                   <p style={{ margin: 0, fontWeight: 800, color: C.ink, fontSize: 13 }}>{BF_DOCTOR.name}</p>
                   <p style={{ margin: "1px 0 0", fontSize: 10.5, color: C.sub }}>{BF_DOCTOR.spec}</p>
                 </div>
-                <span style={{ fontSize: 9, fontWeight: 800, color: "#7C3AED", background: "#EDE9FE", borderRadius: 99, padding: "3px 8px", flexShrink: 0 }}>FREE · 24h</span>
+                <span style={{ fontSize: 9, fontWeight: 800, color: "#7C3AED", background: "#EDE9FE", borderRadius: 99, padding: "3px 8px", flexShrink: 0 }}>Consultation required</span>
               </div>
-              <p style={{ margin: "9px 0 0", fontSize: 11, color: C.sub, lineHeight: 1.4 }}>Your consulting doctor has opened a free chat for 24 hours to discuss your results.</p>
-              <button onClick={() => onComplete && onComplete({ openChat: true })} style={{ width: "100%", marginTop: 10, background: "linear-gradient(135deg,#8B5CF6,#7C3AED)", border: "none", borderRadius: 11, padding: "11px", color: "#fff", fontWeight: 800, fontSize: 13, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif", display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}><MessageCircle size={16} /> Open free chat with doctor</button>
+              <p style={{ margin: "9px 0 0", fontSize: 11, color: C.sub, lineHeight: 1.4 }}>Open chat from an authorised completed consultation to discuss results with your treating doctor.</p>
+              <button onClick={() => onComplete && onComplete({ openChat: true })} style={{ width: "100%", marginTop: 10, background: "linear-gradient(135deg,#8B5CF6,#7C3AED)", border: "none", borderRadius: 11, padding: "11px", color: "#fff", fontWeight: 800, fontSize: 13, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif", display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}><MessageCircle size={16} /> Check consultation chat access</button>
             </div>
 
             <button onClick={() => onComplete && onComplete({ openChat: false })} style={{ width: "100%", marginTop: 10, background: "transparent", border: `1.5px solid ${C.line}`, borderRadius: 11, padding: "11px", color: C.sub, fontWeight: 700, fontSize: 12.5, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Done — view later from home</button>
@@ -6629,7 +6631,7 @@ function HistoryCompletedActions({ requestId, providerName, specialty }) {
         </div>
       )}
       {mode === "chat" && (
-        <MedChatOverlay doctor={{ name: providerName || "Doctor", spec: specialty || "Specialist" }} onClose={() => setMode(null)} />
+        <MedChatOverlay doctor={{ name: providerName || "Doctor", spec: specialty || "Specialist", reference: { source: "care_request", sourceId: requestId } }} onClose={() => setMode(null)} />
       )}
     </>
   );
@@ -6717,6 +6719,7 @@ function PatientHistoryOverlay({ onClose, onRebook }) {
           ))}
         </div>
         <div style={{ flex: 1, overflowY: "auto", padding: "10px 14px 20px" }}>
+          {["all", "completed"].includes(filter) && <HomeVisitPanel audience="patient" completedOnly />}
           {loading && <p style={{ color: C.sub, fontSize: 12 }}>Loading…</p>}
           {!loading && visible.length === 0 && <p style={{ color: C.sub, fontSize: 12, marginTop: 14 }}>No consultations in this category yet.</p>}
           {visible.map(({ r, cat }) => {
@@ -6837,7 +6840,8 @@ function PatientHistoryPage({ onClose, onRebook }) {
         ))}
       </div>
       <div style={{ flex: 1, overflowY: "auto", padding: "10px 14px 24px", background: C.canvas }}>
-        {loading && <p style={{ color: C.sub, fontSize: 12 }}>Loading…</p>}
+        {["all", "completed"].includes(filter) && <HomeVisitPanel audience="patient" completedOnly />}
+          {loading && <p style={{ color: C.sub, fontSize: 12 }}>Loading…</p>}
         {!loading && visible.length === 0 && <p style={{ color: C.sub, fontSize: 12, marginTop: 14 }}>No consultations in this category yet.</p>}
         {visible.map(({ r, cat }) => {
           const providerName = r.accepted_by ? (names[r.accepted_by] || "Provider") : "—";
@@ -7499,7 +7503,7 @@ function DoctorApp({ req, hubReq, online, setOnline, onAccept, sevaActions }) {
 
         {online && <MyPatientsPanel />}
         {online && <DoctorCareGroups onOpen={g => setDocGroup(g)} />}
-        {online && <><DoctorLiveInbox onOpen={p => setDocChat(p)} /><DoctorChatsSection onOpen={p => setDocChat(p)} /></>}
+        <DoctorChatsSection onOpen={p => setDocChat(p)} />
         {online && (
           <button onClick={() => setShowSevaCircle(true)} style={{ width: "100%", background: "#fff", border: "1.5px solid #FDE68A", borderRadius: 16, padding: "13px 15px", display: "flex", alignItems: "center", gap: 11, cursor: "pointer", marginBottom: 12, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
             <div style={{ width: 42, height: 42, borderRadius: 12, background: "#fff", border: "1px solid #FDE68A", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><img src="data:image/png;base64,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" alt="Seva Circle" style={{ width: 30, height: 30, objectFit: "contain" }} /></div>
@@ -8340,252 +8344,13 @@ function DoctorCareGroups({ onOpen }) {
 }
 
 function MedChatOverlay({ doctor, onClose }) {
-  const dname = doctor?.name || "Doctor";
-  const dspec = doctor?.spec || "Specialist";
-  const [tab, setTab] = useState("text");
-  const [showAttach, setShowAttach] = useState(false);
-  const [showPlans, setShowPlans] = useState(false);
-  const { messages: rtMessages, send: rtSend, live: rtLive, meId: rtMeId } = useRealtimeChat(dname);
-  const [localMsgs, setLocalMsgs] = useState([
-    { from: "doctor", text: "Hello! How can I help you today?", time: "10:31 AM" },
-    { from: "patient", text: "I have a skin allergy on my hand.", time: "10:31 AM" },
-    { from: "doctor", text: "Please share more details or a photo of the affected area.", time: "10:32 AM" },
-  ]);
-  const fmtTime = (iso) => { try { return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); } catch { return ""; } };
-  const msgs = rtLive
-    ? rtMessages.map(m => ({ from: m.sender_id === rtMeId ? "patient" : "doctor", text: m.body, time: fmtTime(m.created_at) }))
-    : localMsgs;
-  const [input, setInput] = useState("");
-  // Free-tier limits unlocked at payment: 25 messages / 24h, 10 min audio, 2 calls.
-  const MSG_LIMIT = 25, AUDIO_SEC_LIMIT = 600, CALL_LIMIT = 2;
-  const patientMsgs = msgs.filter(m => m.from === "patient").length;
-  const [audioUsed, setAudioUsed] = useState(0);   // seconds of audio consumed
-  const [callsUsed, setCallsUsed] = useState(0);    // number of calls placed
-  const msgsLeft = Math.max(0, MSG_LIMIT - patientMsgs);
-  const audioLeft = Math.max(0, AUDIO_SEC_LIMIT - audioUsed);
-  const callsLeft = Math.max(0, CALL_LIMIT - callsUsed);
-  const fmtMin = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
-  const bottomRef = useRef(null);
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs.length]);
-  const sendMsg = (t) => {
-    if (!t.trim()) return;
-    if (msgsLeft <= 0) { toast("Free chat limit reached (25 messages) \u00B7 recharge to continue"); return; }
-    if (rtLive) { rtSend(t.trim()).then(ok => { if (!ok) toast("Couldn't send message"); }); setInput(""); return; }
-    setLocalMsgs(p => [...p, { from: "patient", text: t.trim(), time: "now" }]); setInput("");
-  };
-  const startCall = (kind) => {
-    if (callsLeft <= 0) { toast("Call limit reached (2 calls) \u00B7 recharge for more"); return; }
-    if (kind === "audio" && audioLeft <= 0) { toast("Audio minutes used up (10 min) \u00B7 recharge to continue"); return; }
-    setCallsUsed(c => c + 1);
-    if (kind === "audio") setAudioUsed(u => Math.min(AUDIO_SEC_LIMIT, u + 120)); // demo: each call uses ~2 min
-    setTab(kind);
-  };
-
-  const ATTACH = [
-    { label: "Gallery", Icon: LayoutGrid, col: "#6366F1", msg: "Photo shared from gallery" },
-    { label: "Camera", Icon: Eye, col: "#F59E0B", msg: "Photo captured and shared" },
-    { label: "Document", Icon: Clipboard, col: "#3B82F6", msg: "Document shared" },
-    { label: "Prescription", Icon: BadgeCheck, col: "#16A34A", msg: "Requested digital prescription + AI summary in simple language (Rs 300)" },
-    { label: "Location", Icon: MapPin, col: "#EF4444", msg: "Location shared" },
-    { label: "Contact", Icon: User, col: "#8B5CF6", msg: "Contact shared" },
-  ];
-  const PLANS = [
-    { price: "\u20B9200", popular: true, lines: ["7 Days Chat", "20 Min Audio Call", "15 Min Video Call"] },
-    { price: "\u20B9400", popular: false, lines: ["15 Days Chat", "40 Min Audio Call", "30 Min Video Call"] },
-    { price: "\u20B9800", popular: false, lines: ["30 Days Chat", "80 Min Audio Call", "60 Min Video Call"] },
-  ];
-
   return (
-    <div style={{ position: "absolute", inset: 0, zIndex: 70, background: "#0E1F1A", display: "flex", flexDirection: "column" }}>
-      {/* Header */}
-      <div style={{ padding: "12px 14px", background: "#0B2B23", display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
-        <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer" }}><ChevronLeft size={20} color="white" /></button>
-        <Avatar name={dname} size={36} />
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <p style={{ color: "white", fontWeight: 700, fontSize: 14, margin: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{dname}</p>
-          <p style={{ color: "#7FB8A4", fontSize: 11, margin: 0 }}>Online {"\u00B7"} {dspec}</p>
-        </div>
-        <div style={{ display: "flex", gap: 14 }}>
-          <button onClick={() => startCall("video")} style={{ background: "none", border: "none", cursor: "pointer" }}><Eye size={18} color="white" /></button>
-          <button onClick={() => startCall("audio")} style={{ background: "none", border: "none", cursor: "pointer" }}><Phone size={17} color="white" /></button>
-        </div>
-      </div>
-
-      {/* Token balance strip */}
-      <div style={{ padding: "8px 12px", background: "#0E2A22", display: "flex", gap: 8, flexShrink: 0 }}>
-        {[
-          { num: msgsLeft + "/25", label: "Messages Left", col: "#4ADE80" },
-          { num: fmtMin(audioLeft), label: "Audio Left", col: "#FBBF24" },
-          { num: callsLeft + "/2", label: "Calls Left", col: "#60A5FA" },
-        ].map(t => (
-          <div key={t.label} style={{ flex: 1, background: "#123529", borderRadius: 11, padding: "7px 6px", textAlign: "center", border: "1px solid #1C4A3C" }}>
-            <p style={{ fontWeight: 800, color: t.col, fontSize: 15, margin: 0 }}>{t.num}</p>
-            <p style={{ color: "#7FB8A4", fontSize: 8.5, margin: "1px 0 0", fontWeight: 600 }}>{t.label}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* Audio / Video call overlay */}
-      {(tab === "audio" || tab === "video") && (
-        <div style={{ position: "absolute", inset: 0, zIndex: 5, background: tab === "video" ? "#10151F" : "#0B2B23", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14 }}>
-          <Avatar name={dname} size={92} />
-          <p style={{ color: "white", fontWeight: 800, fontSize: 20, margin: 0 }}>{dname}</p>
-          <p style={{ color: "#7FB8A4", fontSize: 13, margin: 0 }}>{tab === "audio" ? "Audio Call" : "Video Call"} {"\u00B7"} Calling{"\u2026"}</p>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, background: "rgba(255,255,255,.1)", borderRadius: 99, padding: "7px 16px" }}>
-            <Clock size={13} color="#4ADE80" />
-            <span style={{ color: "white", fontSize: 12.5, fontWeight: 700 }}>{tab === "audio" ? fmtMin(audioLeft) + " audio left" : callsLeft + " calls left"}</span>
-          </div>
-          <div style={{ display: "flex", gap: 22, marginTop: 22, alignItems: "center" }}>
-            <CallBtn Icon={Power} label="Mute" bg="rgba(255,255,255,.12)" />
-            <button onClick={() => setTab("text")} style={{ width: 60, height: 60, borderRadius: "50%", background: "#EF4444", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 6px 20px rgba(239,68,68,.5)" }}>
-              <Phone size={24} color="white" style={{ transform: "rotate(135deg)" }} />
-            </button>
-            <CallBtn Icon={Radio} label="Speaker" bg="rgba(255,255,255,.12)" />
-          </div>
-          <p style={{ color: "rgba(255,255,255,.45)", fontSize: 11, margin: 0 }}>Minutes auto-deduct from your balance</p>
-        </div>
-      )}
-
-      {/* Messages */}
-      <div style={{ flex: 1, overflowY: "auto", padding: "12px 13px", background: "#0E1F1A", scrollbarWidth: "none" }}>
-        {/* Encrypted banner */}
-        <div style={{ textAlign: "center", margin: "2px 0 12px" }}>
-          <div style={{ display: "inline-block", background: "#26331B", borderRadius: 10, padding: "7px 13px", maxWidth: 280 }}>
-            <p style={{ color: "#D8E8A8", fontSize: 10.5, margin: 0, lineHeight: 1.5 }}>
-              <ShieldCheck size={11} style={{ display: "inline", marginRight: 4, verticalAlign: "-2px" }} />
-              Messages and calls are end-to-end encrypted. No one outside this chat, not even MyDox, can read or listen to them.
-            </p>
-          </div>
-        </div>
-        {msgs.map((m, i) => {
-          const me = m.from === "patient";
-          // Parse inline referral envelope from bot message body
-          let visibleText = m.text; let ref = null;
-          const mk = /\n?<<REF::(.+?)>>/s.exec(m.text || "");
-          if (mk) { try { ref = JSON.parse(mk[1]); visibleText = (m.text || "").replace(mk[0], "").trim(); } catch { } }
-          return (
-            <div key={i} style={{ display: "flex", justifyContent: me ? "flex-end" : "flex-start", marginBottom: 8 }}>
-              <div style={{ maxWidth: "82%" }}>
-                <div style={{ background: me ? "#1F5B43" : "#16302A", borderRadius: me ? "13px 4px 13px 13px" : "4px 13px 13px 13px", padding: "8px 11px" }}>
-                  <p style={{ color: "#EAF5EF", fontSize: 13, margin: 0, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{visibleText}</p>
-                  <p style={{ color: "rgba(255,255,255,.4)", fontSize: 9, margin: "3px 0 0", textAlign: "right" }}>{m.time} {me && <Check size={10} style={{ display: "inline", color: "#4ADE80", verticalAlign: "-2px" }} />}</p>
-                </div>
-                {ref && (
-                  <div style={{ marginTop: 6, background: "#0F3B30", border: "1px solid #1F5B43", borderRadius: 12, padding: "10px 11px", display: "flex", gap: 10, alignItems: "flex-start" }}>
-                    <span style={{ fontSize: 22, lineHeight: 1, flexShrink: 0 }}>{ref.emoji || "📋"}</span>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{ margin: 0, color: "#EAF5EF", fontWeight: 800, fontSize: 12.5 }}>{ref.label}</p>
-                      <p style={{ margin: "2px 0 0", color: "#7FB8A4", fontSize: 10.5 }}>Recommended by {dname}{ref.tab ? ` · ${ref.tab}` : ""}</p>
-                      {ref.providerName && <p style={{ margin: "3px 0 0", color: "#A7E3C7", fontSize: 10.5, fontWeight: 700 }}>Suggested: {ref.providerName}</p>}
-
-                      {ref.note && <p style={{ margin: "6px 0 0", color: "#D8E8A8", fontSize: 11, lineHeight: 1.4, background: "#123529", borderRadius: 8, padding: "6px 8px" }}>"{ref.note}"</p>}
-                      <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
-                        <button onClick={() => { try { updateServiceReferralStatus(ref.id, "accepted"); } catch { } window.dispatchEvent(new CustomEvent("mydox:book-referral", { detail: { id: ref.id, service_key: ref.key, service_label: ref.label, service_tab: ref.tab, note: ref.note, doctorName: dname, providerName: ref.providerName || null } })); toast(ref.providerName ? `Opening booking with ${ref.providerName} — pick a slot` : "Opening booking — pick your slot to confirm"); onClose && onClose(); }}
-                          style={{ flex: 1, padding: "8px 10px", borderRadius: 9, border: "none", background: "linear-gradient(135deg,#22C55E,#16A34A)", color: "#fff", fontWeight: 800, fontSize: 12, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
-                          Review & pick slot
-                        </button>
-                        <button onClick={() => { try { updateServiceReferralStatus(ref.id, "declined"); } catch { } toast("Marked as not now"); }}
-                          style={{ padding: "8px 12px", borderRadius: 9, border: "1px solid #1F5B43", background: "transparent", color: "#BFE0D2", fontWeight: 700, fontSize: 11.5, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
-                          Not now
-                        </button>
-                      </div>
-                      {Array.isArray(ref.alternates) && ref.alternates.length > 0 && (
-                        <div style={{ marginTop: 9, paddingTop: 8, borderTop: "1px dashed #1F5B43" }}>
-                          <p style={{ margin: "0 0 6px", color: "#7FB8A4", fontSize: 9.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".4px" }}>
-                            {ref.providerName ? `If ${ref.providerName.split(" ")[0]} has no slot, try:` : "Closest alternatives:"}
-                          </p>
-                          <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-                            {ref.alternates.map(a => {
-                              const low = (a.avail || 0) <= 1; return (
-                                <button key={a.id} onClick={() => { try { updateServiceReferralStatus(ref.id, "accepted"); } catch { } window.dispatchEvent(new CustomEvent("mydox:book-referral", { detail: { id: ref.id, service_key: ref.key, service_label: ref.label, service_tab: ref.tab, note: ref.note, doctorName: dname, providerName: a.name } })); toast(`Opening booking with ${a.name}`); onClose && onClose(); }}
-                                  style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 9px", borderRadius: 99, border: "1px solid #1F5B43", background: "#123529", color: "#D8E8A8", fontSize: 10.5, fontWeight: 700, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
-                                  {a.name}
-                                  <span style={{ fontSize: 9, color: low ? "#FBBF24" : "#7FB8A4" }}>· {a.avail || 0} slot{(a.avail || 0) === 1 ? "" : "s"}</span>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        })}
-        <div ref={bottomRef} />
-      </div>
-
-      {/* Attach sheet */}
-      {showAttach && (
-        <div style={{ position: "absolute", bottom: 118, left: 12, right: 12, background: "#13352B", borderRadius: 18, padding: "14px 10px", zIndex: 8, boxShadow: "0 -8px 30px rgba(0,0,0,.4)", display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12 }}>
-          {ATTACH.map(a => (
-            <button key={a.label} onClick={() => { setShowAttach(false); if (rtLive) { rtSend(a.msg); } else { setLocalMsgs(p => [...p, { from: "patient", text: a.msg, time: "now" }]); } }}
-              style={{ background: "none", border: "none", cursor: "pointer", textAlign: "center" }}>
-              <div style={{ width: 46, height: 46, borderRadius: 14, background: "white", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 5px" }}>
-                <a.Icon size={20} style={{ color: a.col }} />
-              </div>
-              <span style={{ color: "#BFE0D2", fontSize: 10.5, fontWeight: 600 }}>{a.label}</span>
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* Plans modal */}
-      {showPlans && (
-        <div style={{ position: "absolute", inset: 0, zIndex: 20, background: "rgba(0,0,0,.55)", display: "flex", alignItems: "flex-end" }} onClick={() => setShowPlans(false)}>
-          <div style={{ width: "100%", background: "#0E2A22", borderRadius: "22px 22px 0 0", padding: "16px 16px 22px" }} onClick={e => e.stopPropagation()}>
-            <div style={{ width: 36, height: 4, borderRadius: 99, background: "#2A5648", margin: "0 auto 12px" }} />
-            <p style={{ color: "white", fontWeight: 800, fontSize: 17, margin: "0 0 12px" }}>Choose a Plan</p>
-            {PLANS.map(p => (
-              <div key={p.price} style={{ background: p.popular ? "white" : "#13352B", borderRadius: 16, padding: "13px 14px", marginBottom: 10, position: "relative", display: "flex", alignItems: "center", gap: 12 }}>
-                {p.popular && <span style={{ position: "absolute", top: -1, right: 14, background: "#16A34A", color: "white", borderRadius: "0 0 8px 8px", padding: "3px 10px", fontSize: 9, fontWeight: 800, letterSpacing: ".06em" }}>POPULAR</span>}
-                <p style={{ fontWeight: 800, color: p.popular ? "#0E2A22" : "#4ADE80", fontSize: 22, margin: 0, width: 74 }}>{p.price}</p>
-                <div style={{ flex: 1 }}>
-                  {p.lines.map((l, i) => (
-                    <p key={l} style={{ color: p.popular ? "#3A5248" : "#9FCDB9", fontSize: 11.5, margin: i ? "2px 0 0" : 0, fontWeight: 600 }}>{l}{i < p.lines.length - 1 && <span style={{ color: p.popular ? "#A8BBAF" : "#3F6B58", fontWeight: 700 }}> {"\u00B7"} OR</span>}</p>
-                  ))}
-                </div>
-                <button onClick={() => setShowPlans(false)}
-                  style={{ background: "#16A34A", color: "white", border: "none", borderRadius: 10, padding: "9px 14px", fontWeight: 800, fontSize: 12.5, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif", flexShrink: 0 }}>
-                  Buy Now
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Input row */}
-      <div style={{ padding: "8px 10px", display: "flex", gap: 7, background: "#0B2B23", flexShrink: 0, alignItems: "center" }}>
-        <button onClick={() => setShowAttach(s => !s)}
-          style={{ width: 40, height: 40, borderRadius: "50%", background: showAttach ? "#1F5B43" : "rgba(255,255,255,.1)", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, transition: "background .15s" }}>
-          <Plus size={19} color="white" style={{ transform: showAttach ? "rotate(45deg)" : "none", transition: "transform .2s" }} />
-        </button>
-        <input value={input} onChange={e => setInput(e.target.value)}
-          onKeyDown={e => { if (e.key === "Enter") sendMsg(input); }}
-          placeholder={msgsLeft <= 0 ? "Message limit reached · recharge" : msgsLeft <= 5 ? `${msgsLeft} free messages left` : "Type a message"}
-          style={{ flex: 1, background: "#16302A", border: "none", borderRadius: 22, padding: "11px 14px", fontSize: 13, color: "white", outline: "none", fontFamily: "'Plus Jakarta Sans',sans-serif", opacity: msgsLeft <= 0 ? .5 : 1 }} />
-        <button onClick={() => sendMsg(input)}
-          style={{ width: 42, height: 42, borderRadius: "50%", background: msgsLeft <= 0 ? "#3A5C50" : "#16A34A", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-          <Navigation size={17} color="white" />
-        </button>
-      </div>
-
-      {/* Recharge bar */}
-      <div style={{ padding: "8px 14px 12px", background: "#0B2B23", borderTop: "1px solid #1C4A3C", display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-        <div style={{ flex: 1 }}>
-          <p style={{ fontSize: 11, fontWeight: 700, color: "white", margin: 0 }}>{msgsLeft > 0 ? `Free chat · ${msgsLeft}/25 msgs · ${fmtMin(audioLeft)} audio · ${callsLeft}/2 calls` : "Free limit reached"}</p>
-          <p style={{ fontSize: 9.5, color: "#7FB8A4", margin: "1px 0 0" }}>Open 24h after payment · tokens work with ANY doctor</p>
-        </div>
-        <button onClick={() => setShowPlans(true)}
-          style={{ background: "#16A34A", color: "white", border: "none", borderRadius: 10, padding: "8px 14px", fontWeight: 800, fontSize: 12.5, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
-          Recharge {"\u20B9"}200
-        </button>
-      </div>
-    </div>
+    <TwoWayChatModal
+      reference={doctor?.reference}
+      doctorName={doctor?.name}
+      specialty={doctor?.spec}
+      onClose={onClose}
+    />
   );
 }
 
@@ -8599,14 +8364,6 @@ const CallBtn = ({ Icon, label, bg }) => (
 );
 
 /* ═══ PAST CONSULTATIONS — home screen chat list ═══════════════════ */
-const PAST_DOCTORS = [
-  { id: "pd1", name: "Dr. Anjali Sharma", spec: "Dermatologist", last: "Typing\u2026", time: "10:30 AM", unread: 2, typing: true },
-  { id: "pd2", name: "Dr. Rahul Verma", spec: "General Physician", last: "Prescription", time: "Yesterday", unread: 1, kind: "rx" },
-  { id: "pd3", name: "Dr. Neha Patel", spec: "Gynecologist", last: "Thank you doctor", time: "Yesterday", unread: 0 },
-  { id: "pd4", name: "Dr. Rajiv Kumar", spec: "Cardiologist", last: "Audio Call", time: "Mon", unread: 0, kind: "call" },
-  { id: "pd5", name: "Dr. Priya Singh", spec: "Psychiatrist", last: "Video Call", time: "Sun", unread: 0, kind: "video" },
-];
-
 // Continuity: doctors the patient has saved as "My Doctor"
 const MY_DOCTORS = [
   { id: "md1", name: "Dr. Rahul Verma", spec: "General Physician", visits: 5, lastSeen: "2 weeks ago", followDue: true, base: 800, nextFollowUp: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000 + 5 * 60 * 60 * 1000).toISOString(), followUpMode: "In-clinic" },
@@ -8723,7 +8480,7 @@ function DoctorStatusBar() {
 
 /* ══════════════════════════════════════════════════════════════════════════
    PATIENT — "Recommended by your Doctor" section
-   Reads the shared referral store; patient taps "Yes, book" → opens the normal
+   Reads the shared referral store; patient taps "Review & pick slot" → opens the normal
    booking flow (never emergency). Declining is recorded too. Both the
    patient and the referring doctor see the same live status.                 */
 function RecommendedByDoctorCard({ onBookService }) {
@@ -8765,9 +8522,9 @@ function RecommendedByDoctorCard({ onBookService }) {
                     {r.note && <p style={{ margin: "6px 0 0", fontSize: 11.5, color: "#374151", lineHeight: 1.4, background: "#F9FAFB", borderRadius: 8, padding: "7px 9px" }}>"{r.note}"</p>}
                     {!booked && (
                       <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-                        <button onClick={() => { updateServiceReferralStatus(r.id, "booked"); onBookService && onBookService(r); }}
+                        <button onClick={() => { onBookService && onBookService(r); }}
                           style={{ flex: 1, padding: "9px", borderRadius: 10, border: "none", background: `linear-gradient(135deg,${A},#7C3AED)`, color: "#fff", fontWeight: 800, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
-                          Yes, book this
+                          Review & pick slot
                         </button>
                         <button onClick={() => updateServiceReferralStatus(r.id, "declined")}
                           style={{ padding: "9px 14px", borderRadius: 10, border: `1.5px solid ${C.line}`, background: "transparent", color: C.sub, fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
@@ -8775,7 +8532,7 @@ function RecommendedByDoctorCard({ onBookService }) {
                         </button>
                       </div>
                     )}
-                    {booked && <p style={{ margin: "8px 0 0", fontSize: 11, color: "#059669", fontWeight: 700 }}>✓ Booked — your doctor has been notified</p>}
+                    {booked && <p style={{ margin: "8px 0 0", fontSize: 11, color: "#059669", fontWeight: 700 }}>Booking recorded. Review its confirmation in My Bookings.</p>}
                   </div>
                 </div>
               </div>
@@ -9228,25 +8985,14 @@ function PanelStageCard({ stage, secsLeft, accent, count }) {
 }
 
 function HomeChatsSection({ onOpen, onOpenReel, onOpenGroup }) {
+  const inbox = usePostConsultationInbox();
   return (
     <div style={{ margin: "14px 0 6px", background: "#E7F0E9", borderRadius: 18, padding: "13px 13px 14px", border: "2px solid #0C9668" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
         <p style={{ fontWeight: 800, color: "#0B3D2E", fontSize: 14.5, margin: 0, display: "flex", alignItems: "center", gap: 6 }}><svg width="16" height="16" viewBox="0 0 24 24" fill="#0C9668"><path d="M12 2a10 10 0 0 0-8.7 14.9L2 22l5.3-1.4A10 10 0 1 0 12 2z" /></svg> Chats {"\u00B7"} Your Doctors</p>
         <span style={{ color: "#0C9668", fontWeight: 700, fontSize: 11 }}>View Details {"\u203A"}</span>
       </div>
-      {/* Balance strip */}
-      <div style={{ display: "flex", gap: 7, marginBottom: 11 }}>
-        {[
-          { num: "24", label: "Messages Left", col: "#16A34A", soft: "#D6EEDD" },
-          { num: "11:30", label: "Audio Min Left", col: "#D97706", soft: "#FBEAD2" },
-          { num: "07:10", label: "Video Min Left", col: "#2563EB", soft: "#DBE7FB" },
-        ].map(t => (
-          <div key={t.label} style={{ flex: 1, background: t.soft, borderRadius: 11, padding: "7px 6px", textAlign: "center" }}>
-            <p style={{ fontWeight: 800, color: t.col, fontSize: 14.5, margin: 0 }}>{t.num}</p>
-            <p style={{ color: "#5C6F69", fontSize: 8.5, margin: "1px 0 0", fontWeight: 700 }}>{t.label}</p>
-          </div>
-        ))}
-      </div>
+      <p style={{ color: "#5C6F69", fontSize: 11, margin: "0 0 11px" }}>Follow-up conversations from your authorised completed consultations.</p>
       {/* Doctor Updates — 20s status reels, inside chat system */}
       <div style={{ marginBottom: 11 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
@@ -9265,48 +9011,13 @@ function HomeChatsSection({ onOpen, onOpenReel, onOpenGroup }) {
         </div>
       </div>
       <PatientCareGroups onOpen={g => onOpenGroup && onOpenGroup(g)} />
-      {/* Doctor rows — WhatsApp chat-list look */}
-      <div style={{ background: "#fff", borderRadius: 14, overflow: "hidden", boxShadow: "0 1px 3px rgba(11,61,46,.08)" }}>
-        {PAST_DOCTORS.map((d, i) => (
-          <button key={d.id} onClick={() => onOpen({ name: d.name, spec: d.spec })}
-            style={{ width: "100%", display: "flex", alignItems: "center", gap: 11, padding: "11px 13px", background: "none", border: "none", cursor: "pointer", textAlign: "left", borderTop: i ? `1px solid #EEF3F0` : "none" }}>
-            <div style={{ position: "relative", flexShrink: 0 }}>
-              <Avatar name={d.name} size={46} />
-              <span style={{ position: "absolute", bottom: 1, right: 1, width: 11, height: 11, borderRadius: "50%", background: "#16A34A", border: "2px solid #fff" }} />
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <p style={{ fontWeight: 700, color: "#111B16", fontSize: 13.5, margin: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{d.name}</p>
-              <p style={{ color: d.typing ? "#0C9668" : "#667A71", fontSize: 12, margin: "2px 0 0", fontStyle: d.typing ? "italic" : "normal", fontWeight: d.typing ? 700 : 500, display: "flex", alignItems: "center", gap: 4 }}>
-                {!d.typing && d.kind !== "rx" && d.kind !== "call" && d.kind !== "video" && d.unread === 0 && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#53BDEB" strokeWidth="2.5" style={{ flexShrink: 0 }}><path d="M1 13l4 4L15 7M9 13l4 4L23 7" /></svg>}
-                {d.kind === "rx" && <Clipboard size={11} style={{ color: "#667A71", flexShrink: 0 }} />}
-                {d.kind === "call" && <Phone size={11} style={{ color: "#667A71", flexShrink: 0 }} />}
-                {d.kind === "video" && <Eye size={11} style={{ color: "#667A71", flexShrink: 0 }} />}
-                <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{d.last}</span>
-              </p>
-            </div>
-            <div style={{ textAlign: "right", flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3 }}>
-              <p style={{ color: d.unread ? "#16A34A" : "#90A29B", fontSize: 10.5, fontWeight: d.unread ? 800 : 600, margin: 0 }}>{d.time}</p>
-              {d.unread > 0 && (
-                <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", minWidth: 18, height: 18, borderRadius: 99, background: "#25D366", color: "white", fontSize: 10.5, fontWeight: 800, padding: "0 5px" }}>{d.unread}</span>
-              )}
-            </div>
-          </button>
-        ))}
-      </div>
-      <p style={{ color: "#5C6F69", fontSize: 10, margin: "9px 0 0", textAlign: "center" }}>Free 24h chat after every consultation {"\u00B7"} then {"\u20B9"}200 recharge</p>
+      <ConsultationInboxRows inbox={{ ...inbox, items: inbox.items.filter(item => item.counterpartRole === "doctor") }} onOpen={onOpen} />
+      <p style={{ color: "#5C6F69", fontSize: 10, margin: "9px 0 0", textAlign: "center" }}>Chat allowance is confirmed for each consultation. Recharge is currently unavailable.</p>
     </div>
   );
 }
 
 /* ═══ DOCTOR-SIDE CHATS — patients from past consultations ═════════ */
-const PAST_PATIENTS = [
-  { id: "pp1", name: "Priya Sharma", spec: "Skin allergy \u00B7 follow-up", last: "I have a skin allergy on my hand", time: "10:31 AM", unread: 2, typing: false },
-  { id: "pp2", name: "Rahul Kapoor", spec: "Back pain \u00B7 physio", last: "Photo shared from gallery", time: "Yesterday", unread: 1 },
-  { id: "pp3", name: "Meena Tiwari", spec: "Dermatology consult", last: "Requested digital prescription (Rs 300)", time: "Yesterday", unread: 1, kind: "rx" },
-  { id: "pp4", name: "Sunil Verma", spec: "BP review", last: "Audio Call", time: "Mon", unread: 0, kind: "call" },
-  { id: "pp5", name: "Leela Mehta", spec: "Fever \u00B7 resolved", last: "Thank you doctor", time: "Sun", unread: 0 },
-];
-
 // Doctor-side continuity: patients to bring back + follow-ups to schedule
 const PANEL_PATIENTS = [
   { id: "fp1", name: "Priya Sharma", reason: "Skin allergy", due: "Due today", overdue: false },
@@ -9351,79 +9062,45 @@ function MyPatientsPanel() {
   );
 }
 
-function DoctorLiveInbox({ onOpen }) {
-  const { threads } = useChatInbox();
-  if (!threads || threads.length === 0) return null;
+function ConsultationInboxRows({ inbox, onOpen }) {
+  const { items, loading, error, refresh } = inbox;
   return (
-    <div style={{ marginTop: 14 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-        <p style={{ fontWeight: 800, color: C.ink, fontSize: 14.5, margin: 0, display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ width: 8, height: 8, borderRadius: 99, background: "#16A34A", display: "inline-block" }} />
-          Live Chats {"\u00B7"} Real-time
-        </p>
-        <span style={{ color: "#16A34A", fontWeight: 700, fontSize: 11 }}>{threads.length} active</span>
-      </div>
-      <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 16, overflow: "hidden" }}>
-        {threads.map((t, i) => (
-          <button key={t.thread_key} onClick={() => onOpen({ name: t.other_name, spec: "Patient" })}
-            style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: "none", border: "none", cursor: "pointer", textAlign: "left", borderTop: i ? `1px solid ${C.line}` : "none" }}>
-            <Avatar name={t.other_name} size={40} />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <p style={{ fontWeight: 700, color: C.ink, fontSize: 13, margin: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{t.other_name}</p>
-              <p style={{ color: C.sub, fontSize: 11.5, margin: "1px 0 0", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{t.last_body}</p>
-            </div>
-            <p style={{ color: C.faint, fontSize: 10, fontWeight: 700, margin: 0, flexShrink: 0 }}>{new Date(t.last_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</p>
-          </button>
-        ))}
-      </div>
+    <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 14, overflow: "hidden" }}>
+      {loading && <p role="status" style={{ padding: "10px 13px", color: C.sub, fontSize: 12 }}>Loading consultations…</p>}
+      {error && <div role="alert" style={{ padding: "10px 13px", color: "#B91C1C", fontSize: 12 }}><p>{error}</p><button onClick={() => void refresh()} style={{ color: C.primary, cursor: "pointer", background: "none", border: `1px solid ${C.line}`, borderRadius: 8, padding: "6px 10px" }}>Retry inbox</button></div>}
+      {!loading && !error && !items.length && <p style={{ padding: "10px 13px", color: C.sub, fontSize: 12 }}>No authorised consultation chats yet.</p>}
+      {items.map((item, index) => (
+        <button key={`${item.conversationId}:${item.episodeId}`} onClick={() => onOpen({ name: item.counterpartName, spec: item.consultationLabel, reference: { conversationId: item.conversationId, episodeId: item.episodeId } })}
+          style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 13px", background: "none", border: "none", cursor: "pointer", textAlign: "left", borderTop: index ? `1px solid ${C.line}` : "none" }}>
+          <Avatar name={item.counterpartName} size={42} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ fontWeight: 700, color: C.ink, fontSize: 13, margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.counterpartName}</p>
+            <p style={{ color: C.sub, fontSize: 10, margin: "2px 0" }}>{item.consultationLabel}</p>
+            <p style={{ color: C.sub, fontSize: 11.5, margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.lastMessage || "No messages yet"}</p>
+          </div>
+          <div style={{ flexShrink: 0, textAlign: "right" }}>
+            {item.lastMessageAt && <p style={{ color: C.faint, fontSize: 10, margin: 0 }}>{new Date(item.lastMessageAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</p>}
+            {item.unreadCount > 0 && <span aria-label={`${item.unreadCount} unread messages`} style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", minWidth: 18, height: 18, borderRadius: 99, background: "#0C9668", color: "white", fontSize: 10, fontWeight: 800, padding: "0 5px", marginTop: 4 }}>{item.unreadCount}</span>}
+          </div>
+        </button>
+      ))}
     </div>
   );
 }
 
 function DoctorChatsSection({ onOpen }) {
+  const inbox = usePostConsultationInbox();
+  const patients = inbox.items.filter(item => item.counterpartRole === "patient");
+  const unread = patients.reduce((sum, item) => sum + item.unreadCount, 0);
   return (
     <div style={{ marginTop: 14 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-        <p style={{ fontWeight: 800, color: C.ink, fontSize: 14.5, margin: 0 }}>Chats {"\u00B7"} Your Patients</p>
-        <span style={{ color: C.primary, fontWeight: 700, fontSize: 11 }}>View All {"\u203A"}</span>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 8 }}>
+        <p style={{ fontWeight: 800, color: C.ink, fontSize: 14.5, margin: 0 }}>Chats {"\u00B7"} Your Patients / Live Chats</p>
+        <button onClick={() => void inbox.refresh()} aria-label="Refresh patient chats" style={{ color: C.primary, background: "none", border: "none", cursor: "pointer", fontWeight: 700, fontSize: 11 }}>Refresh</button>
       </div>
-      {/* Doctor-side stats strip */}
-      <div style={{ display: "flex", gap: 7, marginBottom: 10 }}>
-        {[
-          { num: "5", label: "Active Chats", col: "#16A34A", soft: "#E7F6EC" },
-          { num: "4", label: "Unread", col: "#D97706", soft: "#FEF3E2" },
-          { num: "1", label: "Rx Requests", col: "#DB2777", soft: "#FCE7F3" },
-        ].map(t => (
-          <div key={t.label} style={{ flex: 1, background: t.soft, borderRadius: 11, padding: "7px 6px", textAlign: "center" }}>
-            <p style={{ fontWeight: 800, color: t.col, fontSize: 14.5, margin: 0 }}>{t.num}</p>
-            <p style={{ color: C.sub, fontSize: 8.5, margin: "1px 0 0", fontWeight: 700 }}>{t.label}</p>
-          </div>
-        ))}
-      </div>
-      {/* Patient rows */}
-      <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 16, overflow: "hidden" }}>
-        {PAST_PATIENTS.map((p, i) => (
-          <button key={p.id} onClick={() => onOpen({ name: p.name, spec: p.spec })}
-            style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: "none", border: "none", cursor: "pointer", textAlign: "left", borderTop: i ? `1px solid ${C.line}` : "none" }}>
-            <Avatar name={p.name} size={40} />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <p style={{ fontWeight: 700, color: C.ink, fontSize: 13, margin: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.name}</p>
-              <p style={{ color: C.sub, fontSize: 11.5, margin: "1px 0 0", display: "flex", alignItems: "center", gap: 4 }}>
-                {p.kind === "rx" && <Clipboard size={11} style={{ color: "#DB2777", flexShrink: 0 }} />}
-                {p.kind === "call" && <Phone size={11} style={{ color: C.sub, flexShrink: 0 }} />}
-                <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.last}</span>
-              </p>
-            </div>
-            <div style={{ textAlign: "right", flexShrink: 0 }}>
-              <p style={{ color: p.unread ? C.primary : C.faint, fontSize: 10, fontWeight: p.unread ? 800 : 600, margin: 0 }}>{p.time}</p>
-              {p.unread > 0 && (
-                <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", minWidth: 17, height: 17, borderRadius: 99, background: "#16A34A", color: "white", fontSize: 10, fontWeight: 800, marginTop: 3, padding: "0 4px" }}>{p.unread}</span>
-              )}
-            </div>
-          </button>
-        ))}
-      </div>
-      <p style={{ color: C.faint, fontSize: 10, margin: "7px 0 0", textAlign: "center" }}>Your replies are always free {"\u00B7"} patients use chat tokens</p>
+      {!inbox.loading && !inbox.error && <p style={{ color: C.sub, fontSize: 11, margin: "0 0 8px" }}>{patients.length} consultations · {unread} unread messages</p>}
+      <ConsultationInboxRows inbox={{ ...inbox, items: patients }} onOpen={onOpen} />
+      <p style={{ color: C.faint, fontSize: 10, margin: "7px 0 0", textAlign: "center" }}>Doctor replies do not use the patient's outgoing allowance. Follow-up chats remain available when urgent-dispatch availability is offline.</p>
     </div>
   );
 }
@@ -10259,8 +9936,7 @@ const HC_CADENCE = [
 const HC_PHYS_FEE = 700; // per home physician visit
 const HC_DURATIONS = [{ days: 10, off: 0 }, { days: 20, off: 5 }, { days: 30, off: 10 }];
 
-// Doctors empanelled with MyDox — a referring doctor found here unlocks a
-// free 24-hour chat window. (Seeded demo roster.)
+// Recovered referral picker examples. Display-name selection grants no chat access.
 const EMPANELLED_DOCTORS = [
   { name: "Dr. Arjun Mehta", spec: "Pulmonologist", hosp: "Ruby Hall Clinic" },
   { name: "Dr. Priya Nair", spec: "Cardiologist", hosp: "Sahyadri Hospital" },
@@ -10288,11 +9964,8 @@ function HomeCarePackageOverlay({ area = "Pune", onClose, onBook, onChatDoctor }
   const [days, setDays] = React.useState(20);
   const [refStep, setRefStep] = React.useState(false);
   const [refDoc, setRefDoc] = React.useState("");
-  const [secsLeft, setSecsLeft] = React.useState(24 * 3600);
   const [booked, setBooked] = React.useState(false);
   const matchedRef = hcMatchDoc(refDoc);
-  React.useEffect(() => { if (!(booked && matchedRef)) return; const t = setInterval(() => setSecsLeft(s => s > 0 ? s - 1 : 0), 1000); return () => clearInterval(t); }, [booked, matchedRef]);
-  const hhmmss = (s) => { const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60; return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(x).padStart(2, "0")}`; };
 
   const toggle = (id) => setPicked(p => ({ ...p, [id]: !p[id] }));
   const equipList = HC_EQUIPMENT.filter(e => picked[e.id]);
@@ -10333,15 +10006,14 @@ function HomeCarePackageOverlay({ area = "Pune", onClose, onBook, onChatDoctor }
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
               <Avatar name={matchedRef.name} size={40} />
               <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ margin: 0, fontSize: 13.5, fontWeight: 800, color: "#fff" }}>Free chat with {matchedRef.name}</p>
+                <p style={{ margin: 0, fontSize: 13.5, fontWeight: 800, color: "#fff" }}>Chat availability for {matchedRef.name}</p>
                 <p style={{ margin: "1px 0 0", fontSize: 10.5, color: "rgba(255,255,255,.9)" }}>{matchedRef.spec} · empanelled with us</p>
               </div>
             </div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "rgba(255,255,255,.18)", borderRadius: 11, padding: "8px 12px", marginBottom: 10 }}>
-              <span style={{ fontSize: 11, color: "#fff", fontWeight: 700 }}>⏱ Window closes in</span>
-              <span style={{ fontSize: 15, color: "#fff", fontWeight: 800, fontVariantNumeric: "tabular-nums", letterSpacing: .5 }}>{hhmmss(secsLeft)}</span>
+              <span style={{ fontSize: 11, color: "#fff", fontWeight: 700 }}>Authorised completed consultation required</span>
             </div>
-            <button onClick={() => { onChatDoctor && onChatDoctor(matchedRef); }} style={{ width: "100%", padding: "11px", borderRadius: 11, border: "none", background: "#fff", color: C.accentDeep, fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>💬 Start free chat now</button>
+            <button onClick={() => { onChatDoctor && onChatDoctor(matchedRef); }} style={{ width: "100%", padding: "11px", borderRadius: 11, border: "none", background: "#fff", color: C.accentDeep, fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>💬 Check consultation chat access</button>
           </div>
         )}
         <button onClick={onClose} style={{ marginTop: 22, width: "100%", maxWidth: 320, padding: "14px", borderRadius: 13, border: "none", background: A, color: "#fff", fontSize: 14, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>Done</button>
@@ -10361,7 +10033,7 @@ function HomeCarePackageOverlay({ area = "Pune", onClose, onBook, onChatDoctor }
       <div style={{ flex: 1, overflowY: "auto", padding: "18px 16px", scrollbarWidth: "none" }}>
         <div style={{ background: `${A}0D`, border: `1px solid ${A}33`, borderRadius: 14, padding: "12px 14px", marginBottom: 16, display: "flex", gap: 10 }}>
           <span style={{ fontSize: 22 }}>💬</span>
-          <p style={{ margin: 0, fontSize: 12, color: C.accentDeep, fontWeight: 600, lineHeight: 1.5 }}>If your referring doctor is empanelled with MyDox, we'll open a <b>free 24-hour chat</b> with them to coordinate the care plan, equipment settings and medication.</p>
+          <p style={{ margin: 0, fontSize: 12, color: C.accentDeep, fontWeight: 600, lineHeight: 1.5 }}>Chat requires an authorised completed consultation with the treating doctor. Entering a name does not open a conversation.</p>
         </div>
         <p style={{ margin: "0 0 7px", fontSize: 12.5, fontWeight: 800, color: C.ink }}>Doctor's name</p>
         <div style={{ display: "flex", alignItems: "center", gap: 8, background: C.canvas, borderRadius: 13, padding: "0 12px", border: `1.5px solid ${matchedRef ? A : C.line}` }}>
@@ -10387,7 +10059,7 @@ function HomeCarePackageOverlay({ area = "Pune", onClose, onBook, onChatDoctor }
             <Avatar name={matchedRef.name} size={38} />
             <div style={{ flex: 1, minWidth: 0 }}>
               <p style={{ margin: 0, fontSize: 13, fontWeight: 800, color: "#065F46" }}>{matchedRef.name} is empanelled ✓</p>
-              <p style={{ margin: "1px 0 0", fontSize: 11, color: "#047857" }}>{matchedRef.spec} · {matchedRef.hosp} · free 24-h chat will open</p>
+              <p style={{ margin: "1px 0 0", fontSize: 11, color: "#047857" }}>{matchedRef.spec} · {matchedRef.hosp} · chat requires a completed consultation</p>
             </div>
           </div>
         ) : refDoc.trim().length >= 3 ? (
@@ -10548,11 +10220,8 @@ function AssistiveLivingCareOverlay({ onClose, onBook, onChatDoctor }) {
   const [addons, setAddons] = React.useState({});
   const [refStep, setRefStep] = React.useState(false);
   const [refDoc, setRefDoc] = React.useState("");
-  const [secsLeft, setSecsLeft] = React.useState(24 * 3600);
   const [booked, setBooked] = React.useState(false);
   const matchedRef = hcMatchDoc(refDoc);
-  React.useEffect(() => { if (!(booked && matchedRef)) return; const t = setInterval(() => setSecsLeft(s => s > 0 ? s - 1 : 0), 1000); return () => clearInterval(t); }, [booked, matchedRef]);
-  const hhmmss = (s) => { const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60; return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(x).padStart(2, "0")}`; };
 
   const toggleAddon = id => setAddons(p => ({ ...p, [id]: !p[id] }));
   const tierObj = AL_TIERS.find(t => t.id === tier) || AL_TIERS[1];
@@ -10583,15 +10252,14 @@ function AssistiveLivingCareOverlay({ onClose, onBook, onChatDoctor }) {
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
               <Avatar name={matchedRef.name} size={40} />
               <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ margin: 0, fontSize: 13.5, fontWeight: 800, color: "#fff" }}>Free chat with {matchedRef.name}</p>
+                <p style={{ margin: 0, fontSize: 13.5, fontWeight: 800, color: "#fff" }}>Chat availability for {matchedRef.name}</p>
                 <p style={{ margin: "1px 0 0", fontSize: 10.5, color: "rgba(255,255,255,.9)" }}>{matchedRef.spec} · empanelled with us</p>
               </div>
             </div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "rgba(255,255,255,.18)", borderRadius: 11, padding: "8px 12px", marginBottom: 10 }}>
-              <span style={{ fontSize: 11, color: "#fff", fontWeight: 700 }}>⏱ Window closes in</span>
-              <span style={{ fontSize: 15, color: "#fff", fontWeight: 800, fontVariantNumeric: "tabular-nums", letterSpacing: .5 }}>{hhmmss(secsLeft)}</span>
+              <span style={{ fontSize: 11, color: "#fff", fontWeight: 700 }}>Authorised completed consultation required</span>
             </div>
-            <button onClick={() => { onChatDoctor && onChatDoctor(matchedRef); }} style={{ width: "100%", padding: "11px", borderRadius: 11, border: "none", background: "#fff", color: C.accentDeep, fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>💬 Start free chat now</button>
+            <button onClick={() => { onChatDoctor && onChatDoctor(matchedRef); }} style={{ width: "100%", padding: "11px", borderRadius: 11, border: "none", background: "#fff", color: C.accentDeep, fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>💬 Check consultation chat access</button>
           </div>
         )}
         <button onClick={onClose} style={{ marginTop: 22, width: "100%", maxWidth: 320, padding: "14px", borderRadius: 13, border: "none", background: A, color: "#fff", fontSize: 14, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>Done</button>
@@ -10611,7 +10279,7 @@ function AssistiveLivingCareOverlay({ onClose, onBook, onChatDoctor }) {
       <div style={{ flex: 1, overflowY: "auto", padding: "18px 16px", scrollbarWidth: "none" }}>
         <div style={{ background: `${A}0D`, border: `1px solid ${A}33`, borderRadius: 14, padding: "12px 14px", marginBottom: 16, display: "flex", gap: 10 }}>
           <span style={{ fontSize: 22 }}>💬</span>
-          <p style={{ margin: 0, fontSize: 12, color: C.accentDeep, fontWeight: 600, lineHeight: 1.5 }}>If the referring doctor is empanelled with MyDox, we'll open a <b>free 24-hour chat</b> with them to align on the care plan before admission.</p>
+          <p style={{ margin: 0, fontSize: 12, color: C.accentDeep, fontWeight: 600, lineHeight: 1.5 }}>Chat requires an authorised completed consultation with the treating doctor. Entering a name does not open a conversation.</p>
         </div>
         <p style={{ margin: "0 0 7px", fontSize: 12.5, fontWeight: 800, color: C.ink }}>Doctor's name</p>
         <div style={{ display: "flex", alignItems: "center", gap: 8, background: C.canvas, borderRadius: 13, padding: "0 12px", border: `1.5px solid ${matchedRef ? A : C.line}` }}>
@@ -10637,7 +10305,7 @@ function AssistiveLivingCareOverlay({ onClose, onBook, onChatDoctor }) {
             <Avatar name={matchedRef.name} size={38} />
             <div style={{ flex: 1, minWidth: 0 }}>
               <p style={{ margin: 0, fontSize: 13, fontWeight: 800, color: "#9A3412" }}>{matchedRef.name} is empanelled ✓</p>
-              <p style={{ margin: "1px 0 0", fontSize: 11, color: "#C2410C" }}>{matchedRef.spec} · {matchedRef.hosp} · free 24-h chat will open</p>
+              <p style={{ margin: "1px 0 0", fontSize: 11, color: "#C2410C" }}>{matchedRef.spec} · {matchedRef.hosp} · chat requires a completed consultation</p>
             </div>
           </div>
         ) : refDoc.trim().length >= 3 ? (
@@ -10768,11 +10436,8 @@ function RehabCenterOverlay({ onClose, onBook, onChatDoctor }) {
   const [addons, setAddons] = React.useState({});
   const [refStep, setRefStep] = React.useState(false);
   const [refDoc, setRefDoc] = React.useState("");
-  const [secsLeft, setSecsLeft] = React.useState(24 * 3600);
   const [booked, setBooked] = React.useState(false);
   const matchedRef = hcMatchDoc(refDoc);
-  React.useEffect(() => { if (!(booked && matchedRef)) return; const t = setInterval(() => setSecsLeft(s => s > 0 ? s - 1 : 0), 1000); return () => clearInterval(t); }, [booked, matchedRef]);
-  const hhmmss = (s) => { const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60; return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(x).padStart(2, "0")}`; };
 
   const toggleAddon = id => setAddons(p => ({ ...p, [id]: !p[id] }));
   const tierObj = RC_TIERS.find(t => t.id === tier) || RC_TIERS[1];
@@ -10807,15 +10472,14 @@ function RehabCenterOverlay({ onClose, onBook, onChatDoctor }) {
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
               <Avatar name={matchedRef.name} size={40} />
               <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ margin: 0, fontSize: 13.5, fontWeight: 800, color: "#fff" }}>Free chat with {matchedRef.name}</p>
+                <p style={{ margin: 0, fontSize: 13.5, fontWeight: 800, color: "#fff" }}>Chat availability for {matchedRef.name}</p>
                 <p style={{ margin: "1px 0 0", fontSize: 10.5, color: "rgba(255,255,255,.9)" }}>{matchedRef.spec} · empanelled with us</p>
               </div>
             </div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "rgba(255,255,255,.18)", borderRadius: 11, padding: "8px 12px", marginBottom: 10 }}>
-              <span style={{ fontSize: 11, color: "#fff", fontWeight: 700 }}>⏱ Window closes in</span>
-              <span style={{ fontSize: 15, color: "#fff", fontWeight: 800, fontVariantNumeric: "tabular-nums", letterSpacing: .5 }}>{hhmmss(secsLeft)}</span>
+              <span style={{ fontSize: 11, color: "#fff", fontWeight: 700 }}>Authorised completed consultation required</span>
             </div>
-            <button onClick={() => { onChatDoctor && onChatDoctor(matchedRef); }} style={{ width: "100%", padding: "11px", borderRadius: 11, border: "none", background: "#fff", color: C.accentDeep, fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>💬 Start free chat now</button>
+            <button onClick={() => { onChatDoctor && onChatDoctor(matchedRef); }} style={{ width: "100%", padding: "11px", borderRadius: 11, border: "none", background: "#fff", color: C.accentDeep, fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>💬 Check consultation chat access</button>
           </div>
         )}
         <button onClick={onClose} style={{ marginTop: 22, width: "100%", maxWidth: 320, padding: "14px", borderRadius: 13, border: "none", background: A, color: "#fff", fontSize: 14, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>Done</button>
@@ -10835,7 +10499,7 @@ function RehabCenterOverlay({ onClose, onBook, onChatDoctor }) {
       <div style={{ flex: 1, overflowY: "auto", padding: "18px 16px", scrollbarWidth: "none" }}>
         <div style={{ background: `${A}0D`, border: `1px solid ${A}33`, borderRadius: 14, padding: "12px 14px", marginBottom: 16, display: "flex", gap: 10 }}>
           <span style={{ fontSize: 22 }}>🔒</span>
-          <p style={{ margin: 0, fontSize: 12, color: C.accentDeep, fontWeight: 600, lineHeight: 1.5 }}>This referral stays strictly confidential. If the referring doctor is empanelled with MyDox, we'll open a <b>free 24-hour chat</b> with them to align on the care plan — no one else is notified.</p>
+          <p style={{ margin: 0, fontSize: 12, color: C.accentDeep, fontWeight: 600, lineHeight: 1.5 }}>Chat requires an authorised completed consultation with the treating doctor. Entering a name does not open a conversation.</p>
         </div>
         <p style={{ margin: "0 0 7px", fontSize: 12.5, fontWeight: 800, color: C.ink }}>Doctor's name</p>
         <div style={{ display: "flex", alignItems: "center", gap: 8, background: C.canvas, borderRadius: 13, padding: "0 12px", border: `1.5px solid ${matchedRef ? A : C.line}` }}>
@@ -10861,7 +10525,7 @@ function RehabCenterOverlay({ onClose, onBook, onChatDoctor }) {
             <Avatar name={matchedRef.name} size={38} />
             <div style={{ flex: 1, minWidth: 0 }}>
               <p style={{ margin: 0, fontSize: 13, fontWeight: 800, color: "#3730A3" }}>{matchedRef.name} is empanelled ✓</p>
-              <p style={{ margin: "1px 0 0", fontSize: 11, color: "#4338CA" }}>{matchedRef.spec} · {matchedRef.hosp} · free 24-h chat will open</p>
+              <p style={{ margin: "1px 0 0", fontSize: 11, color: "#4338CA" }}>{matchedRef.spec} · {matchedRef.hosp} · chat requires a completed consultation</p>
             </div>
           </div>
         ) : refDoc.trim().length >= 3 ? (
@@ -11006,11 +10670,8 @@ function FertilityIVFOverlay({ onClose, onBook, onChatDoctor }) {
   const [addons, setAddons] = React.useState({});
   const [refStep, setRefStep] = React.useState(false);
   const [refDoc, setRefDoc] = React.useState("");
-  const [secsLeft, setSecsLeft] = React.useState(24 * 3600);
   const [booked, setBooked] = React.useState(false);
   const matchedRef = hcMatchDoc(refDoc);
-  React.useEffect(() => { if (!(booked && matchedRef)) return; const t = setInterval(() => setSecsLeft(s => s > 0 ? s - 1 : 0), 1000); return () => clearInterval(t); }, [booked, matchedRef]);
-  const hhmmss = (s) => { const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60; return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(x).padStart(2, "0")}`; };
 
   const toggleAddon = id => setAddons(p => ({ ...p, [id]: !p[id] }));
   const treatObj = FC_TREATMENTS.find(t => t.id === treatment) || FC_TREATMENTS[1];
@@ -11045,15 +10706,14 @@ function FertilityIVFOverlay({ onClose, onBook, onChatDoctor }) {
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
               <Avatar name={matchedRef.name} size={40} />
               <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ margin: 0, fontSize: 13.5, fontWeight: 800, color: "#fff" }}>Free chat with {matchedRef.name}</p>
+                <p style={{ margin: 0, fontSize: 13.5, fontWeight: 800, color: "#fff" }}>Chat availability for {matchedRef.name}</p>
                 <p style={{ margin: "1px 0 0", fontSize: 10.5, color: "rgba(255,255,255,.9)" }}>{matchedRef.spec} · empanelled with us</p>
               </div>
             </div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "rgba(255,255,255,.18)", borderRadius: 11, padding: "8px 12px", marginBottom: 10 }}>
-              <span style={{ fontSize: 11, color: "#fff", fontWeight: 700 }}>⏱ Window closes in</span>
-              <span style={{ fontSize: 15, color: "#fff", fontWeight: 800, fontVariantNumeric: "tabular-nums", letterSpacing: .5 }}>{hhmmss(secsLeft)}</span>
+              <span style={{ fontSize: 11, color: "#fff", fontWeight: 700 }}>Authorised completed consultation required</span>
             </div>
-            <button onClick={() => { onChatDoctor && onChatDoctor(matchedRef); }} style={{ width: "100%", padding: "11px", borderRadius: 11, border: "none", background: "#fff", color: C.accentDeep, fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>💬 Start free chat now</button>
+            <button onClick={() => { onChatDoctor && onChatDoctor(matchedRef); }} style={{ width: "100%", padding: "11px", borderRadius: 11, border: "none", background: "#fff", color: C.accentDeep, fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>💬 Check consultation chat access</button>
           </div>
         )}
         <button onClick={onClose} style={{ marginTop: 22, width: "100%", maxWidth: 320, padding: "14px", borderRadius: 13, border: "none", background: A, color: "#fff", fontSize: 14, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>Done</button>
@@ -11073,7 +10733,7 @@ function FertilityIVFOverlay({ onClose, onBook, onChatDoctor }) {
       <div style={{ flex: 1, overflowY: "auto", padding: "18px 16px", scrollbarWidth: "none" }}>
         <div style={{ background: `${A}0D`, border: `1px solid ${A}33`, borderRadius: 14, padding: "12px 14px", marginBottom: 16, display: "flex", gap: 10 }}>
           <span style={{ fontSize: 22 }}>🔒</span>
-          <p style={{ margin: 0, fontSize: 12, color: C.accentDeep, fontWeight: 600, lineHeight: 1.5 }}>This referral stays strictly confidential. If the referring doctor is empanelled with MyDox, we'll open a <b>free 24-hour chat</b> with them to align on your treatment plan — no one else is notified.</p>
+          <p style={{ margin: 0, fontSize: 12, color: C.accentDeep, fontWeight: 600, lineHeight: 1.5 }}>Chat requires an authorised completed consultation with the treating doctor. Entering a name does not open a conversation.</p>
         </div>
         <p style={{ margin: "0 0 7px", fontSize: 12.5, fontWeight: 800, color: C.ink }}>Doctor's name</p>
         <div style={{ display: "flex", alignItems: "center", gap: 8, background: C.canvas, borderRadius: 13, padding: "0 12px", border: `1.5px solid ${matchedRef ? A : C.line}` }}>
@@ -11099,7 +10759,7 @@ function FertilityIVFOverlay({ onClose, onBook, onChatDoctor }) {
             <Avatar name={matchedRef.name} size={38} />
             <div style={{ flex: 1, minWidth: 0 }}>
               <p style={{ margin: 0, fontSize: 13, fontWeight: 800, color: "#9D174D" }}>{matchedRef.name} is empanelled ✓</p>
-              <p style={{ margin: "1px 0 0", fontSize: 11, color: "#BE185D" }}>{matchedRef.spec} · {matchedRef.hosp} · free 24-h chat will open</p>
+              <p style={{ margin: "1px 0 0", fontSize: 11, color: "#BE185D" }}>{matchedRef.spec} · {matchedRef.hosp} · chat requires a completed consultation</p>
             </div>
           </div>
         ) : refDoc.trim().length >= 3 ? (
@@ -13716,7 +13376,7 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
   const [showSOS, setShowSOS] = useState(false);
   const [showCompanion, setShowCompanion] = useState(false); // AI Health Companion chat
   const [showBreatheFree, setShowBreatheFree] = useState(false); // BreatheFree chained allergy flow
-  const [allergyDone, setAllergyDone] = useState(false); // BreatheFree test complete → report + free chat
+  const [allergyDone, setAllergyDone] = useState(false); // BreatheFree test complete → report
   const [showProfile, setShowProfile] = useState(false);
   const handleSignOut = useCallback(async () => {
     try { await supabase.auth.signOut({ scope: "global" }); } catch (_e) { }
@@ -14007,31 +13667,8 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
 
   const fare = useMemo(() => selectedService ? buildFare(selectedService, emergency) : null, [selectedService, emergency]);
 
-  // Tracks a referral the patient opened from chat, so we can mark it "booked"
-  // only after they actually confirm a slot (i.e. a care request starts).
-  const pendingReferralRef = useRef(null);
-  // Persist the referral + chosen provider across mounts so the doctor's
-  // recommendation stays pre-filled if the patient closes the sheet, follows
-  // the deep link again, or returns later.
-  const PENDING_REF_KEY = "medconnect:pending_referral";
+  // Referral review is transient. It does not grant access or confirm a booking.
   const [preselProviderName, setPreselProviderName] = useState(null);
-  // Hydrate once on mount from localStorage.
-  useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(PENDING_REF_KEY);
-      if (!raw) return;
-      const j = JSON.parse(raw);
-      if (!j) return;
-      pendingReferralRef.current = j.referralId || null;
-      if (j.providerName) setPreselProviderName(j.providerName);
-      if (j.service_tab) { setActiveTab(j.service_tab); setBookingOpen(true); }
-    } catch (_) { }
-  }, []);
-  const clearPendingReferral = () => {
-    pendingReferralRef.current = null;
-    setPreselProviderName(null);
-    try { window.localStorage.removeItem(PENDING_REF_KEY); } catch (_) { }
-  };
 
   // Follow shared req lifecycle
   useEffect(() => {
@@ -14040,55 +13677,44 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
     // Show tracking for the early phases. Once converging/at_hub, don't yank the screen —
     // the patient can browse home and return via the live banner.
     if (["broadcasting", "expired", "assigned"].includes(req.status)) setScreen("track");
-    // If this request came from a chat referral, flip the referral to "booked"
-    // now that the patient has actually confirmed a slot.
-    if (pendingReferralRef.current && ["broadcasting", "assigned", "completed"].includes(req.status)) {
-      const rid = pendingReferralRef.current;
-      try { updateServiceReferralStatus(rid, "booked", req.id); } catch (_) { }
-      clearPendingReferral();
-    }
+    // Referral review does not confirm an appointment. Booking association must
+    // be persisted by the authorised booking operation, never by local request state.
   }, [req?.status]);
 
-  // Book-from-chat: deep-link into the standard booking flow with the referred
-  // service pre-selected, so the patient can review/edit before confirming.
+  // An authenticated referral ID opens the ordinary review and booking screen.
   useEffect(() => {
-    const handler = (e) => {
-      const r = e?.detail; if (!r) return;
-      const tab = r.service_tab || "doctor";
-      const label = (r.service_label || "").toLowerCase();
+    let active = true;
+    const handler = async (event) => {
+      const referralId = event?.detail?.id;
+      if (typeof referralId !== "string") return;
+      const { data: session } = await supabase.auth.getSession();
+      const actorId = session.session?.user.id;
+      if (!actorId) { toast("Sign in to review this recommendation."); return; }
+      const { data: referral, error } = await supabase.from("service_referrals")
+        .select("id, doctor_id, patient_id, service_key, service_label, service_tab, status")
+        .eq("id", referralId).eq("patient_id", actorId).maybeSingle();
+      const { data: currentSession } = await supabase.auth.getSession();
+      if (!active || currentSession.session?.user.id !== actorId) return;
+      if (error || !referral) { toast("This recommendation is unavailable for your account."); return; }
       const catalogs = {
         doctor: DOCTORS_EXT, therapist: THERAPISTS, technician: TECHNICIANS,
         test: TECHNICIANS, nurse: NURSE_KINDS, care: CARE_PROCS,
         scan: SCANS, diet: DIETITIANS,
       };
-      const list = catalogs[tab] || [];
-      const match = list.find(s => (s.name || "").toLowerCase() === label)
-        || list.find(s => label && (s.name || "").toLowerCase().includes(label))
-        || list.find(s => label && label.includes((s.name || "").toLowerCase()))
-        || null;
+      const tab = Object.hasOwn(catalogs, referral.service_tab) ? referral.service_tab : "doctor";
+      const label = (referral.service_label || "").toLowerCase();
+      const match = catalogs[tab].find(service => service.id === referral.service_key)
+        || catalogs[tab].find(service => (service.name || "").toLowerCase() === label) || null;
       setServiceView(null); setQuery(""); setSelDoc(null); setSelTh(null); setSelTest(null);
-      setActiveTab(tab);
-      setSelectedSpec(match);
-      pendingReferralRef.current = r.id || null;
-      const provName = r.providerName || null;
-      setPreselProviderName(provName);
-      try {
-        window.localStorage.setItem(PENDING_REF_KEY, JSON.stringify({
-          referralId: r.id || null, providerName: provName,
-          service_key: r.service_key || null, service_tab: tab, service_label: r.service_label || null,
-          at: Date.now(),
-        }));
-      } catch (_) { }
-      const who = (r.doctorName || "your doctor").split(" ").slice(0, 2).join(" ");
-      const provLine = provName ? ` with ${provName}` : "";
-      toast(match
-        ? `${r.service_label}${provLine} pre-selected — recommended by ${who}. Pick a slot & confirm below.`
-        : `Opened booking for ${r.service_label}${provLine} — recommended by ${who}. Pick a slot below.`);
-      setBookingOpen(true); setTimeout(() => { try { pickerRef.current && pickerRef.current.scrollIntoView({ behavior: "smooth", block: "start" }); } catch (_) { } }, 80);
+      setEmergency(false); setActiveTab(tab); setSelectedSpec(match); setPreselProviderName(null);
+      setBookingOpen(true);
+      toast("Recommendation opened. Review the provider, price and slot before confirming.");
+      setTimeout(() => { if (active) pickerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }); }, 80);
     };
     window.addEventListener("mydox:book-referral", handler);
-    return () => window.removeEventListener("mydox:book-referral", handler);
+    return () => { active = false; window.removeEventListener("mydox:book-referral", handler); };
   }, []);
+
 
 
   const assigned = req?.candidates?.find(c => c.id === req.assignedId);
@@ -14706,12 +14332,7 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
                 onChat={d => setChatDoctor(d)}
                 onOpenFamilyPlan={() => setShowFamilyPlan(true)} />}
               recommendationsContent={<RecommendedByDoctorCard
-                onBookService={(r) => {
-                  const svc = { id: "followup", name: r.service_label, base: 0, color: C.primary, type: r.service_tab || "doctor", shortName: "Rx" };
-                  const homeHub = { id: "home", name: visitMode === "home" ? "Your Home" : visitMode === "online" ? "Online consult" : "MyDox Hub", type: visitMode === "home" ? "home" : "clinic", address: area + ", Pune", patEtaMin: visitMode === "home" ? 0 : 8, specialities: [], amenities: [] };
-                  toast(`Booking ${r.service_label} — recommended by ${(r.doctorName || "your doctor").split(" ").slice(0, 2).join(" ")}`);
-                  actions.book({ spec: svc, emergency: false, area, fare: buildFare(svc, false), hub: homeHub });
-                }} />}
+                onBookService={referral => window.dispatchEvent(new CustomEvent("mydox:book-referral", { detail: { id: referral.id } }))} />}
               chatsContent={<HomeChatsSection onOpen={d => setChatDoctor(d)} onOpenReel={r => setViewReel(r)} onOpenGroup={g => setViewGroup(g)} />}
               reportContent={<AILabReportCard />}
               allergyReport={<>          {/* BreatheFree allergy report — surfaces at the top after the test */}
@@ -14721,7 +14342,7 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
                       <div style={{ width: 40, height: 40, borderRadius: 11, background: "rgba(255,255,255,.22)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><FileText size={19} color="#fff" /></div>
                       <div style={{ flex: 1, textAlign: "left", minWidth: 0 }}>
                         <p style={{ margin: 0, fontWeight: 800, color: "#fff", fontSize: 13.5 }}>{BF_REPORT.title} <span style={{ fontSize: 8.5, background: "rgba(255,255,255,.25)", borderRadius: 99, padding: "2px 6px", fontWeight: 800 }}>NEW</span></p>
-                        <p style={{ margin: "2px 0 0", color: "rgba(255,255,255,.92)", fontSize: 10.5, lineHeight: 1.3 }}>Report ready · free 24h chat with {BF_DOCTOR.name.split(" ").slice(0, 2).join(" ")} open</p>
+                        <p style={{ margin: "2px 0 0", color: "rgba(255,255,255,.92)", fontSize: 10.5, lineHeight: 1.3 }}>Report preview · chat requires an authorised completed consultation</p>
                       </div>
                       <ChevronRight size={17} style={{ color: "#fff", flexShrink: 0 }} />
                     </button>

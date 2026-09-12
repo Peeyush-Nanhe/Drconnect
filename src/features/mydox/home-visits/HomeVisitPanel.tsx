@@ -1,16 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "../backend";
+import { TwoWayChatModal } from "../TwoWayChatModal";
 import { homeVisitError, homeVisits } from "./api";
 import type { HomeAction, HomeProviderSettings, HomeQuote, HomeVisit } from "./api";
 import { homeTime, money } from "./format";
 import "./home-visits.css";
 
-export function HomeVisitPanel({ audience }: { audience: "patient" | "doctor" | "operations" }) {
+export function HomeVisitPanel({ audience, completedOnly = false }: { audience: "patient" | "doctor" | "operations"; completedOnly?: boolean }) {
   const { session } = useSession();
   const actorId = session?.user.id;
-  return <VisitPanel key={actorId || "signed-out"} audience={audience} actorId={actorId} />;
+  return <VisitPanel key={actorId || "signed-out"} audience={audience} actorId={actorId} completedOnly={completedOnly} />;
 }
-function VisitPanel({ audience, actorId }: { audience: "patient" | "doctor" | "operations"; actorId?: string }) {
+function VisitPanel({ audience, actorId, completedOnly }: { audience: "patient" | "doctor" | "operations"; actorId?: string; completedOnly: boolean }) {
   const [rows, setRows] = useState<HomeVisit[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -35,15 +36,15 @@ function VisitPanel({ audience, actorId }: { audience: "patient" | "doctor" | "o
     window.addEventListener("focus", onResume); window.addEventListener("online", onResume); document.addEventListener("visibilitychange", onResume);
     return () => { active.current = false; clearInterval(poll); window.removeEventListener("focus", onResume); window.removeEventListener("online", onResume); document.removeEventListener("visibilitychange", onResume); };
   }, [refresh]);
-  const visible = rows.filter(row => audience === "doctor" ? row.patient_id !== actorId : row.patient_id === actorId || row.booker_id === actorId || row.actor_id === actorId);
+  const visible = rows.filter(row => !completedOnly || (row.home_visit_status || row.status) === "completed").filter(row => audience === "doctor" ? row.patient_id !== actorId : row.patient_id === actorId || row.booker_id === actorId || row.actor_id === actorId);
   return <section className="hv hv-card" aria-label="Saved doctor home visits">
-    <div className="hv-header"><div><h2>Doctor home visits</h2><small>{updated ? `Last refreshed ${updated}` : "Saved requests and visits"}</small></div><button type="button" onClick={() => void refresh()}>Refresh</button></div>
+    <div className="hv-header"><div><h2>{completedOnly ? "Completed home consultations" : "Doctor home visits"}</h2><small>{updated ? `Last refreshed ${updated}` : "Saved requests and visits"}</small></div><button type="button" onClick={() => void refresh()}>Refresh</button></div>
     {error && <p className="hv-error" role="alert">{error}</p>}
     {loading && <p role="status">Loading saved home visits…</p>}
-    {!loading && !error && visible.length === 0 && <p>No saved home visits available.</p>}
+    {!loading && !error && visible.length === 0 && <p>{completedOnly ? "No completed home consultations available." : "No saved home visits available."}</p>}
     {visible.map(row => <VisitCard key={row.id || row.booking_id} visit={row} actorId={actorId || ""} refresh={refresh} />)}
-    {audience === "doctor" && <ProviderHomeSettings />}
-    {audience === "operations" && <HomeVisitOperations />}
+    {!completedOnly && audience === "doctor" && <ProviderHomeSettings />}
+    {!completedOnly && audience === "operations" && <HomeVisitOperations />}
     <p className="hv-help">This view refreshes while the app is open. Notification delivery depends on the approved pilot channels.</p>
   </section>;
 }
@@ -54,6 +55,7 @@ function VisitCard({ visit, actorId, refresh }: { visit: HomeVisit; actorId: str
   const isPatient = visit.patient_id === actorId || visit.booker_id === actorId || visit.actor_id === actorId;
   const actions = visit.allowed_actions || [];
   const [busy, setBusy] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
   const [error, setError] = useState("");
   const [form, setForm] = useState("");
   const [reason, setReason] = useState("");
@@ -92,6 +94,7 @@ function VisitCard({ visit, actorId, refresh }: { visit: HomeVisit; actorId: str
     {visit.doctor_arrived_at && !visit.arrived_at && <p>Doctor reported arrival. Patient acknowledgement is still required.</p>}
     {error && <p className="hv-error" role="alert">{error}</p>}
     <div className="hv-actions">
+      {status === "completed" && (isPatient || visit.provider_id === actorId) && <button type="button" onClick={() => setChatOpen(true)}>Chat about this consultation</button>}
       {button("accept", "Accept visit")}{button("decline", "Decline", true)}{button("cancel", "Cancel visit", true)}
       {button("start_travel", "Start travel", true)}{button("report_arrival", "Report my arrival")}{button("start_consultation", "Start consultation")}
       {button("save_encounter", "Save encounter", true)}{button("amend_encounter", "Amend signed encounter", true)}{button("complete", "Complete visit")}
@@ -126,6 +129,7 @@ function VisitCard({ visit, actorId, refresh }: { visit: HomeVisit; actorId: str
     {receipt?.status === "recorded_pay_at_visit" ? <details open><summary>Recorded pay-at-visit receipt</summary><p>{money(receipt.amount, receipt.currency || visit.currency)} · {receipt.method}</p>{receipt.recorded_at && <p>Recorded {homeTime(receipt.recorded_at)}</p>}{receipt.reference && <p>Reference: {receipt.reference}</p>}<small>Booking {id}. This is an authorised collection record, not gateway-verified payment.</small></details> : <p>Payment: {receipt?.status || "Unpaid / no collection recorded"}. Online payment is unavailable.</p>}
     {!!visit.disputes?.length && <details open><summary>Disputes</summary>{visit.disputes.map(dispute => <p key={dispute.id}>{dispute.status} · {homeTime(dispute.opened_at)} · {dispute.reason}</p>)}<p className="hv-help">Opening a dispute does not erase the encounter or verify a refund.</p></details>}
     {!!visit.events?.length && <details><summary>Visit history</summary><ul>{visit.events.map((event, index) => <li key={`${event.version}-${index}`}>{homeTime(event.created_at)} · {event.kind.replaceAll("_", " ")}{event.reason ? ` · ${event.reason}` : ""}</li>)}</ul></details>}
+    {chatOpen && <TwoWayChatModal reference={{ source: "doctor_appointment", sourceId: id }} onClose={() => setChatOpen(false)} />}
   </article>;
 }
 

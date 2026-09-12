@@ -2,7 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useSession, cancelDoctorAppointment, rescheduleDoctorAppointment } from "@/features/mydox/backend";
 import { SlotPickerCalendarStandalone } from "./SlotPickerCalendar";
+import { TwoWayChatModal } from "@/features/mydox/TwoWayChatModal";
+import type { ChatReference } from "@/features/mydox/post-consultation-chat/types";
 import { HomeVisitPanel } from "./home-visits/HomeVisitPanel";
+
 type Module =
   | "Doctor / Nurse"
   | "Lab / Scan"
@@ -74,6 +77,25 @@ function classifyCareRequest(specialty: string): Module {
   if (/(lab|scan|xray|mri|ct|ultrasound|blood test)/.test(s)) return "Lab / Scan";
   if (/(home|nurse|physio|caretaker)/.test(s)) return "Home Care";
   return "Doctor / Nurse";
+}
+
+function CompletedConsultationChat({ item }: { item: Item }) {
+  const [open, setOpen] = useState(false);
+  const sourceId = item.id.split(":")[1];
+  const reference: ChatReference | undefined = item.status !== "completed" || !sourceId ? undefined
+    : item.id.startsWith("cr:") ? { source: "care_request", sourceId }
+    : item.id.startsWith("da:") ? { source: "doctor_appointment", sourceId }
+    : undefined;
+  if (!reference) return null;
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)} aria-label="Chat about this completed consultation"
+        style={{ background: "#10B981", color: "#fff", border: "none", borderRadius: 999, padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+        Chat
+      </button>
+      {open && <TwoWayChatModal reference={reference} specialty={item.title} onClose={() => setOpen(false)} />}
+    </>
+  );
 }
 
 export default function MyBookingsOverlay({ onClose, onRebook }: { onClose: () => void; onRebook?: (item: Item) => void }) {
@@ -194,7 +216,7 @@ export default function MyBookingsOverlay({ onClose, onRebook }: { onClose: () =
         )}
 
         <main style={{ flex: 1, overflowY: "auto", padding: 20 }}>
-          <HomeVisitPanel audience="patient" />
+          <HomeVisitPanel audience="patient" completedOnly={tab === "previous"} />
           {loading ? (
             <EmptyMsg text="Loading your bookings…" />
           ) : visible.length === 0 ? (
@@ -213,6 +235,7 @@ export default function MyBookingsOverlay({ onClose, onRebook }: { onClose: () =
                             <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                               <span style={{ fontWeight: 700, fontSize: 14, textTransform: "capitalize" }}>{it.title}</span>
                               <StatusChip status={it.status} />
+                              <CompletedConsultationChat item={it} />
                             </div>
                             {it.subtitle && <div style={{ color: "#475569", fontSize: 12, marginTop: 2 }}>{it.subtitle}</div>}
                             {it.raw?.address_snapshot?.full_address && (
