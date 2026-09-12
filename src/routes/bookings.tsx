@@ -3,6 +3,8 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useSession } from "@/features/mydox/backend";
 import { HomeVisitPanel } from "@/features/mydox/home-visits/HomeVisitPanel";
+import { TwoWayChatModal } from "@/features/mydox/TwoWayChatModal";
+import type { ChatReference } from "@/features/mydox/post-consultation-chat/types";
 
 export const Route = createFileRoute("/bookings")({
   head: () => ({
@@ -61,6 +63,25 @@ const STATUS_COLORS: Record<string, { bg: string; fg: string }> = {
   cancelled: { bg: "#FEE2E2", fg: "#991B1B" },
   declined: { bg: "#FEE2E2", fg: "#991B1B" },
 };
+
+function CompletedConsultationChat({ item }: { item: Item }) {
+  const [open, setOpen] = useState(false);
+  const sourceId = item.id.split(":")[1];
+  const reference: ChatReference | undefined = item.status !== "completed" || !sourceId ? undefined
+    : item.id.startsWith("cr:") ? { source: "care_request", sourceId }
+    : item.id.startsWith("da:") ? { source: "doctor_appointment", sourceId }
+    : undefined;
+  if (!reference) return null;
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)} aria-label="Chat about this completed consultation"
+        style={{ background: "#10B981", color: "#fff", border: "none", borderRadius: 999, padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+        Chat
+      </button>
+      {open && <TwoWayChatModal reference={reference} specialty={item.title} onClose={() => setOpen(false)} />}
+    </>
+  );
+}
 
 function StatusChip({ status }: { status: string }) {
   const s = STATUS_COLORS[status] ?? { bg: "#E5E7EB", fg: "#374151" };
@@ -357,7 +378,7 @@ function BookingsPage() {
       </header>
 
       <main style={{ maxWidth: 900, margin: "0 auto", padding: "16px" }}>
-        <HomeVisitPanel audience="patient" />
+        <HomeVisitPanel audience="patient" completedOnly={tab === "previous"} />
         {!ready ? null : !uid ? (
           <EmptyMsg text="Sign in to see your bookings." />
         ) : loading ? (
@@ -392,6 +413,7 @@ function BookingsPage() {
                             {it.title}
                           </span>
                           <StatusChip status={it.status} />
+                          <CompletedConsultationChat item={it} />
                         </div>
                         {it.subtitle && (
                           <div style={{ color: "#475569", fontSize: 12, marginTop: 2 }}>{it.subtitle}</div>

@@ -16,8 +16,11 @@ This directory owns the migration history for **MyDox Staging**, project `pyrlvj
 | 20260910183200 | home_visit_hosted_permissions | Explicit inherited grant revocation, indexes and bounded shared slot discovery |
 | 20260910183300 | home_visit_active_capacity | Real-time admission for overdue travel; one active visit; recheck credentials before consultation |
 | 20260910183400 | home_visit_hold_expiry_audit | Scoped replacement expiry preserves original, records version/event/outbox and rejects stale acceptance |
+| 20260912063350 | post_consultation_chat | Synthetic-only canonical home-consultation chat, atomic sends/debits, receipts, prescription requests and disabled notification outbox |
 
 All are deployed and immutable. The local CLI configuration ID `mydox-staging` is distinct from the hosted project reference. Link metadata under `.temp` is ignored.
+
+Post-consultation chat has an empty synthetic allowlist and is disabled for real patients. The full module remains incomplete pending policy, clinical-completion and external-integration decisions. See [implementation status](../docs/post-consultation-chat/IMPLEMENTATION_STATUS.md); this staging schema deployment is not a reduced-scope product release.
 
 The home-visit rollout keeps real-patient use disabled. See [home-visit operations](../docs/home-visits/OPERATIONS.md) and [acceptance evidence](../docs/home-visits/TEST_REPORT.md) for enabled scope, private test credentials, exact validation and unresolved release gates. Do not apply the historical home extension alone.
 
