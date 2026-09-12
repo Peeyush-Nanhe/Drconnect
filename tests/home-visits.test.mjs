@@ -65,6 +65,21 @@ test('unapproved real-patient rollout and direct legacy home-visit RPCs are bloc
   assert.deepEqual(schedulingGrants.rows, [], 'explicit Supabase default grants must also be revoked from scheduling RPCs');
 });
 
+test('disabled accounts receive an empty home-visit list without bypassing authentication or booking policy', async () => {
+  const { patient, doctor } = await pair();
+  const outsider = await user({ pilot: false });
+  const { visit } = await book(patient, doctor);
+  assert.ok((await list(patient)).some(row => row.id === visit.id), 'enabled participants keep their scoped visit history');
+  assert.deepEqual(await list(outsider), [], 'a disabled account cannot read another participant\'s visit');
+  await assert.rejects(quote(outsider, doctor), /enabled|pilot|approval|available/i);
+
+  await db.query('delete from public.home_visit_pilot_participants where user_id=$1', [patient]);
+  assert.deepEqual(await list(patient), [], 'removing pilot access also hides previously accessible visits');
+  await assert.rejects(quote(patient, doctor), /enabled|pilot|approval|available/i);
+  await assert.rejects(actor(null, 'select public.hv_list()'), error => error.code === '42501');
+  await assert.rejects(actor(null, 'select public.hv_list()', [], 'anon'), /permission denied/i);
+});
+
 test('future home booking survives immediate offline and requires explicit named-doctor acceptance', async () => {
   const { patient, doctor } = await pair();
   await actor(doctor, 'update public.provider_availability set is_online=false where user_id=$1', [doctor]);

@@ -1,0 +1,59 @@
+{
+  "checkedAt": "2026-09-12T07:06:45.107Z",
+  "project": "pyrlvjeectjikvfksukb",
+  "application": "http://127.0.0.1:8084",
+  "commit": "84c6a5ccab4621e51487bc4a243c747e2cc443b0",
+  "scope": "Existing nonpilot account; read-only list and policy UI. Enabled home-visit lifecycles covered by local SQL regressions.",
+  "expectedHttpStatus": 200,
+  "checks": [
+    {
+      "name": "Existing authenticated fixture remains outside the home-visit rollout",
+      "status": "PASS"
+    },
+    {
+      "name": "Actual POST hv_list returns HTTP 200",
+      "status": "PASS"
+    },
+    {
+      "name": "Disabled account receives an empty authorized list without an RPC error",
+      "status": "PASS"
+    },
+    {
+      "name": "History panel checks rollout context during load, refresh and polling",
+      "status": "PASS"
+    },
+    {
+      "name": "Disabled panel does not request list or doctor settings",
+      "status": "PASS"
+    },
+    {
+      "name": "Unavailable history has no error alert or stuck loading indicator",
+      "status": "PASS"
+    }
+  ],
+  "sourceHashes": [
+    {
+      "path": "src/features/mydox/home-visits/HomeVisitPanel.tsx",
+      "sha256": "c835befac99d65aec2e8f2ff4610fc2de4ea14e65a565cfa08988d35717b0ae5"
+    },
+    {
+      "path": "src/features/mydox/home-visits/api.ts",
+      "sha256": "c3a178271e4688ee3978745d2af63c192eef66a5010840248197b120e0f93a26"
+    }
+  ],
+  "response": {
+    "contextEnabled": false,
+    "status": 200,
+    "code": null,
+    "message": null,
+    "isEmptyArray": true
+  },
+  "ui": {
+    "list": 0,
+    "settings": 0,
+    "context": 5,
+    "alerts": 0,
+    "loading": false
+  },
+  "sourceChangedDuringRun": false
+}

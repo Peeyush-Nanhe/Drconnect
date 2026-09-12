@@ -1,0 +1,66 @@
+{
+  "project": "pyrlvjeectjikvfksukb",
+  "before": {
+    "policy": [
+      {
+        "pay_at_visit_enabled": false,
+        "real_patients_enabled": false
+      }
+    ],
+    "guard_definitions": {
+      "public.hv_quote": "52a9910f24a305b39541a304f28ac49b",
+      "private.hv_actor": "e0cee8c508158f41166a312e524ed809",
+      "public.hv_action": "1973c1b5787f08f9a926db69d7c65a67",
+      "public.hv_create": "7f032d9699dfc638327d2d2360142cc9",
+      "public.hv_context": "442eaa3d2d5265d1abebffa66793eef1",
+      "private.hv_enabled": "65b866e41b89fe5452dc673758072963"
+    },
+    "pilot_participants": 0
+  },
+  "after": {
+    "policy": [
+      {
+        "pay_at_visit_enabled": false,
+        "real_patients_enabled": false
+      }
+    ],
+    "migration": {
+      "md5": "250064e6ccff86fcb261ba51f0902ffd",
+      "version": "20260912070431"
+    },
+    "list_grants": {
+      "anon_execute": false,
+      "authenticated_execute": true
+    },
+    "guard_definitions": {
+      "public.hv_quote": "52a9910f24a305b39541a304f28ac49b",
+      "private.hv_actor": "e0cee8c508158f41166a312e524ed809",
+      "public.hv_action": "1973c1b5787f08f9a926db69d7c65a67",
+      "public.hv_create": "7f032d9699dfc638327d2d2360142cc9",
+      "public.hv_context": "442eaa3d2d5265d1abebffa66793eef1",
+      "private.hv_enabled": "65b866e41b89fe5452dc673758072963"
+    },
+    "pilot_participants": 0
+  },
+  "guardDefinitionsAndRolloutUnchanged": true,
+  "advisors": [
+    {
+      "name": "rls_enabled_no_policy",
+      "level": "INFO",
+      "count": 24,
+      "remediation": "https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy"
+    },
+    {
+      "name": "authenticated_security_definer_function_executable",
+      "level": "WARN",
+      "count": 26,
+      "remediation": "https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable"
+    },
+    {
+      "name": "auth_leaked_password_protection",
+      "level": "WARN",
+      "count": 1,
+      "remediation": "https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection"
+    }
+  ]
+}

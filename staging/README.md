@@ -17,6 +17,7 @@ This directory owns the migration history for **MyDox Staging**, project `pyrlvj
 | 20260910183300 | home_visit_active_capacity | Real-time admission for overdue travel; one active visit; recheck credentials before consultation |
 | 20260910183400 | home_visit_hold_expiry_audit | Scoped replacement expiry preserves original, records version/event/outbox and rejects stale acceptance |
 | 20260912063350 | post_consultation_chat | Synthetic-only canonical home-consultation chat, atomic sends/debits, receipts, prescription requests and disabled notification outbox |
+| 20260912070431 | home_visit_list_unavailable_state | Authenticated accounts outside the rollout receive an empty home-visit list; existing booking guards and visit scope remain enforced |
 
 All are deployed and immutable. The local CLI configuration ID `mydox-staging` is distinct from the hosted project reference. Link metadata under `.temp` is ignored.
 

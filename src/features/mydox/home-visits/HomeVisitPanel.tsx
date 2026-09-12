@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "../backend";
 import { TwoWayChatModal } from "../TwoWayChatModal";
 import { homeVisitError, homeVisits } from "./api";
-import type { HomeAction, HomeProviderSettings, HomeQuote, HomeVisit } from "./api";
+import type { HomeAction, HomeProviderSettings, HomeQuote, HomeVisit, HomeVisitContext } from "./api";
 import { homeTime, money } from "./format";
 import "./home-visits.css";
 
@@ -13,6 +13,7 @@ export function HomeVisitPanel({ audience, completedOnly = false }: { audience: 
 }
 function VisitPanel({ audience, actorId, completedOnly }: { audience: "patient" | "doctor" | "operations"; actorId?: string; completedOnly: boolean }) {
   const [rows, setRows] = useState<HomeVisit[]>([]);
+  const [context, setContext] = useState<HomeVisitContext | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [updated, setUpdated] = useState<string | null>(null);
@@ -21,29 +22,44 @@ function VisitPanel({ audience, actorId, completedOnly }: { audience: "patient" 
   const refresh = useCallback(async () => {
     if (!actorId) return;
     const current = ++sequence.current;
+    const isCurrent = () => active.current && current === sequence.current;
+    setLoading(true);
     try {
+      const available = await homeVisits.context();
+      if (!isCurrent()) return;
+      setContext(available);
+      if (!available.enabled) {
+        setRows([]); setError(""); setUpdated(null);
+        return;
+      }
       const result = await homeVisits.list();
-      if (!active.current || current !== sequence.current) return;
+      if (!isCurrent()) return;
       setRows(result || []); setError(""); setUpdated(new Date().toLocaleTimeString());
-    } catch (e) { if (active.current && current === sequence.current) setError(homeVisitError(e)); }
+    } catch (e) {
+      // Keep mounted visit forms through transient refresh failures. Explicitly
+      // disabled context and authenticated-actor changes clear the saved view.
+      if (isCurrent()) setError(homeVisitError(e));
+    } finally { if (isCurrent()) setLoading(false); }
   }, [actorId]);
   useEffect(() => {
-    active.current = true; setRows([]); setUpdated(null); setLoading(true);
-    void refresh().finally(() => setLoading(false));
+    active.current = true; setRows([]); setContext(null); setUpdated(null);
+    void refresh();
     const onResume = () => { if (!document.hidden) void refresh(); };
     // Polling is an open-app refresh, never advertised as background notification delivery.
     const poll = window.setInterval(onResume, 12000);
     window.addEventListener("focus", onResume); window.addEventListener("online", onResume); document.addEventListener("visibilitychange", onResume);
-    return () => { active.current = false; clearInterval(poll); window.removeEventListener("focus", onResume); window.removeEventListener("online", onResume); document.removeEventListener("visibilitychange", onResume); };
+    return () => { active.current = false; sequence.current += 1; clearInterval(poll); window.removeEventListener("focus", onResume); window.removeEventListener("online", onResume); document.removeEventListener("visibilitychange", onResume); };
   }, [refresh]);
   const visible = rows.filter(row => !completedOnly || (row.home_visit_status || row.status) === "completed").filter(row => audience === "doctor" ? row.patient_id !== actorId : row.patient_id === actorId || row.booker_id === actorId || row.actor_id === actorId);
   return <section className="hv hv-card" aria-label="Saved doctor home visits">
-    <div className="hv-header"><div><h2>{completedOnly ? "Completed home consultations" : "Doctor home visits"}</h2><small>{updated ? `Last refreshed ${updated}` : "Saved requests and visits"}</small></div><button type="button" onClick={() => void refresh()}>Refresh</button></div>
+    <div className="hv-header"><div><h2>{completedOnly ? "Completed home consultations" : "Doctor home visits"}</h2><small>{updated ? `Last refreshed ${updated}` : "Saved requests and visits"}</small></div><button type="button" disabled={!actorId} onClick={() => void refresh()}>Refresh</button></div>
     {error && <p className="hv-error" role="alert">{error}</p>}
     {loading && <p role="status">Loading saved home visits…</p>}
-    {!loading && !error && visible.length === 0 && <p>{completedOnly ? "No completed home consultations available." : "No saved home visits available."}</p>}
+    {!actorId && <p role="status">Sign in to view saved home visits.</p>}
+    {context?.enabled === false && <p role="status">{context.reason || "Home visits are not available for this account yet."}</p>}
+    {!loading && !error && context?.enabled && visible.length === 0 && <p>{completedOnly ? "No completed home consultations available." : "No saved home visits available."}</p>}
     {visible.map(row => <VisitCard key={row.id || row.booking_id} visit={row} actorId={actorId || ""} refresh={refresh} />)}
-    {!completedOnly && audience === "doctor" && <ProviderHomeSettings />}
+    {!completedOnly && context?.enabled && audience === "doctor" && <ProviderHomeSettings />}
     {!completedOnly && audience === "operations" && <HomeVisitOperations />}
     <p className="hv-help">This view refreshes while the app is open. Notification delivery depends on the approved pilot channels.</p>
   </section>;
