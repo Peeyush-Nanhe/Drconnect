@@ -7,7 +7,7 @@ Updated 2026-09-07. The consolidated app is connected to isolated hosted staging
 - Project: **MyDox Staging** (`pyrlvjeectjikvfksukb`), Mumbai (`ap-south-1`).
 - Organization: `kunal110284-sys's Org`. The owner approved the quoted **$10/month** project cost on the Pro plan.
 - Local app: `http://127.0.0.1:8081/auth`; start with `npm run dev`.
-- Auth Site URL: `http://127.0.0.1:8081`; allowed redirect: `http://127.0.0.1:8081/**`.
+- Auth Site URL: `http://127.0.0.1:8081`; allowed redirect: `http://127.0.0.1:8081/ /////**`.
 - The local ignored `.env` contains the staging configuration. The server secret is excluded from Git and the source archive.
 - Both pre-existing active Supabase projects were left unchanged.
 
