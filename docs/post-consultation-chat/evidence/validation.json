@@ -1,0 +1,121 @@
+{
+  "recordedAt": "2026-09-12T06:48:16.430737+00:00",
+  "implementationCommit": "88bcec1bcf19b7c2880f5b25386a521021a025e2",
+  "baseCommit": "2d9d18b4c85e8e8901a0cb7153e001643839e4fb",
+  "backendProject": "pyrlvjeectjikvfksukb",
+  "candidateCheck": "Isolated checkout excluding unfinished review/home-navigation edits; all changed files matched staged sources byte-for-byte before commit.",
+  "install": {
+    "command": "npm ci --cache /tmp/mydox-chat-npm-cache",
+    "status": "PASS",
+    "addedPackages": 567,
+    "audit": {
+      "low": 1
+    }
+  },
+  "check": {
+    "command": "npm run check",
+    "status": "PASS",
+    "typecheck": "PASS",
+    "lintErrors": 0,
+    "lintWarnings": 131,
+    "coreDatabaseTests": 20,
+    "homeVisitTests": 36,
+    "chatTests": 23,
+    "totalTests": 79,
+    "productionBuild": "PASS"
+  },
+  "browser": {
+    "status": "PASS",
+    "checks": 9,
+    "scope": "Actual gated/authenticated negative access smoke only, no two-party success or devices",
+    "record": "candidate/browser-smoke.json"
+  },
+  "hostedFull": {
+    "command": "npm run test:post-consultation-chat:staging",
+    "status": "BLOCKED",
+    "reason": "Missing SUPABASE_SERVICE_ROLE_KEY; no network requests or fixture writes attempted"
+  },
+  "migration": {
+    "version": "20260912063350",
+    "status": "DEPLOYED_STAGING_ONLY",
+    "sha256": "eed6163497724fe93a63b38ed11429aa9365067fa34ceb6316bab0212e6b4abb",
+    "remoteAndLocalMd5": "e695df8b37c97978cc46e3631c2ce774",
+    "pilotParticipants": 0,
+    "conversations": 0,
+    "unprotectedChatTables": 0
+  },
+  "files": [
+    {
+      "path": "package.json",
+      "sha256": "f68bf5765a4f833cf57006994ba3ec663f71c6a725d355f266cea85f3d6f03fd"
+    },
+    {
+      "path": "scripts/test-post-consultation-chat-browser.mjs",
+      "sha256": "169ecbbb3582d1c64ecf38b24081633804c1d45a247d19a950824b4073c86715"
+    },
+    {
+      "path": "scripts/test-post-consultation-chat-staging.mjs",
+      "sha256": "aa0d4b20f8dcc686d7d9cf43f19b86c9021e7635c95dd7d60634f5d28985caa3"
+    },
+    {
+      "path": "src/features/mydox/MyBookingsOverlay.tsx",
+      "sha256": "15ae26771b4d962d78a0d61327f8cef01066aeef59b1d33e520914a7870a4bbc"
+    },
+    {
+      "path": "src/features/mydox/MyDoxFull.jsx",
+      "sha256": "281ff3411637d8bca39870efb5543182c2c5b59e30bb9ea411b1e015ea3509e8"
+    },
+    {
+      "path": "src/features/mydox/TwoWayChatModal.tsx",
+      "sha256": "1b37c0db552caf2f699b43947bbdcff795c1f02d267af689ae33ccebb62eb0ea"
+    },
+    {
+      "path": "src/features/mydox/backend.ts",
+      "sha256": "86df8f3d72bc8eef6fb08f783cc0af36b592ce275b8c66a51a4725bd076e5920"
+    },
+    {
+      "path": "src/features/mydox/home-visits/HomeVisitPanel.tsx",
+      "sha256": "12934df0491b69129793821e460de9ade3f6c23a278a9547071bc5085ff7ca86"
+    },
+    {
+      "path": "src/features/mydox/post-consultation-chat/api.ts",
+      "sha256": "c13bceb0084b1b6660dc3063530db7b8b8f28b1c8a5180892e1493db04fd1040"
+    },
+    {
+      "path": "src/features/mydox/post-consultation-chat/recovery.ts",
+      "sha256": "18223a47ac18bd4856826510d55a22c2e0a5090c44f6c51818335ff1cf8f9fd1"
+    },
+    {
+      "path": "src/features/mydox/post-consultation-chat/state.ts",
+      "sha256": "7e7415088e072add53f1f6e2ed55f450c4a8e2c0c74e20ff564e4c042dfe1d0b"
+    },
+    {
+      "path": "src/features/mydox/post-consultation-chat/types.ts",
+      "sha256": "f320a16e7d20b0088f4f76bd012cc6cdf87d478d31d5af7901e0d6240172be2b"
+    },
+    {
+      "path": "src/features/mydox/post-consultation-chat/usePostConsultationChat.ts",
+      "sha256": "d38da37ab25c595d4c7a315645375577809b4665954e94867baac05792e8de4a"
+    },
+    {
+      "path": "src/routes/bookings.tsx",
+      "sha256": "2130bea39e379c3fc3506693fa558a752a02386a0f3d2f9f49fa1a119078caed"
+    },
+    {
+      "path": "staging/README.md",
+      "sha256": "c846a3000e88c6b67fd2b319e966b2e80297b65d6c4002b3c0347233ea050563"
+    },
+    {
+      "path": "staging/supabase/migrations/20260912063350_post_consultation_chat.sql",
+      "sha256": "eed6163497724fe93a63b38ed11429aa9365067fa34ceb6316bab0212e6b4abb"
+    },
+    {
+      "path": "tests/post-consultation-chat-db.test.mjs",
+      "sha256": "cb9df52587d26d828030feb2aae92eac86bdf633abe6e412eabbea7166f5557d"
+    },
+    {
+      "path": "tests/post-consultation-chat.test.mjs",
+      "sha256": "9167f21cf905bfddcb83d2f7a077799e43bde850ba3f1839c2604f02a01e2893"
+    }
+  ]
+}

@@ -1,0 +1,97 @@
+{
+  "capturedAt": "2026-09-12T06:40:52.975Z",
+  "commit": "2d9d18b4c85e8e8901a0cb7153e001643839e4fb",
+  "workingTree": "Local working-tree build; commit alone does not identify uncommitted changes.",
+  "application": "http://127.0.0.1:8083",
+  "backendProject": "pyrlvjeectjikvfksukb",
+  "scope": "Authentication and gated chat entry only; no completed-consultation, two-party, file, payment, call or background-delivery proof.",
+  "checks": [
+    {
+      "name": "Signed-out application redirects to sign-in",
+      "status": "PASS"
+    },
+    {
+      "name": "Existing marked staging patient authenticates without account changes",
+      "status": "PASS"
+    },
+    {
+      "name": "Actual staging context confirms rollout and all unfinished integrations disabled",
+      "status": "PASS"
+    },
+    {
+      "name": "Authenticated staging denies arbitrary open/send/direct insert and privileged ledger access",
+      "status": "PASS"
+    },
+    {
+      "name": "Patient consultation inbox exposes a truthful gated/empty state",
+      "status": "PASS"
+    },
+    {
+      "name": "Existing authenticated patient can reload the actual application",
+      "status": "PASS"
+    },
+    {
+      "name": "Previous-consultations entry remains available to the authenticated patient",
+      "status": "PASS"
+    },
+    {
+      "name": "Completed legacy item opens the real chat modal with server denial and disabled composer",
+      "status": "PASS"
+    },
+    {
+      "name": "Sign-out removes authenticated patient navigation",
+      "status": "PASS"
+    }
+  ],
+  "sourceHashes": [
+    {
+      "path": "src/routes/auth.tsx",
+      "sha256": "4db10a7a4e5147aba14868de65a0df8c4230e41e10ad15649fbdea2f0f5ea53f"
+    },
+    {
+      "path": "src/routes/index.tsx",
+      "sha256": "a5ac5ec5c196b9760d7e5bc4d3f842675bd09f95e755dba8073129530dec9921"
+    },
+    {
+      "path": "src/routes/bookings.tsx",
+      "sha256": "689ebdb04da58ba842f40586a197451d9d1dd13fb82590486032244b7da579e8"
+    },
+    {
+      "path": "src/features/mydox/MyDoxFull.jsx",
+      "sha256": "8fd770e6ef71d3eb8417e47013d3dd24d5718c6a5650d0fc34d255a7d5a67e13"
+    },
+    {
+      "path": "src/features/mydox/PatientDashboard.tsx",
+      "sha256": "440a3ef82dec4c1b41d899f73b0a68b7305cd225c8f995be39f910859ce8a3e1"
+    },
+    {
+      "path": "src/features/mydox/TwoWayChatModal.tsx",
+      "sha256": "ecb6edcc34c827dfc20bcfd2ed09d83154c603f915933187ec2c95b0d68319b4"
+    },
+    {
+      "path": "src/features/mydox/post-consultation-chat/types.ts",
+      "sha256": "f320a16e7d20b0088f4f76bd012cc6cdf87d478d31d5af7901e0d6240172be2b"
+    },
+    {
+      "path": "src/features/mydox/post-consultation-chat/state.ts",
+      "sha256": "7e7415088e072add53f1f6e2ed55f450c4a8e2c0c74e20ff564e4c042dfe1d0b"
+    },
+    {
+      "path": "src/features/mydox/post-consultation-chat/api.ts",
+      "sha256": "c13bceb0084b1b6660dc3063530db7b8b8f28b1c8a5180892e1493db04fd1040"
+    },
+    {
+      "path": "src/features/mydox/post-consultation-chat/recovery.ts",
+      "sha256": "18223a47ac18bd4856826510d55a22c2e0a5090c44f6c51818335ff1cf8f9fd1"
+    },
+    {
+      "path": "src/features/mydox/post-consultation-chat/usePostConsultationChat.ts",
+      "sha256": "d38da37ab25c595d4c7a315645375577809b4665954e94867baac05792e8de4a"
+    },
+    {
+      "path": "staging/supabase/migrations/20260912063350_post_consultation_chat.sql",
+      "sha256": "eed6163497724fe93a63b38ed11429aa9365067fa34ceb6316bab0212e6b4abb"
+    }
+  ],
+  "sourceChangedDuringRun": false
+}
