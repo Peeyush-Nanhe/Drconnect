@@ -550,16 +550,6 @@ export default function MyBookingsOverlay({
               setOtpTarget(null);
               setChatDoctor(doc);
             }}
-            onBookingCompleted={(itemId) => {
-              setItems((prev) =>
-                prev.map((it) => (it.id === itemId ? { ...it, status: "completed" } : it))
-              );
-              setOtpTarget((prev) =>
-                prev && prev.item.id === itemId
-                  ? { ...prev, item: { ...prev.item, status: "completed" } }
-                  : prev
-              );
-            }}
           />
         )}
       </div>
@@ -976,96 +966,19 @@ async function getOrGenerateBookingOtp(item: Item): Promise<string> {
   return generated;
 }
 
-/* Consultation OTP Verification with Doctor & Completion Sync */
-async function verifyBookingConsultationOtp(
-  item: Item,
-  enteredOtp?: string
-): Promise<{ success: boolean; error?: string }> {
-  const [prefix, rawId] = item.id.split(":");
-  const validCode = (item.otp || "").slice(0, 4);
-
-  if (enteredOtp !== undefined) {
-    const cleaned = enteredOtp.trim();
-    if (cleaned.length !== 4) {
-      return { success: false, error: "Please enter a valid 4-digit OTP." };
-    }
-    if (validCode && cleaned !== validCode) {
-      return { success: false, error: "Incorrect OTP. Does not match consultation passcode." };
-    }
-  }
-
-  const nowIso = new Date().toISOString();
-  if (rawId) {
-    try {
-      if (prefix === "cr") {
-        if (enteredOtp) {
-          const { data } = await supabase.from("care_requests").select("otp").eq("id", rawId).maybeSingle();
-          const dbOtp = (data as { otp: string | null } | null)?.otp;
-          if (dbOtp && dbOtp.slice(0, 4) !== enteredOtp.trim()) {
-            return { success: false, error: "Incorrect OTP. Does not match consultation records." };
-          }
-        }
-        await supabase
-          .from("care_requests")
-          .update({
-            otp_verified_at: nowIso,
-            status: "completed",
-            completed_at: nowIso,
-          } as never)
-          .eq("id", rawId);
-      } else if (prefix === "da") {
-        if (enteredOtp) {
-          const { data } = await supabase.from("doctor_appointments").select("arrival_otp").eq("id", rawId).maybeSingle();
-          const dbOtp = (data as { arrival_otp: string | null } | null)?.arrival_otp;
-          if (dbOtp && dbOtp.slice(0, 4) !== enteredOtp.trim()) {
-            return { success: false, error: "Incorrect OTP. Does not match consultation records." };
-          }
-        }
-        await supabase
-          .from("doctor_appointments")
-          .update({
-            status: "completed",
-            completed_at: nowIso,
-          } as never)
-          .eq("id", rawId);
-      }
-    } catch {
-      /* ignore Supabase sync errors and allow optimistic completion */
-    }
-  }
-
-  if (typeof window !== "undefined") {
-    try {
-      window.localStorage.setItem(`mydox_consultation_completed_${item.id}`, nowIso);
-    } catch {
-      /* ignore storage errors */
-    }
-  }
-
-  return { success: true };
-}
-
 /* Consultation Verification OTP Modal */
 function BookingOtpModal({
   target,
   onClose,
   onOpenChat,
-  onBookingCompleted,
 }: {
   target: { item: Item; doctorName: string };
   onClose: () => void;
   onOpenChat: (doctorName: string) => void;
-  onBookingCompleted?: (itemId: string) => void;
 }) {
   const [otp, setOtp] = useState<string>(target.item.otp ? target.item.otp.slice(0, 4) : "");
   const [loading, setLoading] = useState<boolean>(!target.item.otp);
-  const [targetStatus, setTargetStatus] = useState<string>(target.item.status);
-  const [enteredCode, setEnteredCode] = useState<string>("");
-  const [verifying, setVerifying] = useState<boolean>(false);
-  const [verifyError, setVerifyError] = useState<string>("");
-  const [justVerified, setJustVerified] = useState<boolean>(false);
-
-  const isConsultationOver = ["completed", "delivered", "closed", "finished"].includes((targetStatus || "").toLowerCase());
+  const isConsultationOver = ["completed", "delivered", "closed", "finished"].includes((target.item.status || "").toLowerCase());
 
   useEffect(() => {
     let mounted = true;
@@ -1088,28 +1001,6 @@ function BookingOtpModal({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
-
-  const handleVerifyOtp = async () => {
-    setVerifyError("");
-    const codeToVerify = enteredCode.trim() || otp;
-    if (!codeToVerify || codeToVerify.length !== 4) {
-      setVerifyError("Please enter the 4-digit OTP.");
-      return;
-    }
-    setVerifying(true);
-    const res = await verifyBookingConsultationOtp(
-      { ...target.item, otp },
-      codeToVerify
-    );
-    setVerifying(false);
-    if (!res.success) {
-      setVerifyError(res.error || "Verification failed. Please check the 4-digit code.");
-      return;
-    }
-    setTargetStatus("completed");
-    setJustVerified(true);
-    onBookingCompleted?.(target.item.id);
-  };
 
   const digits = (otp || "----").slice(0, 4).split("");
   const displayDocName = target.doctorName.startsWith("Dr.") ? target.doctorName : `Dr. ${target.doctorName}`;
@@ -1136,60 +1027,78 @@ function BookingOtpModal({
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          background: "#FFFFFF",
+          background: "#fff",
           borderRadius: 20,
           width: "100%",
           maxWidth: 440,
-          boxShadow: "0 20px 40px -15px rgba(15,23,42,0.25)",
+          boxShadow: "0 20px 25px -5px rgba(15,23,42,0.2), 0 8px 10px -6px rgba(15,23,42,0.1)",
           padding: "24px 22px",
+          display: "flex",
+          flexDirection: "column",
           position: "relative",
-          animation: "scaleUp 0.18s ease-out",
+          boxSizing: "border-box",
         }}
       >
-        {/* Header with Title and Close Button */}
+        {/* Header */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 20 }}>🔑</span>
-            <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: "#0F172A" }}>
-              Consultation Verification
-            </h2>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div
+              style={{
+                width: 38,
+                height: 38,
+                borderRadius: 12,
+                background: "#CCFBF1",
+                color: "#0F766E",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 20,
+              }}
+            >
+              🔒
+            </div>
+            <div>
+              <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: "#0F172A" }}>Consultation OTP</h2>
+              <p style={{ margin: 0, fontSize: 12, color: "#64748B", fontWeight: 500 }}>
+                Verification code generated from Supabase
+              </p>
+            </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            aria-label="Close modal"
+            aria-label="Close popup"
             style={{
               background: "#F1F5F9",
               border: "none",
               borderRadius: "50%",
               width: 30,
               height: 30,
-              cursor: "pointer",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
+              cursor: "pointer",
+              fontSize: 14,
               color: "#64748B",
-              fontSize: 16,
-              fontWeight: 700,
             }}
           >
-            ×
+            ✕
           </button>
         </div>
 
-        {/* Booking Details Snapshot */}
+        {/* Doctor & Booking snapshot */}
         <div
           style={{
             background: "#F8FAFC",
+            border: "1px solid #E2E8F0",
             borderRadius: 14,
             padding: "12px 14px",
             marginBottom: 16,
-            border: "1px solid #E2E8F0",
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
             <span style={{ fontWeight: 700, fontSize: 14, color: "#0F172A" }}>{target.item.title}</span>
-            <StatusChip status={targetStatus} />
+            <StatusChip status={target.item.status} />
           </div>
           <div style={{ fontSize: 12, color: "#475569", marginTop: 4, display: "flex", alignItems: "center", gap: 6 }}>
             <span>Attending Doctor:</span>
@@ -1204,7 +1113,7 @@ function BookingOtpModal({
         <div
           style={{
             background: "linear-gradient(180deg, #F0FDFA 0%, #E6FFFA 100%)",
-            border: isConsultationOver ? "1.5px solid #10B981" : "1.5px dashed #14B8A6",
+            border: "1.5px dashed #14B8A6",
             borderRadius: 16,
             padding: "20px 16px",
             textAlign: "center",
@@ -1213,16 +1122,9 @@ function BookingOtpModal({
             alignItems: "center",
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, color: "#0F766E", textTransform: "uppercase" }}>
-              4-Digit Consultation Passcode
-            </span>
-            {isConsultationOver && (
-              <span style={{ background: "#10B981", color: "#FFFFFF", fontSize: 9.5, fontWeight: 800, padding: "2px 6px", borderRadius: 999 }}>
-                VERIFIED ✓
-              </span>
-            )}
-          </div>
+          <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, color: "#0F766E", textTransform: "uppercase" }}>
+            4-Digit Consultation Passcode
+          </span>
 
           {loading ? (
             <div style={{ padding: "18px 0", fontSize: 13, color: "#0F766E", fontWeight: 600 }}>
@@ -1246,7 +1148,7 @@ function BookingOtpModal({
                     height: 60,
                     background: "#FFFFFF",
                     borderRadius: 12,
-                    border: isConsultationOver ? "2px solid #6EE7B7" : "2px solid #99F6E4",
+                    border: "2px solid #99F6E4",
                     boxShadow: "0 2px 6px rgba(13,148,136,0.12)",
                     display: "flex",
                     alignItems: "center",
@@ -1264,186 +1166,29 @@ function BookingOtpModal({
           )}
         </div>
 
-        {/* Doctor Verification Box */}
-        {!isConsultationOver ? (
-          <div
-            style={{
-              background: "#F8FAFC",
-              border: "1.5px solid #CBD5E1",
-              borderRadius: 16,
-              padding: "16px",
-              marginTop: 16,
-              display: "flex",
-              flexDirection: "column",
-              gap: 10,
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 6 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <span style={{ fontSize: 16 }}>🩺</span>
-                <span style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>
-                  Verify with {displayDocName}
-                </span>
-              </div>
-              <span style={{ fontSize: 11, fontWeight: 600, color: "#64748B" }}>
-                Consultation Over Verification
-              </span>
+        {/* Required Notice Box */}
+        <div
+          style={{
+            background: "#FFFBEB",
+            border: "1px solid #FCD34D",
+            borderRadius: 14,
+            padding: "13px 14px",
+            marginTop: 16,
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 10,
+          }}
+        >
+          <span style={{ fontSize: 18, lineHeight: 1 }}>🩺</span>
+          <div>
+            <div style={{ fontWeight: 800, fontSize: 13, color: "#92400E", lineHeight: 1.35 }}>
+              Share this OTP with {displayDocName} once your consultation is over
             </div>
-
-            <p style={{ margin: 0, fontSize: 12, color: "#475569", lineHeight: 1.4 }}>
-              Enter the 4-digit OTP to verify that your consultation with {displayDocName} is complete:
-            </p>
-
-            <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
-              <input
-                type="text"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                maxLength={4}
-                value={enteredCode}
-                onChange={(e) => {
-                  setVerifyError("");
-                  setEnteredCode(e.target.value.replace(/\D/g, "").slice(0, 4));
-                }}
-                placeholder="4-digit OTP"
-                style={{
-                  width: 125,
-                  height: 42,
-                  padding: "0 10px",
-                  fontSize: 18,
-                  fontWeight: 700,
-                  fontFamily: "monospace",
-                  letterSpacing: 4,
-                  textAlign: "center",
-                  border: verifyError ? "1.5px solid #EF4444" : "1.5px solid #CBD5E1",
-                  borderRadius: 10,
-                  outline: "none",
-                  background: "#FFFFFF",
-                  color: "#0F172A",
-                }}
-              />
-
-              <button
-                type="button"
-                disabled={verifying || loading}
-                onClick={handleVerifyOtp}
-                style={{
-                  flex: 1,
-                  background: TEAL,
-                  color: "#FFFFFF",
-                  border: "none",
-                  borderRadius: 10,
-                  padding: "0 14px",
-                  fontSize: 13,
-                  fontWeight: 700,
-                  cursor: verifying || loading ? "not-allowed" : "pointer",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 6,
-                  boxShadow: "0 2px 4px rgba(13,148,136,0.2)",
-                }}
-              >
-                {verifying ? "Verifying…" : "✓ Verify OTP with Doctor"}
-              </button>
-            </div>
-
-            {otp && enteredCode !== otp && (
-              <button
-                type="button"
-                onClick={() => {
-                  setEnteredCode(otp);
-                  setVerifyError("");
-                }}
-                style={{
-                  alignSelf: "flex-start",
-                  background: "transparent",
-                  border: "none",
-                  padding: 0,
-                  fontSize: 11.5,
-                  color: "#0D9488",
-                  fontWeight: 600,
-                  cursor: "pointer",
-                  textDecoration: "underline",
-                }}
-              >
-                Fill with displayed passcode ({otp})
-              </button>
-            )}
-
-            {verifyError && (
-              <div style={{ fontSize: 12, color: "#DC2626", fontWeight: 600, marginTop: 2 }}>
-                ⚠️ {verifyError}
-              </div>
-            )}
-          </div>
-        ) : (
-          <div
-            style={{
-              background: "#ECFDF5",
-              border: "1.5px solid #6EE7B7",
-              borderRadius: 16,
-              padding: "14px 16px",
-              marginTop: 16,
-              display: "flex",
-              alignItems: "center",
-              gap: 12,
-            }}
-          >
-            <div
-              style={{
-                width: 36,
-                height: 36,
-                borderRadius: "50%",
-                background: "#10B981",
-                color: "#FFFFFF",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: 18,
-                fontWeight: 800,
-                flexShrink: 0,
-              }}
-            >
-              ✓
-            </div>
-            <div>
-              <div style={{ fontWeight: 800, fontSize: 13.5, color: "#065F46" }}>
-                Consultation Verified & Completed
-              </div>
-              <div style={{ fontSize: 12, color: "#047857", marginTop: 2 }}>
-                {justVerified ? "Verified just now with " : "Verified with "}
-                {displayDocName}. Doctor chat is now unlocked!
-              </div>
+            <div style={{ fontSize: 11.5, color: "#78350F", marginTop: 4, lineHeight: 1.45 }}>
+              Please do not share this passcode beforehand. Your doctor requires this 4-digit code at the conclusion of your visit to verify and complete the session.
             </div>
           </div>
-        )}
-
-        {/* Required Notice Box for non-completed visits */}
-        {!isConsultationOver && (
-          <div
-            style={{
-              background: "#FFFBEB",
-              border: "1px solid #FCD34D",
-              borderRadius: 14,
-              padding: "13px 14px",
-              marginTop: 16,
-              display: "flex",
-              alignItems: "flex-start",
-              gap: 10,
-            }}
-          >
-            <span style={{ fontSize: 18, lineHeight: 1 }}>🩺</span>
-            <div>
-              <div style={{ fontWeight: 800, fontSize: 13, color: "#92400E", lineHeight: 1.35 }}>
-                Share this OTP with {displayDocName} once your consultation is over
-              </div>
-              <div style={{ fontSize: 11.5, color: "#78350F", marginTop: 4, lineHeight: 1.45 }}>
-                Please do not share this passcode beforehand. Your doctor requires this 4-digit code at the conclusion of your visit to verify and complete the session.
-              </div>
-            </div>
-          </div>
-        )}
+        </div>
 
         {/* Action Buttons */}
         <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
