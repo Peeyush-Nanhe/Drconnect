@@ -290,7 +290,7 @@ export default function MyBookingsOverlay({
     items.forEach((i) => set.add(i.module));
     return ["All", ...Array.from(set)];
   }, [items]);
-  const UPCOMING = new Set(["open", "pending", "broadcasting", "accepted", "confirmed", "in_progress", "booked", "placed", "out_for_delivery"]);
+  const UPCOMING = new Set(["open", "pending", "broadcasting", "accepted", "confirmed", "in_progress", "booked", "placed", "out_for_delivery", "requested", "assigned", "en_route"]);
   const byTab = items.filter((i) => (tab === "upcoming" ? UPCOMING.has(i.status) : !UPCOMING.has(i.status)));
   const visible = filter === "All" ? byTab : byTab.filter((i) => i.module === filter);
   const upcomingCount = items.filter((i) => UPCOMING.has(i.status)).length;
@@ -323,13 +323,28 @@ export default function MyBookingsOverlay({
               </button>
             ))}
           </div>
-          <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-            <button onClick={() => setTab("upcoming")} style={{ flex: 1, padding: "8px 12px", borderRadius: 10, border: "none", background: tab === "upcoming" ? TEAL : "rgba(15,23,42,0.06)", color: tab === "upcoming" ? "#fff" : INK, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
-              Upcoming ({upcomingCount})
-            </button>
-            <button onClick={() => setTab("previous")} style={{ flex: 1, padding: "8px 12px", borderRadius: 10, border: "none", background: tab === "previous" ? TEAL : "rgba(15,23,42,0.06)", color: tab === "previous" ? "#fff" : INK, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
-              Previous ({previousCount})
-            </button>
+          <div style={{ display: "flex", gap: 6, marginTop: 10, background: "#EEF2F0", borderRadius: 999, padding: 4 }}>
+            {(["upcoming", "previous"] as const).map((t) => (
+              <button
+                key={t}
+                onClick={() => setTab(t)}
+                style={{
+                  flex: 1,
+                  border: "none",
+                  padding: "8px 12px",
+                  borderRadius: 999,
+                  fontSize: 13,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  background: tab === t ? "#fff" : "transparent",
+                  color: tab === t ? INK : "#64748B",
+                  boxShadow: tab === t ? "0 1px 3px rgba(15,23,42,0.08)" : "none",
+                  textTransform: "capitalize",
+                }}
+              >
+                {t} {t === "upcoming" ? `(${upcomingCount})` : `(${previousCount})`}
+              </button>
+            ))}
           </div>
         </header>
 
@@ -350,20 +365,30 @@ export default function MyBookingsOverlay({
                       const docName = it.doctorName || (/nurse/i.test(it.title) ? "Nurse Specialist" : /physio/i.test(it.title) ? "Dr. Rajesh K (PT)" : "Dr. Anita Rao");
                       const userRating = reviewsMap[it.id] ?? (readReview(it.id, docName)?.stars ?? null);
                       return (
-                        <li key={it.id} style={{ background: "#fff", borderRadius: 14, padding: "14px 16px", boxShadow: "0 1px 3px rgba(15,23,42,0.06)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-                          <div style={{ display: "flex", alignItems: "flex-start", gap: 12, flex: "1 1 240px", minWidth: 200 }}>
-                            <div style={{ fontSize: 22, lineHeight: 1, marginTop: 2 }}>{MODULE_ICON[it.module]}</div>
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                                <span style={{ fontWeight: 700, fontSize: 14, textTransform: "capitalize", color: "#0F172A" }}>{it.title}</span>
-                                <StatusChip status={it.status} />
-                              </div>
-                              {it.subtitle && <div style={{ color: "#475569", fontSize: 12, marginTop: 2 }}>{it.subtitle}</div>}
-                              <div style={{ color: "#94A3B8", fontSize: 11, marginTop: 4 }}>{it.module} · {new Date(it.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
+                        <li
+                          key={it.id}
+                          style={{
+                            background: "#fff",
+                            borderRadius: 14,
+                            padding: "12px 14px",
+                            boxShadow: "0 1px 3px rgba(15,23,42,0.06)",
+                            display: "flex",
+                            alignItems: "flex-start",
+                            gap: 12,
+                            flexWrap: "wrap",
+                          }}
+                        >
+                          <div style={{ fontSize: 22, lineHeight: 1, marginTop: 2 }}>{MODULE_ICON[it.module]}</div>
+                          <div style={{ flex: "1 1 200px", minWidth: 0 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                              <span style={{ fontWeight: 700, fontSize: 14, textTransform: "capitalize", color: "#0F172A" }}>{it.title}</span>
+                              <StatusChip status={it.status} />
                             </div>
+                            {it.subtitle && <div style={{ color: "#475569", fontSize: 12, marginTop: 2 }}>{it.subtitle}</div>}
+                            <div style={{ color: "#94A3B8", fontSize: 11, marginTop: 4 }}>{it.module} · {new Date(it.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
                           </div>
 
-                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "flex-end", flexShrink: 0 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", alignSelf: "center", justifyContent: "flex-end" }}>
                             <button
                               type="button"
                               onClick={() => setReviewTarget({ item: it, doctorName: docName })}
@@ -376,13 +401,12 @@ export default function MyBookingsOverlay({
                                 color: "#92400E",
                                 border: "1px solid #FDE68A",
                                 borderRadius: 999,
-                                padding: "7px 12px",
+                                padding: "8px 12px",
                                 fontSize: 12,
                                 fontWeight: 700,
                                 cursor: "pointer",
                                 whiteSpace: "nowrap",
                                 boxShadow: "0 1px 2px rgba(245,158,11,0.12)",
-                                transition: "all 0.15s ease",
                               }}
                             >
                               <span style={{ color: "#F59E0B", fontSize: 13 }}>★</span>
@@ -401,13 +425,12 @@ export default function MyBookingsOverlay({
                                 color: "#0F766E",
                                 border: "1px solid #99F6E4",
                                 borderRadius: 999,
-                                padding: "7px 13px",
+                                padding: "8px 12px",
                                 fontSize: 12,
                                 fontWeight: 700,
                                 cursor: "pointer",
                                 whiteSpace: "nowrap",
                                 boxShadow: "0 1px 2px rgba(13,148,136,0.12)",
-                                transition: "all 0.15s ease",
                               }}
                             >
                               <span style={{ fontSize: 13 }}>💬</span>
@@ -427,7 +450,7 @@ export default function MyBookingsOverlay({
                                   color: "#fff",
                                   border: "none",
                                   borderRadius: 999,
-                                  padding: "7px 13px",
+                                  padding: "8px 12px",
                                   fontSize: 12,
                                   fontWeight: 700,
                                   cursor: "pointer",
