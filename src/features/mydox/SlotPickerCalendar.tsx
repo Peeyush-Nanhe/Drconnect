@@ -46,7 +46,7 @@ interface SlotPickerCalendarStandaloneProps {
 const BUCKETS = [
   { key: "morning", label: "Morning", emoji: "🌅", from: 9, to: 12, sub: "9 AM – 12 PM" },
   { key: "afternoon", label: "Afternoon", emoji: "☀️", from: 12, to: 17, sub: "12 PM – 5 PM" },
-  { key: "evening", label: "Evening", emoji: "🌆", from: 17, to: 21, sub: "5 PM – 9 PM" },
+  { key: "evening", label: "Evening", emoji: "🌆", from: 17, to: 22, sub: "5 PM – 9:30 PM" },
 ];
 
 export const fmtSlotTime = (t: SlotTime) => {
@@ -131,8 +131,6 @@ export function SlotPickerCalendar({
 
       {schedDate == null ? (
         <p style={{ margin: 0, fontSize: 11.5, color: faint }}>Pick a date to see available slots</p>
-      ) : availableSlots && availableSlots.length === 0 ? (
-        <p style={{ margin: 0, fontSize: 12, color: faint }}>No appointments published</p>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {BUCKETS.map((b) => {
@@ -140,12 +138,32 @@ export function SlotPickerCalendar({
               .map((t, i) => ({ t, i }))
               .filter(({ t }) => t.h >= b.from && t.h < b.to);
             if (!inBucket.length) return null;
-            const anyAvail = inBucket.some(({ t }) => {
-              if (availableSlots) {
-                return availableSlots.some(s => s.dateIdx === schedDate && s.h === t.h && s.m === t.m);
+
+            const now = new Date();
+            const isToday = schedDate === 0;
+
+            const isSlotAvail = (t: SlotTime) => {
+              // Past slots on today are unavailable
+              if (isToday) {
+                if (t.h < now.getHours() || (t.h === now.getHours() && t.m <= now.getMinutes())) {
+                  return false;
+                }
               }
-              return !isSlotUnavailable(seed, schedDate, t.h, t.m);
-            });
+              // If published availableSlots exist and has slots for this date
+              if (availableSlots && availableSlots.length > 0) {
+                const hasSlotsForDate = availableSlots.some(s => s.dateIdx === schedDate);
+                if (hasSlotsForDate) {
+                  return availableSlots.some(s => s.dateIdx === schedDate && s.h === t.h && s.m === t.m);
+                }
+                // If today has no slots left in DB, mark fully booked
+                if (isToday) return false;
+              }
+              // If availableSlots not provided or empty fallback, slots are open
+              return true;
+            };
+
+            const anyAvail = inBucket.some(({ t }) => isSlotAvail(t));
+
             return (
               <div key={b.key}>
                 <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", margin: "0 0 5px" }}>
@@ -158,20 +176,17 @@ export function SlotPickerCalendar({
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: `repeat(${small ? 4 : 3},1fr)`, gap: 6 }}>
                   {inBucket.map(({ t, i }) => {
-                    let unavail = true;
-                    if (availableSlots) {
-                      unavail = !availableSlots.some(s => s.dateIdx === schedDate && s.h === t.h && s.m === t.m);
-                    } else {
-                      unavail = isSlotUnavailable(seed, schedDate, t.h, t.m);
-                    }
+                    const isAvail = isSlotAvail(t);
+                    const unavail = !isAvail;
                     const a = schedTime === i;
+                    const isPast = isToday && (t.h < now.getHours() || (t.h === now.getHours() && t.m <= now.getMinutes()));
                     return (
                       <button
                         key={i}
                         type="button"
                         disabled={unavail}
                         onClick={() => setSchedTime(i)}
-                        title={unavail ? "Slot unavailable" : undefined}
+                        title={unavail ? (isPast ? "Past slot" : "Slot unavailable") : "Select slot"}
                         aria-disabled={unavail}
                         style={{
                           padding: small ? "8px 2px" : "10px 3px",

@@ -1330,6 +1330,26 @@ function SpecialtyPickerModern({
   const [selectedDoctor, setSelectedDoctor] = React.useState(null); // chosen panel doctor
   const [availableSlots, setAvailableSlots] = React.useState(null);
 
+  const schedDates = React.useMemo(() => {
+    const out = [];
+    const now = new Date();
+    for (let i = 0; i < 14; i++) {
+      const d = new Date(now);
+      d.setDate(now.getDate() + i);
+      out.push(d);
+    }
+    return out;
+  }, []);
+  const schedTimes = React.useMemo(() => {
+    const out = [];
+    for (let h = 9; h <= 21; h++) {
+      for (const m of [0, 30]) {
+        out.push({ h, m });
+      }
+    }
+    return out;
+  }, []); // 9:00 AM → 9:30 PM, every 30 minutes
+
   React.useEffect(() => {
     if (!selectedDoctor?.userId) {
       setAvailableSlots(null);
@@ -1345,24 +1365,25 @@ function SpecialtyPickerModern({
         p_duration_minutes: 30
       });
       if (!error && data) {
-        const now = new Date();
-        now.setHours(0, 0, 0, 0);
         const mapped = data.filter(d => d.is_available).map(d => {
           const dt = new Date(d.start_time);
-          const day0 = new Date(dt); day0.setHours(0, 0, 0, 0);
-          const diffTime = Math.abs(day0 - now);
-          const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
-          return { dateIdx: diffDays, h: dt.getHours(), m: dt.getMinutes() };
-        });
+          const dateIdx = schedDates.findIndex(sd => sd.toDateString() === dt.toDateString());
+          return { dateIdx, h: dt.getHours(), m: dt.getMinutes() };
+        }).filter(s => s.dateIdx >= 0);
         setAvailableSlots(mapped);
+
+        const firstAvail = Array.from({ length: 14 }, (_, i) => i).find(dIdx => mapped.some(s => s.dateIdx === dIdx));
+        setSchedDate(prev => {
+          if (prev === null) return firstAvail !== undefined ? firstAvail : 0;
+          if (!mapped.some(s => s.dateIdx === prev) && firstAvail !== undefined) return firstAvail;
+          return prev;
+        });
       } else {
         setAvailableSlots(null);
       }
     };
     fetchSlots();
-  }, [selectedDoctor]);
-  const schedDates = React.useMemo(() => { const out = []; const now = new Date(); for (let i = 0; i < 14; i++) { const d = new Date(now); d.setDate(now.getDate() + i); out.push(d); } return out; }, []);
-  const schedTimes = React.useMemo(() => { const out = []; for (let h = 9; h <= 20; h++) { for (const m of [0, 30]) { if (h === 20 && m === 30) continue; out.push({ h, m }); } } return out; }, []); // 9:00 AM → 8:00 PM
+  }, [selectedDoctor, schedDates]);
   const dayLabel = (d, i) => i === 0 ? "Today" : i === 1 ? "Tomorrow" : d.toLocaleDateString("en-US", { weekday: "short" });
   const fmtTime = t => { const ap = t.h < 12 ? "AM" : "PM"; const hh = t.h % 12 === 0 ? 12 : t.h % 12; return `${hh}:${t.m === 0 ? "00" : "30"} ${ap}`; };
   const schedConfirmed = schedDate != null && schedTime != null;
@@ -1513,6 +1534,26 @@ function SpecialtyPickerSimple({ providerType, selectedSpec, setSelectedSpec, em
   const [selectedDoctor, setSelectedDoctor] = React.useState(null);
   const [availableSlots, setAvailableSlots] = React.useState(null);
 
+  const schedDates = React.useMemo(() => {
+    const out = [];
+    const now = new Date();
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(now);
+      d.setDate(now.getDate() + i);
+      out.push(d);
+    }
+    return out;
+  }, []);
+  const schedTimes = React.useMemo(() => {
+    const out = [];
+    for (let h = 9; h <= 21; h++) {
+      for (const m of [0, 30]) {
+        out.push({ h, m });
+      }
+    }
+    return out;
+  }, []); // 9:00 AM → 9:30 PM, every 30 minutes
+
   React.useEffect(() => {
     if (!selectedDoctor?.userId) {
       setAvailableSlots(null);
@@ -1528,34 +1569,27 @@ function SpecialtyPickerSimple({ providerType, selectedSpec, setSelectedSpec, em
         p_duration_minutes: 30
       });
       if (!error && data) {
-        const now = new Date();
-        now.setHours(0, 0, 0, 0);
         const mapped = data.filter(d => d.is_available).map(d => {
           const dt = new Date(d.start_time);
-          const day0 = new Date(dt); day0.setHours(0, 0, 0, 0);
-          const diffTime = Math.abs(day0 - now);
-          const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
-          return { dateIdx: diffDays, h: dt.getHours(), m: dt.getMinutes() };
-        });
+          const dateIdx = schedDates.findIndex(sd => sd.toDateString() === dt.toDateString());
+          return { dateIdx, h: dt.getHours(), m: dt.getMinutes() };
+        }).filter(s => s.dateIdx >= 0);
         setAvailableSlots(mapped);
+
+        // Auto-select first date that has available slots if none selected or if current selection has no slots
+        const firstAvail = [0, 1, 2, 3, 4, 5, 6].find(dIdx => mapped.some(s => s.dateIdx === dIdx));
+        setSchedDate(prev => {
+          if (prev === null) return firstAvail !== undefined ? firstAvail : 0;
+          if (!mapped.some(s => s.dateIdx === prev) && firstAvail !== undefined) return firstAvail;
+          return prev;
+        });
       } else {
         setAvailableSlots(null);
       }
     };
     fetchSlots();
-  }, [selectedDoctor]);
+  }, [selectedDoctor, schedDates]);
   const [profileDoctor, setProfileDoctor] = React.useState(null);
-  const schedDates = React.useMemo(() => { const out = []; const now = new Date(); for (let i = 0; i < 7; i++) { const d = new Date(now); d.setDate(now.getDate() + i); out.push(d); } return out; }, []);
-  const schedTimes = React.useMemo(() => {
-    const out = [];
-    for (let h = 9; h <= 21; h++) {
-      for (const m of [0, 20, 40]) {
-        if (h === 21 && m > 0) continue; // last slot is 9:00 PM
-        out.push({ h, m });
-      }
-    }
-    return out;
-  }, []); // 9:00 AM → 9:00 PM, every 20 minutes
   const fmtTime = t => { const ap = t.h < 12 ? "AM" : "PM"; const hh = t.h % 12 === 0 ? 12 : t.h % 12; return `${hh}:${t.m === 0 ? "00" : String(t.m)} ${ap}`; };
   const dayLabel = (d, i) => i === 0 ? "Today" : i === 1 ? "Tomorrow" : d.toLocaleDateString("en-US", { weekday: "short" });
   const schedConfirmed = schedDate != null && schedTime != null;
@@ -1563,6 +1597,12 @@ function SpecialtyPickerSimple({ providerType, selectedSpec, setSelectedSpec, em
   const panelDoctors = React.useMemo(() => panelDoctorsForSpec(selectedSpec), [selectedSpec?.id]);
   const needsDoctor = providerType === "doctor"; // only doctors get the professional-score panel; therapist/nurse/scan etc. stay on the simpler model
   const docOk = !needsDoctor || !!selectedDoctor;
+
+  React.useEffect(() => {
+    if (!selectedDoctor && panelDoctors && panelDoctors.length > 0) {
+      setSelectedDoctor(panelDoctors[0]);
+    }
+  }, [panelDoctors, selectedDoctor]);
 
   React.useEffect(() => { setShowAll(false); setSchedDate(null); setSchedTime(null); setSelectedDoctor(null); setProfileDoctor(null); }, [providerType]);
   React.useEffect(() => { setSchedDate(null); setSchedTime(null); setSelectedDoctor(null); setProfileDoctor(null); }, [selectedSpec?.id]);
