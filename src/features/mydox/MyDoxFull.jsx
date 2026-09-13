@@ -2380,7 +2380,8 @@ function ConsultationOverDialog({ item, onClose, onConfirm }) {
 }
 
 /* ═══ Full Screen: Doctor-Side Consultation Chat ═════════════════════════ */
-function CalendarChat({ patientName, onClose }) {
+/* ═══ Full Screen: Consultation Chat (matching design spec) ═════════════════════════ */
+function CalendarChat({ patientName, onClose, specialty, subtitle }) {
   const { messages, send, meId, ready, live } = useRealtimeChat(patientName);
   const [text, setText] = useState("");
   const endRef = useRef(null);
@@ -2410,90 +2411,217 @@ function CalendarChat({ patientName, onClose }) {
     }
   };
 
+  const getInitials = (n) => {
+    if (!n) return "VI";
+    const clean = n.replace(/^Dr\.?\s+/i, "").trim();
+    const parts = clean.split(/\s+/);
+    if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+    if (parts[0]) return parts[0].slice(0, 2).toUpperCase();
+    return "VI";
+  };
+
+  const displayName = patientName || "Dr. Vikram Iyer";
+  const initials = getInitials(displayName);
+  const sub = subtitle || specialty || "Women's Health / Gynecologist";
+
   return (
     <div
       role="dialog"
       aria-modal="true"
-      aria-label={`Chat with ${patientName}`}
+      aria-label={`Chat with ${displayName}`}
       style={{
         position: "fixed",
         inset: 0,
-        zIndex: 75,
-        background: "#F4F7F6",
+        zIndex: 1100,
+        background: "#061A14",
         display: "flex",
         flexDirection: "column",
-        fontFamily: "'Plus Jakarta Sans', sans-serif"
+        fontFamily: "'Plus Jakarta Sans', sans-serif",
+        color: "#fff"
       }}
     >
-      {/* Header */}
+      {/* Top Header */}
       <header
         style={{
-          background: "#0D9488",
+          background: "#061A14",
           color: "#fff",
-          padding: "14px 16px",
+          padding: "12px 16px",
           display: "flex",
           alignItems: "center",
           gap: 12,
-          flexShrink: 0
+          flexShrink: 0,
+          borderBottom: "1px solid #0E2E23"
         }}
       >
         <button
           onClick={onClose}
-          aria-label="Back to schedule"
+          aria-label="Back"
           style={{
             background: "transparent",
             border: "none",
             color: "#fff",
-            fontWeight: 700,
-            fontSize: 16,
             cursor: "pointer",
             display: "flex",
             alignItems: "center",
             padding: 4
           }}
         >
-          <ChevronLeft size={22} />
+          <ChevronLeft size={24} color="#fff" />
         </button>
+
         <div
           style={{
-            width: 38,
-            height: 38,
+            width: 42,
+            height: 42,
             borderRadius: "50%",
-            background: "rgba(255,255,255,0.2)",
+            background: "#00875A",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            fontSize: 16
+            fontWeight: 800,
+            fontSize: 16,
+            color: "#fff",
+            flexShrink: 0
           }}
         >
-          👤
+          {initials}
         </div>
+
         <div style={{ flex: 1, minWidth: 0 }}>
-          <p style={{ margin: 0, fontWeight: 700, fontSize: 15 }}>{patientName}</p>
-          <p style={{ margin: "1px 0 0", fontSize: 11, opacity: 0.85 }}>
-            {live ? "Secure consultation chat · Active" : ready ? "Connecting with patient…" : "Connecting…"}
+          <p style={{ margin: 0, fontWeight: 800, fontSize: 16, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            {displayName}
+          </p>
+          <p style={{ margin: "2px 0 0", fontSize: 12, color: "#8EABA0", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            Online · {sub}
           </p>
         </div>
+
+        <button
+          onClick={() => toast("Viewing medical history & case file")}
+          aria-label="View history"
+          style={{
+            background: "transparent",
+            border: "none",
+            color: "#fff",
+            cursor: "pointer",
+            padding: 6,
+            display: "flex",
+            alignItems: "center"
+          }}
+        >
+          <Eye size={20} color="#fff" />
+        </button>
+
+        <button
+          onClick={() => toast(`Calling ${displayName}...`)}
+          aria-label="Phone call"
+          style={{
+            background: "transparent",
+            border: "none",
+            color: "#fff",
+            cursor: "pointer",
+            padding: 6,
+            display: "flex",
+            alignItems: "center"
+          }}
+        >
+          <Phone size={20} color="#fff" />
+        </button>
       </header>
 
-      {/* Message List */}
+      {/* Top 3 Quota Allowance Cards */}
+      <div
+        style={{
+          display: "flex",
+          gap: 10,
+          padding: "12px 14px 8px",
+          background: "#061A14",
+          flexShrink: 0
+        }}
+      >
+        <div
+          style={{
+            flex: 1,
+            background: "#0A241D",
+            border: "1px solid #144436",
+            borderRadius: 14,
+            padding: "10px 6px",
+            textAlign: "center"
+          }}
+        >
+          <div style={{ color: "#10B981", fontWeight: 800, fontSize: 17 }}>22/25</div>
+          <div style={{ color: "#7B9E93", fontSize: 11, fontWeight: 600, marginTop: 2 }}>Messages Left</div>
+        </div>
+
+        <div
+          style={{
+            flex: 1,
+            background: "#0A241D",
+            border: "1px solid #144436",
+            borderRadius: 14,
+            padding: "10px 6px",
+            textAlign: "center"
+          }}
+        >
+          <div style={{ color: "#F59E0B", fontWeight: 800, fontSize: 17 }}>10:00</div>
+          <div style={{ color: "#7B9E93", fontSize: 11, fontWeight: 600, marginTop: 2 }}>Audio Left</div>
+        </div>
+
+        <div
+          style={{
+            flex: 1,
+            background: "#0A241D",
+            border: "1px solid #144436",
+            borderRadius: 14,
+            padding: "10px 6px",
+            textAlign: "center"
+          }}
+        >
+          <div style={{ color: "#38BDF8", fontWeight: 800, fontSize: 17 }}>2/2</div>
+          <div style={{ color: "#7B9E93", fontSize: 11, fontWeight: 600, marginTop: 2 }}>Calls Left</div>
+        </div>
+      </div>
+
+      {/* Scrollable Message List */}
       <main
         style={{
           flex: 1,
           overflowY: "auto",
-          padding: 16,
+          padding: "12px 14px",
           display: "flex",
           flexDirection: "column",
-          gap: 8
+          gap: 12,
+          background: "#061A14",
+          position: "relative"
         }}
       >
+        {/* End-to-End Encryption Notice */}
+        <div
+          style={{
+            margin: "4px auto 12px",
+            maxWidth: "88%",
+            background: "#1E2A18",
+            border: "1px solid rgba(245, 158, 11, 0.18)",
+            borderRadius: 12,
+            padding: "10px 14px",
+            textAlign: "center",
+            color: "#C5D1B8",
+            fontSize: 11.5,
+            lineHeight: 1.45
+          }}
+        >
+          <ShieldCheck size={14} style={{ display: "inline", verticalAlign: "-2px", marginRight: 5, color: "#F59E0B" }} />
+          Messages and calls are end-to-end encrypted. No one outside this chat, not even MedConnect, can read or listen to them.
+        </div>
+
         {ready && messages.length === 0 && (
           <p style={{ margin: "auto", fontSize: 13, color: "#64748B", textAlign: "center" }}>
             {live
-              ? "No messages yet. Send follow-up advice or instructions to the patient."
+              ? "No messages yet. Send follow-up advice or questions below."
               : "Connecting to the chat thread…"}
           </p>
         )}
+
         {messages.map((m) => {
           const mine = m.sender_id === meId;
           return (
@@ -2502,77 +2630,224 @@ function CalendarChat({ patientName, onClose }) {
               style={{
                 alignSelf: mine ? "flex-end" : "flex-start",
                 maxWidth: "78%",
-                background: mine ? "#0D9488" : "#fff",
-                color: mine ? "#fff" : "#0F172A",
-                borderRadius: 14,
-                borderBottomRightRadius: mine ? 4 : 14,
-                borderBottomLeftRadius: mine ? 14 : 4,
-                padding: "9px 13px",
-                boxShadow: "0 1px 2px rgba(15,23,42,0.08)"
+                background: mine ? "#1A5644" : "#0F2B23",
+                color: "#FFFFFF",
+                border: mine ? "1px solid #25745C" : "1px solid #184437",
+                borderRadius: mine ? "16px 16px 4px 16px" : "16px 16px 16px 4px",
+                padding: "10px 14px",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.25)"
               }}
             >
-              <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.4 }}>{m.body}</p>
-              <p style={{ margin: "3px 0 0", fontSize: 10, opacity: 0.7, textAlign: "right" }}>
-                {fmtTime(m.created_at)}
+              <p style={{ margin: 0, fontSize: 14, lineHeight: 1.45 }}>{m.body}</p>
+              <p
+                style={{
+                  margin: "4px 0 0",
+                  fontSize: 10,
+                  color: mine ? "#8EE0C4" : "#7B9E93",
+                  textAlign: "right",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "flex-end",
+                  gap: 3
+                }}
+              >
+                <span>{fmtTime(m.created_at)}</span>
+                {mine && <span style={{ fontSize: 11 }}>✓</span>}
               </p>
             </div>
           );
         })}
         <div ref={endRef} />
+
+        {/* Floating Tool Buttons on Right */}
+        <div style={{ position: "fixed", right: 16, bottom: 132, display: "flex", flexDirection: "column", gap: 10, zIndex: 10 }}>
+          <button
+            onClick={() => toast("Prescriptions & Notes")}
+            aria-label="Prescriptions tool"
+            style={{
+              width: 42,
+              height: 42,
+              borderRadius: "50%",
+              background: "#fff",
+              border: "none",
+              boxShadow: "0 4px 14px rgba(0,0,0,0.4)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer"
+            }}
+          >
+            <Scissors size={18} color="#061A14" />
+          </button>
+
+          <button
+            onClick={() => toast("MedConnect AI Assistant")}
+            aria-label="AI assistant"
+            style={{
+              width: 42,
+              height: 42,
+              borderRadius: "50%",
+              background: "#fff",
+              border: "none",
+              boxShadow: "0 4px 14px rgba(0,0,0,0.4)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer"
+            }}
+          >
+            <div
+              style={{
+                width: 24,
+                height: 24,
+                borderRadius: "50%",
+                background: "linear-gradient(135deg,#0284C7,#2563EB)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center"
+              }}
+            >
+              <MessageSquare size={13} color="#fff" />
+            </div>
+          </button>
+        </div>
       </main>
 
-      {/* Footer */}
-      <footer
+      {/* Input Row */}
+      <div
         style={{
-          padding: "10px 12px calc(10px + env(safe-area-inset-bottom))",
-          background: "#fff",
-          borderTop: "1px solid rgba(15,23,42,0.08)",
+          padding: "10px 14px",
+          background: "#061A14",
           display: "flex",
-          gap: 8,
+          alignItems: "center",
+          gap: 10,
           flexShrink: 0
         }}
       >
+        <button
+          onClick={() => toast("Attach prescription, photo or report")}
+          aria-label="Add attachment"
+          style={{
+            width: 42,
+            height: 42,
+            borderRadius: "50%",
+            background: "#123328",
+            border: "1px solid #1C4D3E",
+            color: "#fff",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            flexShrink: 0
+          }}
+        >
+          <Plus size={22} color="#fff" />
+        </button>
+
         <input
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter") submit();
           }}
-          disabled={!live}
-          placeholder={live ? "Type advice or follow-up note…" : "Chat unavailable"}
+          placeholder="Type a message"
           style={{
             flex: 1,
-            border: "1px solid rgba(15,23,42,0.15)",
-            borderRadius: 999,
-            padding: "11px 16px",
-            fontSize: 13.5,
+            background: "#0A241D",
+            border: "1px solid #144436",
+            borderRadius: 9999,
+            padding: "11px 18px",
+            color: "#fff",
+            fontSize: 14,
             fontFamily: "'Plus Jakarta Sans', sans-serif",
-            color: "#0F172A",
-            background: "#F8FAFC"
+            outline: "none"
           }}
         />
+
         <button
           onClick={submit}
-          disabled={!live || !text.trim()}
+          disabled={!text.trim()}
           aria-label="Send message"
           style={{
-            background: "#0D9488",
-            color: "#fff",
-            border: "none",
+            width: 42,
+            height: 42,
             borderRadius: "50%",
-            width: 44,
-            height: 44,
-            fontSize: 17,
-            cursor: "pointer",
-            opacity: !live || !text.trim() ? 0.5 : 1,
+            background: "#10B981",
+            border: "none",
+            color: "#fff",
+            cursor: text.trim() ? "pointer" : "default",
+            opacity: text.trim() ? 1 : 0.6,
             display: "flex",
             alignItems: "center",
-            justifyContent: "center"
+            justifyContent: "center",
+            flexShrink: 0,
+            transition: "opacity 0.2s"
           }}
         >
-          ➤
+          <Send size={18} color="#fff" style={{ transform: "translate(1px, -1px)" }} />
         </button>
-      </footer>
+      </div>
+
+      {/* Bottom Allowance & Recharge Bar */}
+      <div
+        style={{
+          padding: "12px 16px calc(12px + env(safe-area-inset-bottom))",
+          background: "#04120E",
+          borderTop: "1px solid #0D2D22",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 12,
+          flexShrink: 0
+        }}
+      >
+        <div style={{ minWidth: 0 }}>
+          <p
+            style={{
+              margin: 0,
+              fontWeight: 800,
+              fontSize: 12.5,
+              color: "#fff",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis"
+            }}
+          >
+            Free chat · 22/25 msgs · 10:00 audio · 2/2 calls
+          </p>
+          <p
+            style={{
+              margin: "2px 0 0",
+              fontSize: 10.5,
+              color: "#6A8B80",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis"
+            }}
+          >
+            Open 24h after payment · tokens work with ANY doctor
+          </p>
+        </div>
+
+        <button
+          onClick={() => toast("Recharge ₹200 added to your consultation token wallet")}
+          style={{
+            background: "#10B981",
+            color: "#fff",
+            fontWeight: 800,
+            fontSize: 13,
+            padding: "10px 18px",
+            borderRadius: 12,
+            border: "none",
+            cursor: "pointer",
+            fontFamily: "'Plus Jakarta Sans', sans-serif",
+            flexShrink: 0,
+            boxShadow: "0 2px 8px rgba(16, 185, 129, 0.35)"
+          }}
+        >
+          Recharge ₹200
+        </button>
+      </div>
     </div>
   );
 }
