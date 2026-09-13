@@ -1,0 +1,34 @@
+{
+  "checked_at": "2026-09-12T06:36:01.581Z",
+  "environment": "pyrlvjeectjikvfksukb",
+  "lints": [
+    {
+      "name": "rls_enabled_no_policy",
+      "level": "INFO",
+      "count": 24,
+      "chat_findings": [
+        "chat_consultation_episodes",
+        "chat_conversations",
+        "chat_member_receipts",
+        "chat_message_debits",
+        "chat_notification_outbox",
+        "chat_prescription_events",
+        "chat_prescription_requests",
+        "post_consultation_chat_pilot_participants",
+        "post_consultation_chat_policies"
+      ]
+    },
+    {
+      "name": "authenticated_security_definer_function_executable",
+      "level": "WARN",
+      "count": 26,
+      "chat_findings": []
+    },
+    {
+      "name": "auth_leaked_password_protection",
+      "level": "WARN",
+      "count": 1,
+      "chat_findings": []
+    }
+  ]
+}

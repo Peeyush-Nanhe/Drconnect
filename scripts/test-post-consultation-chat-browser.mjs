@@ -10,7 +10,7 @@ import { pathToFileURL } from 'node:url';
 const project = 'pyrlvjeectjikvfksukb';
 const delay = milliseconds => new Promise(done => setTimeout(done, milliseconds));
 
-class Chrome {
+export class Chrome {
   constructor(socket) {
     this.socket = socket;
     this.next = 0;
@@ -62,8 +62,13 @@ class Chrome {
       },
       navigate: nextUrl => this.command('Page.navigate', { url: nextUrl }, sessionId),
       reload: () => this.command('Page.reload', { ignoreCache: true }, sessionId),
+<<<<<<< HEAD
       screenshot: async path => {
         const { data } = await this.command('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false }, sessionId);
+=======
+      screenshot: async (path, clip) => {
+        const { data } = await this.command('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false, ...(clip ? { clip } : {}) }, sessionId);
+>>>>>>> origin/main
         await writeFile(path, Buffer.from(data, 'base64'));
       },
       close: () => this.command('Target.disposeBrowserContext', { browserContextId }),
@@ -72,7 +77,11 @@ class Chrome {
   close() { this.socket.close(); }
 }
 
+<<<<<<< HEAD
 async function until(page, expression, label, timeout = 30000) {
+=======
+export async function until(page, expression, label, timeout = 30000) {
+>>>>>>> origin/main
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
     try { if (await page.evaluate(expression)) return; } catch { /* Navigation replaces the runtime. */ }
