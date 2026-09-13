@@ -2387,16 +2387,7 @@ function CalendarChat({ patientName, onClose, specialty, subtitle }) {
   const [localSentMessages, setLocalSentMessages] = useState([]);
   const endRef = useRef(null);
 
-  const [rechargeBonus, setRechargeBonus] = useState(() => {
-    try {
-      return Number(localStorage.getItem(`mydox_chat_recharge_${patientName}`)) || 0;
-    } catch {
-      return 0;
-    }
-  });
-
   const BASE_LIMIT = 25;
-  const totalLimit = BASE_LIMIT + rechargeBonus;
 
   // Combine real-time Supabase messages and local synthetic messages
   const allMessages = useMemo(() => {
@@ -2405,15 +2396,14 @@ function CalendarChat({ patientName, onClose, specialty, subtitle }) {
     return [...messages, ...uniqueLocal];
   }, [messages, localSentMessages]);
 
-  // Count messages sent by the user (doctor or patient)
-  const sentCount = useMemo(() => {
+  // In doctor chat, count patient messages to display patient quota allowance
+  const patientSentCount = useMemo(() => {
     return allMessages.filter(
-      (m) => (meId && m.sender_id === meId) || m.id?.startsWith("local_")
+      (m) => meId && m.sender_id !== meId
     ).length;
   }, [allMessages, meId]);
 
-  const messagesRemaining = Math.max(0, totalLimit - sentCount);
-  const isLimitReached = messagesRemaining <= 0;
+  const messagesRemaining = Math.max(0, BASE_LIMIT - patientSentCount);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
@@ -2428,10 +2418,6 @@ function CalendarChat({ patientName, onClose, specialty, subtitle }) {
   const submit = async () => {
     const t = text.trim();
     if (!t) return;
-    if (isLimitReached) {
-      toast("Message limit reached (0/25). Please recharge ₹200 to continue chatting.");
-      return;
-    }
     setText("");
     const ok = await send(t);
     if (!ok) {
@@ -2445,17 +2431,6 @@ function CalendarChat({ patientName, onClose, specialty, subtitle }) {
       };
       setLocalSentMessages((prev) => [...prev, fallbackMsg]);
     }
-  };
-
-  const handleRecharge = () => {
-    const newBonus = rechargeBonus + 25;
-    setRechargeBonus(newBonus);
-    try {
-      localStorage.setItem(`mydox_chat_recharge_${patientName}`, String(newBonus));
-    } catch (_e) {
-      // Storage might be restricted
-    }
-    toast("Recharge ₹200 successful! +25 messages added to your consultation token wallet.");
   };
 
   const fmtTime = (iso) => {
@@ -2605,7 +2580,7 @@ function CalendarChat({ patientName, onClose, specialty, subtitle }) {
           }}
         >
           <div style={{ color: messagesRemaining > 5 ? "#10B981" : messagesRemaining > 0 ? "#F59E0B" : "#EF4444", fontWeight: 800, fontSize: 17 }}>
-            {messagesRemaining}/{totalLimit}
+            {messagesRemaining}/{BASE_LIMIT}
           </div>
           <div style={{ color: "#7B9E93", fontSize: 11, fontWeight: 600, marginTop: 2 }}>Messages Left</div>
         </div>
@@ -2717,7 +2692,7 @@ function CalendarChat({ patientName, onClose, specialty, subtitle }) {
         <div ref={endRef} />
 
         {/* Floating Tool Buttons on Right */}
-        <div style={{ position: "fixed", right: 16, bottom: 132, display: "flex", flexDirection: "column", gap: 10, zIndex: 10 }}>
+        <div style={{ position: "fixed", right: 16, bottom: "calc(74px + env(safe-area-inset-bottom))", display: "flex", flexDirection: "column", gap: 10, zIndex: 10 }}>
           <button
             onClick={() => toast("Prescriptions & Notes")}
             aria-label="Prescriptions tool"
@@ -2773,8 +2748,9 @@ function CalendarChat({ patientName, onClose, specialty, subtitle }) {
       {/* Input Row */}
       <div
         style={{
-          padding: "10px 14px",
+          padding: "10px 14px calc(10px + env(safe-area-inset-bottom))",
           background: "#061A14",
+          borderTop: "1px solid #0E2E23",
           display: "flex",
           alignItems: "center",
           gap: 10,
@@ -2807,8 +2783,7 @@ function CalendarChat({ patientName, onClose, specialty, subtitle }) {
           onKeyDown={(e) => {
             if (e.key === "Enter") submit();
           }}
-          disabled={isLimitReached}
-          placeholder={isLimitReached ? "Message limit reached (0/25) · Recharge to chat" : "Type a message"}
+          placeholder="Type a message"
           style={{
             flex: 1,
             background: "#0A241D",
@@ -2818,14 +2793,13 @@ function CalendarChat({ patientName, onClose, specialty, subtitle }) {
             color: "#fff",
             fontSize: 14,
             fontFamily: "'Plus Jakarta Sans', sans-serif",
-            outline: "none",
-            opacity: isLimitReached ? 0.6 : 1
+            outline: "none"
           }}
         />
 
         <button
           onClick={submit}
-          disabled={isLimitReached || !text.trim()}
+          disabled={!text.trim()}
           aria-label="Send message"
           style={{
             width: 42,
@@ -2834,8 +2808,8 @@ function CalendarChat({ patientName, onClose, specialty, subtitle }) {
             background: "#10B981",
             border: "none",
             color: "#fff",
-            cursor: !isLimitReached && text.trim() ? "pointer" : "default",
-            opacity: !isLimitReached && text.trim() ? 1 : 0.4,
+            cursor: text.trim() ? "pointer" : "default",
+            opacity: text.trim() ? 1 : 0.4,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -2844,67 +2818,6 @@ function CalendarChat({ patientName, onClose, specialty, subtitle }) {
           }}
         >
           <Send size={18} color="#fff" style={{ transform: "translate(1px, -1px)" }} />
-        </button>
-      </div>
-
-      {/* Bottom Allowance & Recharge Bar */}
-      <div
-        style={{
-          padding: "12px 16px calc(12px + env(safe-area-inset-bottom))",
-          background: "#04120E",
-          borderTop: "1px solid #0D2D22",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 12,
-          flexShrink: 0
-        }}
-      >
-        <div style={{ minWidth: 0 }}>
-          <p
-            style={{
-              margin: 0,
-              fontWeight: 800,
-              fontSize: 12.5,
-              color: "#fff",
-              whiteSpace: "nowrap",
-              overflow: "hidden",
-              textOverflow: "ellipsis"
-            }}
-          >
-            {messagesRemaining > 0 ? "Free chat" : "Quota reached"} · {messagesRemaining}/{totalLimit} msgs · 10:00 audio · 2/2 calls
-          </p>
-          <p
-            style={{
-              margin: "2px 0 0",
-              fontSize: 10.5,
-              color: "#6A8B80",
-              whiteSpace: "nowrap",
-              overflow: "hidden",
-              textOverflow: "ellipsis"
-            }}
-          >
-            Open 24h after payment · tokens work with ANY doctor
-          </p>
-        </div>
-
-        <button
-          onClick={handleRecharge}
-          style={{
-            background: "#10B981",
-            color: "#fff",
-            fontWeight: 800,
-            fontSize: 13,
-            padding: "10px 18px",
-            borderRadius: 12,
-            border: "none",
-            cursor: "pointer",
-            fontFamily: "'Plus Jakarta Sans', sans-serif",
-            flexShrink: 0,
-            boxShadow: "0 2px 8px rgba(16, 185, 129, 0.35)"
-          }}
-        >
-          Recharge ₹200
         </button>
       </div>
     </div>
