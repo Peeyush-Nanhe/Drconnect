@@ -8641,10 +8641,8 @@ function DoctorCareGroups({ onOpen }) {
 
 function MedChatOverlay({ doctor, onClose }) {
   return (
-    <TwoWayChatModal
-      reference={doctor?.reference}
-      doctorName={doctor?.name}
-      specialty={doctor?.spec}
+    <CalendarChat
+      patientName={doctor?.name || "Consultation Chat"}
       onClose={onClose}
     />
   );
