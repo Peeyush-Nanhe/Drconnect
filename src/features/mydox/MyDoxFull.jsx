@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { EMERGENCY_V2, EmergencyPatient, EmergencyResponderPanel } from "./emergency/DispatchScreens";
 import { Link } from "@tanstack/react-router";
 import PatientDashboard, { PatientHeader, PatientBottomNav } from "@/features/mydox/PatientDashboard";
 import MyBookingsOverlay from "@/features/mydox/MyBookingsOverlay";
@@ -1898,7 +1899,6 @@ function PatientBookingSheet({
 // Nurse kinds - available to all portals
 const NURSE_KINDS = [
   { id: "n_gen", name: "General Duty Nurse", Icon: Heart, desc: "Day / night home care", avail: 10, base: 800, color: "#DB2777" },
-  { id: "n_baby", name: "Mother & Baby Nurse", Icon: Baby, desc: "Newborn & postnatal", avail: 5, base: 1100, color: "#DB2777" },
 ];
 
 // Care procedures - available to all portals
@@ -9275,6 +9275,9 @@ function HubLocumCard() {
 
 
 function SOSOverlay({ onClose, onDispatch }) {
+  // EMERGENCY_V2 is the master switch in emergency/DispatchScreens.
+  // Set it to false there and the old SOS screen comes back.
+  if (EMERGENCY_V2) return <EmergencyPatient variant="sos" onClose={onClose} />;
   const [dispatched, setDispatched] = useState(false);
   useEffect(() => {
     if (!dispatched) return;
@@ -13360,6 +13363,12 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
   const [selTh, setSelTh] = useState(null);
   const [selTest, setSelTest] = useState(null);
   const [selectedSpec, setSelectedSpec] = useState(null); // unified for all provider types
+  // The chosen nursing package is a spec like any other, so the date/time
+  // picker treats a 7-day package exactly as it treats a single service.
+  const nursingSpecs = React.useMemo(
+    () => (selectedSpec && selectedSpec.id === "n_pkg" ? [selectedSpec, ...NURSE_KINDS] : NURSE_KINDS),
+    [selectedSpec]
+  );
   const [visitMode, setVisitMode] = useState("hub"); // hub | online | home
   // Nurse is home-only; care/technician/scan have no online consult — keep visitMode valid
   React.useEffect(() => {
@@ -13817,6 +13826,35 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
         try {
           const { data: { user } } = await supabase.auth.getUser();
           if (!user) throw new Error("Please log in to book appointments");
+
+          // Home nursing is booked as an engagement, not an appointment with a
+          // named provider: the patient picks a date and a number of days, and
+          // the days are broadcast for a nurse to accept. Routing it through
+          // atomic_book_appointment is what produced "Invalid provider selected"
+          // whenever nobody had been picked.
+          if ((spec.type || activeTab) === "nurse") {
+            const startAt = new Date(`${spec.scheduled.date} ${spec.scheduled.time}`);
+            if (isNaN(startAt.getTime())) throw new Error("Invalid date selected");
+            // Build the date from local parts; toISOString() would shift a
+            // late-evening slot in IST back to the previous day.
+            const iso = `${startAt.getFullYear()}-${String(startAt.getMonth() + 1).padStart(2, "0")}-${String(startAt.getDate()).padStart(2, "0")}`;
+            const { data: eng, error: engErr } = await supabase.rpc("create_nursing_engagement", {
+              p_days: spec.days || 1,
+              p_start_date: iso,
+              p_slot_time: spec.scheduled.time,
+              p_kind: spec.name || "General Duty Nurse",
+              p_address: (area || "") + ", Pune",
+            });
+            if (engErr) throw new Error(engErr.message.replace(/^NURSING_[A-Z_]+:\s*/, ""));
+            const row = Array.isArray(eng) ? eng[0] : eng;
+            setConfirmedBooking({
+              name: (spec.days > 1 ? spec.days + " days of home nursing" : "Home nursing visit"),
+              label: "Starts " + startAt.toDateString() + " · nurses are being notified",
+            });
+            setSelectedSpec(null);
+            return;
+          }
+
           if (!spec.doctor?.userId) throw new Error("Invalid provider selected");
           if (visitMode === "home" || spec.visitMode === "home") throw new Error("Scheduled home visits for this service are unavailable. Please use its existing service booking option.");
 
@@ -14398,9 +14436,15 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
               {/* UNIFIED BOOKING INTERFACE — large-target, elderly-friendly version */}
               {activeTab === "nurse" && (
                 <NursingCareCard onBook={(days, total) => {
-                  const svc = { id: "nursing", name: days + "-day Home Nursing", base: total, color: "#DB2777", type: "nurse", shortName: "Nurse" };
-                  const homeHub = { id: "home", name: "Your Home", type: "home", address: area + ", Pune", patEtaMin: 0, specialities: [], amenities: [] };
-                  actions.book({ spec: svc, emergency: false, area, fare: buildFare(svc, false), hub: homeHub });
+                  // Choosing a package no longer books on the spot. It selects a
+                  // spec so SpecialtyPickerSimple shows the same date and time
+                  // grid the per-service path uses; booking happens from there.
+                  setSelectedSpec({
+                    id: "n_pkg", name: days + "-day Home Nursing", Icon: Heart,
+                    desc: days === 1 ? "One home visit" : days + " daily visits at home",
+                    avail: 10, base: total, color: "#DB2777", type: "nurse",
+                    shortName: "Nurse", days,
+                  });
                 }} />
               )}
               <div style={{ padding: "10px 14px 0" }}>
@@ -14416,7 +14460,7 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
                     therapist: THERAPISTS,
                     test: TECHNICIANS,
                     technician: TECHNICIANS,
-                    nurse: NURSE_KINDS,
+                    nurse: nursingSpecs,
                     care: CARE_PROCS,
                     scan: SCANS,
                     diet: DIETITIANS
@@ -15421,7 +15465,9 @@ function DirectRequestOverlay({ provider, spec, who, emergency, fallbackLabel, o
   const [phase, setPhase] = useState("contacting"); // contacting → accepted
   const [left, setLeft] = useState(emergency ? 60 : 600); // emergency = 1-minute window, else 10 minutes
   const fallbackCalledRef = useRef(false);
-  useEffect(() => { if (phase !== "contacting") return; if (emergency) return; const t = setTimeout(() => setPhase("accepted"), 3200); return () => clearTimeout(t); }, [phase, emergency]);
+  // Previously this flipped to "accepted" after 3.2 seconds with nobody on the
+  // other end, so a provider appeared to accept when none had. Acceptance now
+  // only arrives from a real accept; the countdown below is the fallback.
   useEffect(() => { fallbackCalledRef.current = false; }, [provider?.name, spec?.name, emergency]);
   useEffect(() => { if (phase !== "contacting") return; const iv = setInterval(() => setLeft(s => Math.max(0, s - 1)), 1000); return () => clearInterval(iv); }, [phase]);
   useEffect(() => { if (phase !== "contacting" || left > 0 || fallbackCalledRef.current) return; fallbackCalledRef.current = true; onFallback && onFallback(); }, [phase, left, onFallback]);
