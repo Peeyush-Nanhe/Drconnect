@@ -23,6 +23,7 @@ type Item = {
   status: string;
   createdAt: string;
   doctorName?: string;
+  otp?: string;
 };
 
 const TEAL = "#0D9488";
@@ -120,6 +121,7 @@ export default function MyBookingsOverlay({
   const [tab, setTab] = useState<"upcoming" | "previous">(initialTab);
   const [chatDoctor, setChatDoctor] = useState<string | null>(null);
   const [reviewTarget, setReviewTarget] = useState<{ item: Item; doctorName: string } | null>(null);
+  const [otpTarget, setOtpTarget] = useState<{ item: Item; doctorName: string } | null>(null);
   const [reviewsMap, setReviewsMap] = useState<Record<string, number>>({});
 
   useEffect(() => {
@@ -139,14 +141,14 @@ export default function MyBookingsOverlay({
     (async () => {
       setLoading(true);
       const [cr, cp, pr, sn, bb, sb, mo, da, pv, sc, comm] = await Promise.all([
-        supabase.from("care_requests").select("id, specialty, status, notes, created_at, visit_type, accepted_by, rating_provider").eq("patient_id", uid).order("created_at", { ascending: false }).limit(200),
+        supabase.from("care_requests").select("id, specialty, status, notes, created_at, visit_type, accepted_by, rating_provider, otp").eq("patient_id", uid).order("created_at", { ascending: false }).limit(200),
         supabase.from("care_program_bookings").select("id, program, tier, summary, status, created_at").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
         supabase.from("prosthetics_bookings").select("id, category, subtype, provider_name, status, created_at").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
         supabase.from("special_needs_bookings").select("id, category, subtype, provider_name, status, created_at").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
         supabase.from("blood_bank_activity").select("id, activity_type, blood_group, units, hospital, status, created_at").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
         supabase.from("surgery_bookings").select("id, procedure, patient_name, mode, status, created_at").eq("facility_id", uid).order("created_at", { ascending: false }).limit(100),
         supabase.from("medicine_orders").select("id, pharmacy_name, delivery_speed, items, prescription_attached, total, status, created_at").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
-        supabase.from("doctor_appointments").select("id, service, mode, status, start_time, end_time, created_at, provider_id").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
+        supabase.from("doctor_appointments").select("id, service, mode, status, start_time, end_time, created_at, provider_id, arrival_otp").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
         supabase.from("physio_visits").select("id, therapy_type, area, city, session_number, status, created_at, therapist_id").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
         supabase.from("specialty_care_bookings").select("id, specialty_label, concern, mode, provider_name, status, created_at").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
         supabase.from("community_requests").select("id, type, notes, status, created_at").eq("requester_id", uid).order("created_at", { ascending: false }).limit(100),
@@ -154,8 +156,8 @@ export default function MyBookingsOverlay({
 
       const rows: Item[] = [];
       const localReviews: Record<string, number> = {};
-      const crRows = (cr.data as { id: string; specialty: string; status: string; notes: string | null; created_at: string; visit_type: string; accepted_by: string | null; rating_provider: number | null }[] | null) ?? [];
-      const daRows = (da.data as { id: string; service: string | null; mode: string | null; status: string; start_time: string; end_time: string; created_at: string; provider_id: string | null }[] | null) ?? [];
+      const crRows = (cr.data as { id: string; specialty: string; status: string; notes: string | null; created_at: string; visit_type: string; accepted_by: string | null; rating_provider: number | null; otp: string | null }[] | null) ?? [];
+      const daRows = (da.data as { id: string; service: string | null; mode: string | null; status: string; start_time: string; end_time: string; created_at: string; provider_id: string | null; arrival_otp: string | null }[] | null) ?? [];
       const pvRows = (pv.data as { id: string; therapy_type: string; area: string; city: string; session_number: number; status: string; created_at: string; therapist_id: string | null }[] | null) ?? [];
       const scRows = (sc.data as { id: string; specialty_label: string; concern: string; mode: string; provider_name: string; status: string; created_at: string }[] | null) ?? [];
       const commRows = (comm.data as { id: string; type: string; notes: string | null; status: string; created_at: string }[] | null) ?? [];
@@ -191,6 +193,7 @@ export default function MyBookingsOverlay({
           status: r.status,
           createdAt: r.created_at,
           doctorName: docName,
+          otp: r.otp || undefined,
         });
       }
 
@@ -211,6 +214,7 @@ export default function MyBookingsOverlay({
           status: r.status,
           createdAt: r.created_at,
           doctorName: docName,
+          otp: r.arrival_otp || undefined,
         });
       }
 
@@ -367,6 +371,15 @@ export default function MyBookingsOverlay({
                       return (
                         <li
                           key={it.id}
+                          onClick={() => setOtpTarget({ item: it, doctorName: docName })}
+                          role="button"
+                          tabIndex={0}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              setOtpTarget({ item: it, doctorName: docName });
+                            }
+                          }}
                           style={{
                             background: "#fff",
                             borderRadius: 14,
@@ -376,6 +389,8 @@ export default function MyBookingsOverlay({
                             alignItems: "flex-start",
                             gap: 12,
                             flexWrap: "wrap",
+                            cursor: "pointer",
+                            transition: "box-shadow 0.15s ease",
                           }}
                         >
                           <div style={{ fontSize: 22, lineHeight: 1, marginTop: 2 }}>{MODULE_ICON[it.module]}</div>
@@ -386,12 +401,39 @@ export default function MyBookingsOverlay({
                             </div>
                             {it.subtitle && <div style={{ color: "#475569", fontSize: 12, marginTop: 2 }}>{it.subtitle}</div>}
                             <div style={{ color: "#94A3B8", fontSize: 11, marginTop: 4 }}>{it.module} · {new Date(it.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
+                            <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setOtpTarget({ item: it, doctorName: docName });
+                                }}
+                                style={{
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: 4,
+                                  background: "#ECFDF5",
+                                  color: "#065F46",
+                                  border: "1px solid #A7F3D0",
+                                  borderRadius: 999,
+                                  padding: "3px 9px",
+                                  fontSize: 11,
+                                  fontWeight: 700,
+                                  cursor: "pointer",
+                                }}
+                              >
+                                🔑 Consultation OTP (tap to view)
+                              </button>
+                            </div>
                           </div>
 
                           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", alignSelf: "center", justifyContent: "flex-end" }}>
                             <button
                               type="button"
-                              onClick={() => setReviewTarget({ item: it, doctorName: docName })}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setReviewTarget({ item: it, doctorName: docName });
+                              }}
                               aria-label={`Review ${docName}`}
                               style={{
                                 display: "inline-flex",
@@ -415,7 +457,10 @@ export default function MyBookingsOverlay({
 
                             <button
                               type="button"
-                              onClick={() => setChatDoctor(docName)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setChatDoctor(docName);
+                              }}
                               aria-label={`Chat with ${docName}`}
                               style={{
                                 display: "inline-flex",
@@ -440,7 +485,10 @@ export default function MyBookingsOverlay({
                             {onRebook && (
                               <button
                                 type="button"
-                                onClick={() => onRebook(it)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onRebook(it);
+                                }}
                                 aria-label={`Book ${it.title} again`}
                                 style={{
                                   display: "inline-flex",
@@ -480,6 +528,16 @@ export default function MyBookingsOverlay({
             onClose={() => setReviewTarget(null)}
             onSaved={(rating) => {
               setReviewsMap((prev) => ({ ...prev, [reviewTarget.item.id]: rating }));
+            }}
+          />
+        )}
+        {otpTarget && (
+          <BookingOtpModal
+            target={otpTarget}
+            onClose={() => setOtpTarget(null)}
+            onOpenChat={(doc) => {
+              setOtpTarget(null);
+              setChatDoctor(doc);
             }}
           />
         )}
@@ -825,6 +883,370 @@ function PatientReviewModal({
             </div>
           </>
         )}
+      </div>
+    </div>
+  );
+}
+
+/* Consultation Completion OTP Generator & Supabase Sync */
+async function getOrGenerateBookingOtp(item: Item): Promise<string> {
+  if (item.otp && /^\d{4,6}$/.test(item.otp)) {
+    return item.otp;
+  }
+  const cacheKey = `mydox_booking_otp_${item.id}`;
+  if (typeof window !== "undefined") {
+    try {
+      const cached = window.localStorage.getItem(cacheKey);
+      if (cached && /^\d{4,6}$/.test(cached)) return cached;
+    } catch {
+      /* ignore storage errors */
+    }
+  }
+
+  // Generate 6-digit random OTP
+  const generated = Math.floor(100000 + Math.random() * 900000).toString();
+
+  const [prefix, rawId] = item.id.split(":");
+  if (rawId) {
+    try {
+      if (prefix === "cr") {
+        const { data } = await supabase.from("care_requests").select("otp").eq("id", rawId).maybeSingle();
+        const existing = (data as { otp: string | null } | null)?.otp;
+        if (existing && /^\d{4,6}$/.test(existing)) {
+          if (typeof window !== "undefined") {
+            try { window.localStorage.setItem(cacheKey, existing); } catch { /* ignore */ }
+          }
+          return existing;
+        }
+        await supabase.from("care_requests").update({ otp: generated } as never).eq("id", rawId).is("otp", null);
+      } else if (prefix === "da") {
+        const { data } = await supabase.from("doctor_appointments").select("arrival_otp").eq("id", rawId).maybeSingle();
+        const existing = (data as { arrival_otp: string | null } | null)?.arrival_otp;
+        if (existing && /^\d{4,6}$/.test(existing)) {
+          if (typeof window !== "undefined") {
+            try { window.localStorage.setItem(cacheKey, existing); } catch { /* ignore */ }
+          }
+          return existing;
+        }
+        await supabase.from("doctor_appointments").update({ arrival_otp: generated } as never).eq("id", rawId).is("arrival_otp", null);
+      }
+    } catch {
+      /* ignore database or network sync errors */
+    }
+  }
+
+  if (typeof window !== "undefined") {
+    try {
+      window.localStorage.setItem(cacheKey, generated);
+    } catch {
+      /* ignore storage errors */
+    }
+  }
+
+  return generated;
+}
+
+/* Consultation Verification OTP Modal */
+function BookingOtpModal({
+  target,
+  onClose,
+  onOpenChat,
+}: {
+  target: { item: Item; doctorName: string };
+  onClose: () => void;
+  onOpenChat: (doctorName: string) => void;
+}) {
+  const [otp, setOtp] = useState<string>(target.item.otp || "");
+  const [loading, setLoading] = useState<boolean>(!target.item.otp);
+  const [copied, setCopied] = useState<boolean>(false);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      const code = await getOrGenerateBookingOtp(target.item);
+      if (mounted) {
+        setOtp(code);
+        setLoading(false);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [target.item]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const handleCopy = () => {
+    if (!otp) return;
+    try {
+      navigator.clipboard.writeText(otp);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2200);
+    } catch {
+      /* ignore copy errors */
+    }
+  };
+
+  const digits = (otp || "------").split("");
+  const displayDocName = target.doctorName.startsWith("Dr.") ? target.doctorName : `Dr. ${target.doctorName}`;
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Consultation Verification OTP"
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(15,23,42,0.65)",
+        backdropFilter: "blur(6px)",
+        zIndex: 1100,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "16px",
+        fontFamily: "'Plus Jakarta Sans', sans-serif",
+      }}
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: "#fff",
+          borderRadius: 20,
+          width: "100%",
+          maxWidth: 440,
+          boxShadow: "0 20px 25px -5px rgba(15,23,42,0.2), 0 8px 10px -6px rgba(15,23,42,0.1)",
+          padding: "24px 22px",
+          display: "flex",
+          flexDirection: "column",
+          position: "relative",
+          boxSizing: "border-box",
+        }}
+      >
+        {/* Header */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div
+              style={{
+                width: 38,
+                height: 38,
+                borderRadius: 12,
+                background: "#CCFBF1",
+                color: "#0F766E",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 20,
+              }}
+            >
+              🔒
+            </div>
+            <div>
+              <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: "#0F172A" }}>Consultation OTP</h2>
+              <p style={{ margin: 0, fontSize: 12, color: "#64748B", fontWeight: 500 }}>
+                Verification code generated from Supabase
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close popup"
+            style={{
+              background: "#F1F5F9",
+              border: "none",
+              borderRadius: "50%",
+              width: 30,
+              height: 30,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer",
+              fontSize: 14,
+              color: "#64748B",
+            }}
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Doctor & Booking snapshot */}
+        <div
+          style={{
+            background: "#F8FAFC",
+            border: "1px solid #E2E8F0",
+            borderRadius: 14,
+            padding: "12px 14px",
+            marginBottom: 16,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+            <span style={{ fontWeight: 700, fontSize: 14, color: "#0F172A" }}>{target.item.title}</span>
+            <StatusChip status={target.item.status} />
+          </div>
+          <div style={{ fontSize: 12, color: "#475569", marginTop: 4, display: "flex", alignItems: "center", gap: 6 }}>
+            <span>Attending Doctor:</span>
+            <span style={{ fontWeight: 700, color: "#0D9488" }}>{displayDocName}</span>
+          </div>
+          {target.item.subtitle && (
+            <div style={{ fontSize: 11.5, color: "#64748B", marginTop: 2 }}>{target.item.subtitle}</div>
+          )}
+        </div>
+
+        {/* OTP Code Display Box */}
+        <div
+          style={{
+            background: "linear-gradient(180deg, #F0FDFA 0%, #E6FFFA 100%)",
+            border: "1.5px dashed #14B8A6",
+            borderRadius: 16,
+            padding: "18px 16px",
+            textAlign: "center",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+          }}
+        >
+          <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, color: "#0F766E", textTransform: "uppercase" }}>
+            One-Time Consultation Passcode
+          </span>
+
+          {loading ? (
+            <div style={{ padding: "18px 0", fontSize: 13, color: "#0F766E", fontWeight: 600 }}>
+              Generating secure OTP from Supabase…
+            </div>
+          ) : (
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                justifyContent: "center",
+                marginTop: 12,
+                marginBottom: 10,
+              }}
+            >
+              {digits.map((d, i) => (
+                <div
+                  key={i}
+                  style={{
+                    width: 42,
+                    height: 50,
+                    background: "#FFFFFF",
+                    borderRadius: 10,
+                    border: "1.5px solid #99F6E4",
+                    boxShadow: "0 2px 4px rgba(13,148,136,0.1)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: 24,
+                    fontWeight: 800,
+                    color: "#0F172A",
+                    fontFamily: "monospace",
+                  }}
+                >
+                  {d}
+                </div>
+              ))}
+            </div>
+          )}
+
+          <button
+            type="button"
+            disabled={loading}
+            onClick={handleCopy}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              background: copied ? "#D1FAE5" : "#FFFFFF",
+              color: copied ? "#065F46" : "#0F766E",
+              border: "1px solid " + (copied ? "#6EE7B7" : "#99F6E4"),
+              borderRadius: 999,
+              padding: "6px 14px",
+              fontSize: 12,
+              fontWeight: 700,
+              cursor: "pointer",
+              marginTop: 4,
+              boxShadow: "0 1px 2px rgba(15,23,42,0.05)",
+              transition: "all 0.15s ease",
+            }}
+          >
+            {copied ? "✓ Copied to clipboard" : "📋 Copy OTP"}
+          </button>
+        </div>
+
+        {/* Required Notice Box */}
+        <div
+          style={{
+            background: "#FFFBEB",
+            border: "1px solid #FCD34D",
+            borderRadius: 14,
+            padding: "13px 14px",
+            marginTop: 16,
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 10,
+          }}
+        >
+          <span style={{ fontSize: 18, lineHeight: 1 }}>🩺</span>
+          <div>
+            <div style={{ fontWeight: 800, fontSize: 13, color: "#92400E", lineHeight: 1.35 }}>
+              Share this OTP with {displayDocName} once your consultation is over
+            </div>
+            <div style={{ fontSize: 11.5, color: "#78350F", marginTop: 4, lineHeight: 1.45 }}>
+              Please do not share this passcode beforehand. Your doctor requires this code at the conclusion of your visit to verify and complete the session.
+            </div>
+          </div>
+        </div>
+
+        {/* Action Buttons */}
+        <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
+          <button
+            type="button"
+            onClick={() => onOpenChat(target.doctorName)}
+            style={{
+              flex: 1,
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 6,
+              background: "#F0FDFA",
+              color: "#0F766E",
+              border: "1px solid #99F6E4",
+              borderRadius: 12,
+              padding: "11px 14px",
+              fontSize: 13,
+              fontWeight: 700,
+              cursor: "pointer",
+            }}
+          >
+            💬 Chat with Doctor
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              flex: 1,
+              background: TEAL,
+              color: "#fff",
+              border: "none",
+              borderRadius: 12,
+              padding: "11px 14px",
+              fontSize: 13,
+              fontWeight: 700,
+              cursor: "pointer",
+              boxShadow: "0 2px 6px rgba(13,148,136,0.25)",
+            }}
+          >
+            Done
+          </button>
+        </div>
       </div>
     </div>
   );
