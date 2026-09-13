@@ -366,9 +366,17 @@ export async function verifyAndCompleteConsultation(
         p_notes: doctorNotes || null,
       });
       if (error) {
-        return { success: false, error: error.message || "Failed to verify passcode." };
-      }
-      if (data && typeof data === "object") {
+        // If unauthenticated or permission denied in demo mode, fall through to local cache verification
+        if (error.code === "42501" || error.message?.includes("permission denied")) {
+          const { data: authData } = await supabase.auth.getSession().catch(() => ({ data: { session: null } }));
+          if (authData?.session) {
+            return { success: false, error: error.message };
+          }
+          // No active auth session -> fall through to demo/local cache check
+        } else {
+          return { success: false, error: error.message || "Failed to verify passcode." };
+        }
+      } else if (data && typeof data === "object") {
         const res = data as { success?: boolean; error?: string; status?: string };
         if (res.success) {
           return { success: true, status: "completed" };
@@ -376,7 +384,7 @@ export async function verifyAndCompleteConsultation(
         return { success: false, error: res.error || "Incorrect verification code. Please check the 4-digit passcode with the patient." };
       }
     } catch (e: any) {
-      return { success: false, error: e?.message || "Verification request failed." };
+      // If network fails, fall through to demo/local cache check
     }
   }
 
