@@ -369,14 +369,17 @@ export default function MyBookingsOverlay({
                       const docName = it.doctorName || (/nurse/i.test(it.title) ? "Nurse Specialist" : /physio/i.test(it.title) ? "Dr. Rajesh K (PT)" : "Dr. Anita Rao");
                       const userRating = reviewsMap[it.id] ?? (readReview(it.id, docName)?.stars ?? null);
                       const isConsultationOver = ["completed", "delivered", "closed", "finished"].includes((it.status || "").toLowerCase());
+                      const showOtpOption = tab !== "previous" && !isConsultationOver;
                       return (
                         <li
                           key={it.id}
-                          onClick={() => setOtpTarget({ item: it, doctorName: docName })}
-                          role="button"
-                          tabIndex={0}
+                          onClick={() => {
+                            if (showOtpOption) setOtpTarget({ item: it, doctorName: docName });
+                          }}
+                          role={showOtpOption ? "button" : undefined}
+                          tabIndex={showOtpOption ? 0 : undefined}
                           onKeyDown={(e) => {
-                            if (e.key === "Enter" || e.key === " ") {
+                            if ((e.key === "Enter" || e.key === " ") && showOtpOption) {
                               e.preventDefault();
                               setOtpTarget({ item: it, doctorName: docName });
                             }
@@ -390,7 +393,7 @@ export default function MyBookingsOverlay({
                             alignItems: "flex-start",
                             gap: 12,
                             flexWrap: "wrap",
-                            cursor: "pointer",
+                            cursor: showOtpOption ? "pointer" : "default",
                             transition: "box-shadow 0.15s ease",
                           }}
                         >
@@ -402,30 +405,32 @@ export default function MyBookingsOverlay({
                             </div>
                             {it.subtitle && <div style={{ color: "#475569", fontSize: 12, marginTop: 2 }}>{it.subtitle}</div>}
                             <div style={{ color: "#94A3B8", fontSize: 11, marginTop: 4 }}>{it.module} · {new Date(it.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
-                            <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setOtpTarget({ item: it, doctorName: docName });
-                                }}
-                                style={{
-                                  display: "inline-flex",
-                                  alignItems: "center",
-                                  gap: 4,
-                                  background: "#ECFDF5",
-                                  color: "#065F46",
-                                  border: "1px solid #A7F3D0",
-                                  borderRadius: 999,
-                                  padding: "3px 9px",
-                                  fontSize: 11,
-                                  fontWeight: 700,
-                                  cursor: "pointer",
-                                }}
-                              >
-                                🔑 Consultation OTP (tap to view)
-                              </button>
-                            </div>
+                            {showOtpOption && (
+                              <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setOtpTarget({ item: it, doctorName: docName });
+                                  }}
+                                  style={{
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    gap: 4,
+                                    background: "#ECFDF5",
+                                    color: "#065F46",
+                                    border: "1px solid #A7F3D0",
+                                    borderRadius: 999,
+                                    padding: "3px 9px",
+                                    fontSize: 11,
+                                    fontWeight: 700,
+                                    cursor: "pointer",
+                                  }}
+                                >
+                                  🔑 Consultation OTP (tap to view)
+                                </button>
+                              </div>
+                            )}
                           </div>
 
                           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", alignSelf: "center", justifyContent: "flex-end" }}>
