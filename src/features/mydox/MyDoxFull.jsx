@@ -28,6 +28,7 @@ import { usePostConsultationInbox } from "@/features/mydox/post-consultation-cha
 import { recordHomeVisitConsent } from "@/lib/consents.functions";
 import {
   parseChatAttachment,
+  formatMessageSnippet,
   processImageFile,
   processPdfFile,
   AttachmentMenu,
@@ -9735,7 +9736,7 @@ function ConsultationInboxRows({ inbox, onOpen }) {
           <div style={{ flex: 1, minWidth: 0 }}>
             <p style={{ fontWeight: 700, color: C.ink, fontSize: 13, margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.counterpartName}</p>
             <p style={{ color: C.sub, fontSize: 10, margin: "2px 0" }}>{item.consultationLabel}</p>
-            <p style={{ color: C.sub, fontSize: 11.5, margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.lastMessage || "No messages yet"}</p>
+            <p style={{ color: C.sub, fontSize: 11.5, margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{formatMessageSnippet(item.lastMessage) || "No messages yet"}</p>
           </div>
           <div style={{ flexShrink: 0, textAlign: "right" }}>
             {item.lastMessageAt && <p style={{ color: C.faint, fontSize: 10, margin: 0 }}>{new Date(item.lastMessageAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</p>}

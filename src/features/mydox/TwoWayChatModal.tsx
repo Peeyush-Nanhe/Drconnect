@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from "react";
 import { usePostConsultationChat } from "./post-consultation-chat/usePostConsultationChat";
 import type { ChatReference } from "./post-consultation-chat/types";
+import { parseChatAttachment, ChatAttachmentBubbleContent, ImageLightboxModal } from "./chatAttachmentUtils";
 
 export type TwoWayChatModalProps = {
   reference?: ChatReference;
@@ -22,6 +23,7 @@ export function TwoWayChatModal({ reference, doctorName, specialty, onClose }: T
   const [sendError, setSendError] = useState<string | null>(null);
   const [prescriptionBusy, setPrescriptionBusy] = useState(false);
   const [prescriptionError, setPrescriptionError] = useState<string | null>(null);
+  const [selectedImage, setSelectedImage] = useState<{ name: string; dataUrl: string } | null>(null);
   const [decliningRequestId, setDecliningRequestId] = useState<string | null>(null);
   const [declineReason, setDeclineReason] = useState("");
   const followBottom = useRef(true);
@@ -170,7 +172,19 @@ export function TwoWayChatModal({ reference, doctorName, specialty, onClose }: T
               <div style={{ maxWidth: "86%", minWidth: 100, padding: "10px 13px", borderRadius: message.isOwn ? "16px 16px 4px 16px" : "16px 16px 16px 4px", background: message.isOwn ? "#0E5E47" : "#13352A", border: "1px solid #245140", overflowWrap: "anywhere" }}>
                 <p style={{ margin: "0 0 5px", fontSize: 10, color: "#ACD7C4", textTransform: "capitalize" }}>{message.isOwn ? "You" : details?.counterpartName} · {message.senderRole}</p>
                 {details && details.episodes.length > 1 && <p style={{ margin: "0 0 5px", color: "#ACD7C4", fontSize: 10 }}>{details.episodes.find(episode => episode.episodeId === message.episodeId)?.consultationLabel || "Earlier consultation"}</p>}
-                <p style={{ margin: 0, whiteSpace: "pre-wrap", lineHeight: 1.6 }}>{message.body}</p>
+                {(() => {
+                  const att = parseChatAttachment(message.body);
+                  if (att) {
+                    return (
+                      <ChatAttachmentBubbleContent
+                        attachment={att}
+                        mine={message.isOwn}
+                        onViewImage={img => setSelectedImage(img)}
+                      />
+                    );
+                  }
+                  return <p style={{ margin: 0, whiteSpace: "pre-wrap", lineHeight: 1.6 }}>{message.body}</p>;
+                })()}
                 <p style={{ margin: "5px 0 0", textAlign: "right", color: "#A7C4B7", fontSize: 10 }}>
                   {message.createdAt ? new Date(message.createdAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : ""}
                   {message.isOwn && ` · ${message.status === "sending" ? "Sending…" : message.status === "failed" ? "Not confirmed" : "Saved"}`}
@@ -223,6 +237,7 @@ export function TwoWayChatModal({ reference, doctorName, specialty, onClose }: T
           Documents, calls, purchases and prescription issuing are not enabled for this chat. Use the existing booking and clinical-record workflows for separately confirmed follow-up care.
         </footer>
       </div>
+      <ImageLightboxModal image={selectedImage} onClose={() => setSelectedImage(null)} />
     </div>
   );
 }

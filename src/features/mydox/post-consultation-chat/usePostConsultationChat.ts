@@ -4,6 +4,7 @@ import { accessRejected, chatApi, chatError, ChatError } from "./api";
 import { chatDetails, inboxItem, mergeMessages, retryPayload, savedMessage } from "./state";
 import { ChatRecovery, recoverHistory } from "./recovery";
 import type { ChatDetails, ChatInboxItem, ChatMessage, ChatReference, WireSummary } from "./types";
+import { formatMessageSnippet } from "../chatAttachmentUtils";
 
 // Clinical text stays in component memory. Auth changes invalidate in-flight
 // work before another account can receive its results.
@@ -400,7 +401,7 @@ async function buildFallbackInbox(uid: string | null): Promise<ChatInboxItem[]> 
         counterpartName,
         counterpartRole,
         consultationLabel: apt.service || (isCompleted ? "Completed Consultation" : "Active Consultation"),
-        lastMessage: latest?.body || (isCompleted ? "Consultation verified & completed" : "Active consultation booking"),
+        lastMessage: latest?.body ? formatMessageSnippet(latest.body) : (isCompleted ? "Consultation verified & completed" : "Active consultation booking"),
         lastMessageAt: latest?.at || apt.completed_at || apt.updated_at || apt.start_time || new Date().toISOString(),
         unreadCount: latest ? 0 : isCompleted ? 1 : 0,
       });
@@ -427,7 +428,7 @@ async function buildFallbackInbox(uid: string | null): Promise<ChatInboxItem[]> 
         counterpartName,
         counterpartRole,
         consultationLabel: req.specialty || "General Consultation",
-        lastMessage: latest?.body || (isCompleted ? "Consultation completed" : "Care request accepted"),
+        lastMessage: latest?.body ? formatMessageSnippet(latest.body) : (isCompleted ? "Consultation completed" : "Care request accepted"),
         lastMessageAt: latest?.at || req.completed_at || req.updated_at || new Date().toISOString(),
         unreadCount: 0,
       });

@@ -41,6 +41,22 @@ export function parseChatAttachment(body: string | null | undefined): ChatAttach
   return null;
 }
 
+export function formatMessageSnippet(body: string | null | undefined): string {
+  if (!body) return "";
+  const att = parseChatAttachment(body);
+  if (att) {
+    if (att.fileType === "image") {
+      return att.caption ? `📷 Photo: ${att.caption}` : "📷 Photo";
+    }
+    if (att.fileType === "pdf") {
+      const name = att.name ? ` · ${att.name}` : "";
+      return att.caption ? `📄 PDF: ${att.caption}${name}` : `📄 PDF${name || " Document"}`;
+    }
+    return att.name ? `📎 Attachment: ${att.name}` : "📎 Attachment";
+  }
+  return body;
+}
+
 export function processImageFile(
   file: File,
   maxWidth = 1280,
