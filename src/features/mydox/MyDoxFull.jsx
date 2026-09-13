@@ -17,7 +17,7 @@ import { askTriage } from "@/lib/ask-ai.functions";
 import { analyzeReport } from "@/lib/report-analyzer.functions";
 import { transcribeAudio } from "@/lib/transcribe.functions";
 import { saveAiHistory, listAiHistory, getAiHistoryItem, toggleShareAiHistory, deleteAiHistory } from "@/lib/ai-history.functions";
-import { createCareRequest, cancelCareRequest, acceptCareRequest, completeCareRequest, failCareRequest, useLiveCareRequests, useRecentChatCounterparts, useMyMedicos, logRequestEvent, setRequestStage, useRequestAuditLog, useAdminAuditFeed, payAndGenerateOtp, verifyOtpAndStart, confirmOtpExchanged, TEST_DEFAULT_OTP, rateCareRequest, createCareProgramBooking, createCommunityRequest, useServiceReferrals, createServiceReferral, updateServiceReferralStatus, useRecentPatientsForDoctor, useSession, useLiveDoctorAppointments, useRealtimeChat } from "@/features/mydox/backend";
+import { createCareRequest, cancelCareRequest, acceptCareRequest, completeCareRequest, failCareRequest, useLiveCareRequests, useRecentChatCounterparts, useMyMedicos, logRequestEvent, setRequestStage, useRequestAuditLog, useAdminAuditFeed, payAndGenerateOtp, verifyOtpAndStart, confirmOtpExchanged, TEST_DEFAULT_OTP, rateCareRequest, createCareProgramBooking, createCommunityRequest, useServiceReferrals, createServiceReferral, updateServiceReferralStatus, useRecentPatientsForDoctor, useSession, useLiveDoctorAppointments, useRealtimeChat, verifyAndCompleteConsultation } from "@/features/mydox/backend";
 import { SURGERY_ROLE_LABELS } from "@/features/mydox/surgery";
 import { SlotPickerCalendar } from "@/features/mydox/SlotPickerCalendar";
 import CancellationDialog from "@/features/mydox/CancellationDialog";
@@ -2196,6 +2196,7 @@ function ConsultationOverDialog({ item, onClose, onConfirm }) {
   const [notes, setNotes] = useState("");
   const [otp, setOtp] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
+  const [busy, setBusy] = useState(false);
 
   const handleOtpChange = (e) => {
     const val = e.target.value.replace(/\D/g, "").slice(0, 4);
@@ -2203,13 +2204,22 @@ function ConsultationOverDialog({ item, onClose, onConfirm }) {
     if (errorMsg) setErrorMsg("");
   };
 
-  const handleVerify = () => {
-    if (otp.length !== 4) return;
-    const expected = item.otp || TEST_DEFAULT_OTP || "0000";
-    if (otp === expected || otp === "0000") {
-      onConfirm(item, notes);
-    } else {
-      setErrorMsg("Incorrect OTP. Ask the patient to read the code shown in their app.");
+  const handleVerify = async () => {
+    if (otp.length !== 4 || busy) return;
+    setBusy(true);
+    setErrorMsg("");
+    try {
+      const slotId = item.careRequestId || item.appointmentId || item.id;
+      const res = await verifyAndCompleteConsultation(slotId, otp, notes);
+      if (res.success) {
+        onConfirm(item, notes);
+      } else {
+        setErrorMsg(res.error || "Incorrect OTP. Ask the patient to read the code shown in their app.");
+      }
+    } catch (e) {
+      setErrorMsg(e?.message || "Failed to verify consultation OTP.");
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -2347,22 +2357,22 @@ function ConsultationOverDialog({ item, onClose, onConfirm }) {
         {/* Action Button */}
         <button
           onClick={handleVerify}
-          disabled={otp.length !== 4}
+          disabled={otp.length !== 4 || busy}
           style={{
             width: "100%",
             padding: "14px",
             borderRadius: 14,
             border: "none",
-            background: otp.length === 4 ? "#0D9488" : "#CBD5E1",
+            background: otp.length === 4 && !busy ? "#0D9488" : "#CBD5E1",
             color: "#ffffff",
             fontSize: 14.5,
             fontWeight: 800,
-            cursor: otp.length === 4 ? "pointer" : "not-allowed",
+            cursor: otp.length === 4 && !busy ? "pointer" : "not-allowed",
             transition: "all 0.15s",
-            boxShadow: otp.length === 4 ? "0 4px 12px rgba(13,148,136,0.3)" : "none"
+            boxShadow: otp.length === 4 && !busy ? "0 4px 12px rgba(13,148,136,0.3)" : "none"
           }}
         >
-          Verify OTP & close
+          {busy ? "Verifying with backend…" : "Verify OTP & close"}
         </button>
       </div>
     </div>
@@ -2596,14 +2606,6 @@ function BookingCalendar({ title = "My Schedule", subtitle = "Your patient appoi
     const rowKey = item.id || `${item.title}_${item.date.getTime()}`;
     setDoneMap(prev => ({ ...prev, [rowKey]: { status: "Consultation over", notes } }));
     setOverDialogItem(null);
-    if (item.careRequestId || (typeof item.id === "string" && !item.id.includes("_") && item.id.length > 20)) {
-      const id = item.careRequestId || item.id;
-      void supabase.from("care_requests").update({
-        status: "completed",
-        completed_at: new Date().toISOString(),
-        notes: notes ? `Doctor notes: ${notes}` : undefined
-      }).eq("id", id);
-    }
   };
 
   return (
@@ -2687,7 +2689,7 @@ function BookingCalendar({ title = "My Schedule", subtitle = "Your patient appoi
               const isEmerg = b.color === C.emerg || modeLower === "emergency" || subLower.includes("emergency");
               const rowKey = b.id || `${b.title}_${b.date.getTime()}`;
               const doneInfo = doneMap[rowKey];
-              const isDone = !!doneInfo || b.status === "Consultation over";
+              const isDone = !!doneInfo || b.status === "Consultation over" || (b.status || "").toLowerCase() === "completed";
               const displayStatus = isDone ? "Consultation over" : b.status;
               const badgeBg = isDone ? "#D1FAE5" : isEmerg ? "#FEE2E2" : isHomeVisit ? "#DBEAFE" : "#E4F6EE";
               const badgeFg = isDone ? "#065F46" : isEmerg ? "#DC2626" : isHomeVisit ? "#2563EB" : "#0C9668";
@@ -7512,13 +7514,18 @@ function DoctorApp({ req, hubReq, online, setOnline, onAccept, sevaActions }) {
   const realBookings = (liveApps || []).map(app => {
     const st = new Date(app.start_time);
     const modeLabel = app.mode === 'home_visit' || app.mode === 'home' ? 'Home visit' : app.mode || 'Consultation';
+    const isCompleted = (app.status || "").toLowerCase() === 'completed';
     return {
       id: app.id,
+      appointmentId: app.id,
+      patientId: app.patient_id,
+      otp: app.arrival_otp || undefined,
+      notes: app.clinical_notes?.summary,
       date: st,
       title: patientNames[app.patient_id] || `Patient ID: ${app.patient_id.slice(0, 6)}`,
       sub: `${app.service} • ${modeLabel}`,
-      status: app.status === 'confirmed' || app.status === 'rescheduled' ? 'Confirmed' : app.status === 'cancelled' ? 'Cancelled' : app.status,
-      color: app.status === 'cancelled' ? C.emerg : C.primary,
+      status: isCompleted ? 'Consultation over' : (app.status === 'confirmed' || app.status === 'rescheduled' ? 'Confirmed' : app.status === 'cancelled' ? 'Cancelled' : app.status),
+      color: app.status === 'cancelled' ? C.emerg : isCompleted ? C.faint : C.primary,
     };
   });
 

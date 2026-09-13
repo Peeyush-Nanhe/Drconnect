@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { useSession, useRealtimeChat, type ChatMessage } from "@/features/mydox/backend";
+import { useSession, useRealtimeChat, ensureConsultationPasscode, type ChatMessage } from "@/features/mydox/backend";
 
 type Module =
   | "Doctor / Nurse"
@@ -907,63 +907,7 @@ async function getOrGenerateBookingOtp(item: Item): Promise<string> {
   if (item.otp && /^\d{5,6}$/.test(item.otp)) {
     return item.otp.slice(0, 4);
   }
-  const cacheKey = `mydox_booking_otp_${item.id}`;
-  if (typeof window !== "undefined") {
-    try {
-      const cached = window.localStorage.getItem(cacheKey);
-      if (cached && /^\d{4}$/.test(cached)) return cached;
-    } catch {
-      /* ignore storage errors */
-    }
-  }
-
-  // Generate 4-digit random OTP
-  const generated = Math.floor(1000 + Math.random() * 9000).toString();
-
-  const [prefix, rawId] = item.id.split(":");
-  if (rawId) {
-    try {
-      if (prefix === "cr") {
-        const { data } = await supabase.from("care_requests").select("otp").eq("id", rawId).maybeSingle();
-        const existing = (data as { otp: string | null } | null)?.otp;
-        if (existing) {
-          const formatted = existing.replace(/\D/g, "").slice(0, 4);
-          if (formatted.length === 4) {
-            if (typeof window !== "undefined") {
-              try { window.localStorage.setItem(cacheKey, formatted); } catch { /* ignore */ }
-            }
-            return formatted;
-          }
-        }
-        await supabase.from("care_requests").update({ otp: generated } as never).eq("id", rawId).is("otp", null);
-      } else if (prefix === "da") {
-        const { data } = await supabase.from("doctor_appointments").select("arrival_otp").eq("id", rawId).maybeSingle();
-        const existing = (data as { arrival_otp: string | null } | null)?.arrival_otp;
-        if (existing) {
-          const formatted = existing.replace(/\D/g, "").slice(0, 4);
-          if (formatted.length === 4) {
-            if (typeof window !== "undefined") {
-              try { window.localStorage.setItem(cacheKey, formatted); } catch { /* ignore */ }
-            }
-            return formatted;
-          }
-        }
-        await supabase.from("doctor_appointments").update({ arrival_otp: generated } as never).eq("id", rawId).is("arrival_otp", null);
-      }
-    } catch {
-      /* ignore database or network sync errors */
-    }
-  }
-
-  if (typeof window !== "undefined") {
-    try {
-      window.localStorage.setItem(cacheKey, generated);
-    } catch {
-      /* ignore storage errors */
-    }
-  }
-
-  return generated;
+  return await ensureConsultationPasscode(item.id, item.otp);
 }
 
 /* Consultation Verification OTP Modal */
@@ -978,7 +922,10 @@ function BookingOtpModal({
 }) {
   const [otp, setOtp] = useState<string>(target.item.otp ? target.item.otp.slice(0, 4) : "");
   const [loading, setLoading] = useState<boolean>(!target.item.otp);
-  const isConsultationOver = ["completed", "delivered", "closed", "finished"].includes((target.item.status || "").toLowerCase());
+  const [status, setStatus] = useState<string>(target.item.status || "");
+  const [shareFeedback, setShareFeedback] = useState<string | null>(null);
+
+  const isConsultationOver = ["completed", "delivered", "closed", "finished"].includes((status || "").toLowerCase());
 
   useEffect(() => {
     let mounted = true;
@@ -994,6 +941,42 @@ function BookingOtpModal({
     };
   }, [target.item]);
 
+  // Realtime subscription & polling so modal updates the moment the doctor marks consultation over
+  useEffect(() => {
+    const [prefix, rawId] = target.item.id.split(":");
+    if (!rawId) return;
+    const table = prefix === "cr" ? "care_requests" : prefix === "da" ? "doctor_appointments" : null;
+    if (!table) return;
+
+    let active = true;
+    const checkStatus = async () => {
+      try {
+        const { data } = await supabase.from(table).select("status").eq("id", rawId).maybeSingle();
+        if (active && data && (data as any).status) {
+          setStatus((data as any).status);
+        }
+      } catch {
+        /* ignore */
+      }
+    };
+
+    const interval = setInterval(checkStatus, 3000);
+    const channel = supabase
+      .channel(`booking_modal_${target.item.id}`)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table, filter: `id=eq.${rawId}` }, (payload) => {
+        if (active && payload.new && (payload.new as any).status) {
+          setStatus((payload.new as any).status);
+        }
+      })
+      .subscribe();
+
+    return () => {
+      active = false;
+      clearInterval(interval);
+      void supabase.removeChannel(channel);
+    };
+  }, [target.item.id]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -1004,6 +987,33 @@ function BookingOtpModal({
 
   const digits = (otp || "----").slice(0, 4).split("");
   const displayDocName = target.doctorName.startsWith("Dr.") ? target.doctorName : `Dr. ${target.doctorName}`;
+
+  const handleShare = async () => {
+    if (!otp) return;
+    const shareText = `MyDox 4-Digit Consultation Passcode: ${otp} (for ${displayDocName})`;
+    if (typeof navigator !== "undefined" && navigator.share && navigator.canShare && navigator.canShare({ title: "Consultation Passcode", text: shareText })) {
+      try {
+        await navigator.share({
+          title: "MyDox Consultation Passcode",
+          text: shareText,
+        });
+        setShareFeedback("Shared successfully!");
+        setTimeout(() => setShareFeedback(null), 3000);
+        return;
+      } catch {
+        /* user cancelled share sheet */
+      }
+    }
+    if (typeof navigator !== "undefined" && navigator.clipboard) {
+      try {
+        await navigator.clipboard.writeText(otp);
+        setShareFeedback("Passcode copied to clipboard!");
+        setTimeout(() => setShareFeedback(null), 3000);
+      } catch {
+        /* ignore */
+      }
+    }
+  };
 
   return (
     <div
@@ -1058,7 +1068,7 @@ function BookingOtpModal({
               🔒
             </div>
             <div>
-              <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: "#0F172A" }}>Consultation OTP</h2>
+              <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: "#0F172A" }}>Consultation Passcode</h2>
               <p style={{ margin: 0, fontSize: 12, color: "#64748B", fontWeight: 500 }}>
                 Verification code generated from Supabase
               </p>
@@ -1098,7 +1108,7 @@ function BookingOtpModal({
         >
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
             <span style={{ fontWeight: 700, fontSize: 14, color: "#0F172A" }}>{target.item.title}</span>
-            <StatusChip status={target.item.status} />
+            <StatusChip status={status} />
           </div>
           <div style={{ fontSize: 12, color: "#475569", marginTop: 4, display: "flex", alignItems: "center", gap: 6 }}>
             <span>Attending Doctor:</span>
@@ -1131,64 +1141,116 @@ function BookingOtpModal({
               Generating secure OTP from Supabase…
             </div>
           ) : (
-            <div
-              style={{
-                display: "flex",
-                gap: 12,
-                justifyContent: "center",
-                marginTop: 14,
-                marginBottom: 6,
-              }}
-            >
-              {digits.map((d, i) => (
-                <div
-                  key={i}
-                  style={{
-                    width: 52,
-                    height: 60,
-                    background: "#FFFFFF",
-                    borderRadius: 12,
-                    border: "2px solid #99F6E4",
-                    boxShadow: "0 2px 6px rgba(13,148,136,0.12)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontSize: 28,
-                    fontWeight: 800,
-                    color: "#0F172A",
-                    fontFamily: "monospace",
-                  }}
-                >
-                  {d}
-                </div>
-              ))}
-            </div>
+            <>
+              <div
+                style={{
+                  display: "flex",
+                  gap: 12,
+                  justifyContent: "center",
+                  marginTop: 14,
+                  marginBottom: 6,
+                }}
+              >
+                {digits.map((d, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      width: 52,
+                      height: 60,
+                      background: "#FFFFFF",
+                      borderRadius: 12,
+                      border: "2px solid #99F6E4",
+                      boxShadow: "0 2px 6px rgba(13,148,136,0.12)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: 28,
+                      fontWeight: 800,
+                      color: "#0F172A",
+                      fontFamily: "monospace",
+                    }}
+                  >
+                    {d}
+                  </div>
+                ))}
+              </div>
+
+              {/* Share Passcode Action */}
+              <button
+                type="button"
+                onClick={handleShare}
+                style={{
+                  marginTop: 10,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  background: shareFeedback ? "#ECFDF5" : "#FFFFFF",
+                  color: shareFeedback ? "#065F46" : "#0F766E",
+                  border: shareFeedback ? "1.5px solid #10B981" : "1.5px solid #99F6E4",
+                  borderRadius: 999,
+                  padding: "7px 16px",
+                  fontSize: 12.5,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  boxShadow: "0 1px 3px rgba(13,148,136,0.1)",
+                  transition: "all 0.15s ease",
+                }}
+              >
+                <span>{shareFeedback ? `✓ ${shareFeedback}` : "📤 Share Passcode with Doctor"}</span>
+              </button>
+            </>
           )}
         </div>
 
-        {/* Required Notice Box */}
-        <div
-          style={{
-            background: "#FFFBEB",
-            border: "1px solid #FCD34D",
-            borderRadius: 14,
-            padding: "13px 14px",
-            marginTop: 16,
-            display: "flex",
-            alignItems: "flex-start",
-            gap: 10,
-          }}
-        >
-          <span style={{ fontSize: 18, lineHeight: 1 }}>🩺</span>
-          <div>
-            <div style={{ fontWeight: 800, fontSize: 13, color: "#92400E", lineHeight: 1.35 }}>
-              Share this OTP with {displayDocName} once your consultation is over
-            </div>
-            <div style={{ fontSize: 11.5, color: "#78350F", marginTop: 4, lineHeight: 1.45 }}>
-              Please do not share this passcode beforehand. Your doctor requires this 4-digit code at the conclusion of your visit to verify and complete the session.
+        {/* Verified Banner when Consultation is Over */}
+        {isConsultationOver ? (
+          <div
+            style={{
+              background: "#ECFDF5",
+              border: "1.5px solid #6EE7B7",
+              borderRadius: 14,
+              padding: "12px 14px",
+              marginTop: 14,
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+            }}
+          >
+            <span style={{ fontSize: 22 }}>✅</span>
+            <div>
+              <div style={{ fontWeight: 800, fontSize: 13.5, color: "#065F46" }}>
+                Consultation Verified & Completed!
+              </div>
+              <div style={{ fontSize: 11.5, color: "#047857", marginTop: 2 }}>
+                Your doctor has verified the OTP. Chat option is now enabled!
+              </div>
             </div>
           </div>
-        </div>
+        ) : (
+          /* Required Notice Box */
+          <div
+            style={{
+              background: "#FFFBEB",
+              border: "1px solid #FCD34D",
+              borderRadius: 14,
+              padding: "13px 14px",
+              marginTop: 16,
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 10,
+            }}
+          >
+            <span style={{ fontSize: 18, lineHeight: 1 }}>🩺</span>
+            <div>
+              <div style={{ fontWeight: 800, fontSize: 13, color: "#92400E", lineHeight: 1.35 }}>
+                Share this OTP with {displayDocName} once your consultation is over
+              </div>
+              <div style={{ fontSize: 11.5, color: "#78350F", marginTop: 4, lineHeight: 1.45 }}>
+                Please do not share this passcode beforehand. Your doctor inserts this 4-digit code in Patient Verification Code to verify and complete the session.
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Action Buttons */}
         <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
@@ -1206,18 +1268,19 @@ function BookingOtpModal({
               alignItems: "center",
               justifyContent: "center",
               gap: 6,
-              background: isConsultationOver ? "#F0FDFA" : "#F8FAFC",
-              color: isConsultationOver ? "#0F766E" : "#94A3B8",
-              border: isConsultationOver ? "1px solid #99F6E4" : "1px solid #E2E8F0",
+              background: isConsultationOver ? "#0D9488" : "#F8FAFC",
+              color: isConsultationOver ? "#FFFFFF" : "#94A3B8",
+              border: isConsultationOver ? "none" : "1px solid #E2E8F0",
               borderRadius: 12,
               padding: "11px 14px",
               fontSize: 13,
               fontWeight: 700,
               cursor: isConsultationOver ? "pointer" : "not-allowed",
+              boxShadow: isConsultationOver ? "0 2px 6px rgba(13,148,136,0.3)" : "none",
               opacity: isConsultationOver ? 1 : 0.65,
             }}
           >
-            <span style={{ filter: isConsultationOver ? "none" : "grayscale(100%)" }}>💬</span>
+            <span>💬</span>
             {isConsultationOver ? "Chat with Doctor" : "Chat (after visit)"}
           </button>
           <button
