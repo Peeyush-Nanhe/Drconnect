@@ -2208,6 +2208,13 @@ function ConsultationOverDialog({ item, onClose, onConfirm }) {
   const [errorMsg, setErrorMsg] = useState("");
   const [busy, setBusy] = useState(false);
 
+  if (!item) return null;
+  const itemStatusLower = (item.status || "").toLowerCase();
+  const itemRawStatusLower = (item.rawStatus || "").toLowerCase();
+  if (itemStatusLower === "cancelled" || itemStatusLower === "canceled" || itemRawStatusLower === "cancelled" || itemRawStatusLower === "canceled") {
+    return null;
+  }
+
   const handleOtpChange = (e) => {
     const val = e.target.value.replace(/\D/g, "").slice(0, 4);
     setOtp(val);
@@ -3055,12 +3062,16 @@ function BookingCalendar({ title = "My Schedule", subtitle = "Your patient appoi
               const isEmerg = b.color === C.emerg || modeLower === "emergency" || subLower.includes("emergency");
               const rowKey = b.id || `${b.title}_${b.date.getTime()}`;
               const doneInfo = doneMap[rowKey];
-              const isDone = !!doneInfo || b.status === "Consultation over" || (b.status || "").toLowerCase() === "completed";
-              const displayStatus = isDone ? "Consultation over" : b.status;
-              const badgeBg = isDone ? "#D1FAE5" : isEmerg ? "#FEE2E2" : isHomeVisit ? "#DBEAFE" : "#E4F6EE";
-              const badgeFg = isDone ? "#065F46" : isEmerg ? "#DC2626" : isHomeVisit ? "#2563EB" : "#0C9668";
-              const timeFg = isEmerg ? "#DC2626" : isHomeVisit ? "#2563EB" : "#0C9668";
-              const barBg = isEmerg ? "#DC2626" : isHomeVisit ? "#2563EB" : "#0C9668";
+              const statusLower = (b.status || "").toLowerCase();
+              const rawStatusLower = (b.rawStatus || "").toLowerCase();
+              const isCancelled = statusLower === "cancelled" || statusLower === "canceled" || rawStatusLower === "cancelled" || rawStatusLower === "canceled";
+              const isDone = !isCancelled && (!!doneInfo || b.status === "Consultation over" || statusLower === "completed");
+              const isPatientView = (title || "").toLowerCase().includes("patient") || (title || "").toLowerCase().includes("my bookings");
+              const displayStatus = isCancelled ? "Cancelled" : isDone ? "Consultation over" : b.status;
+              const badgeBg = isCancelled ? "#FEE2E2" : isDone ? "#D1FAE5" : isEmerg ? "#FEE2E2" : isHomeVisit ? "#DBEAFE" : "#E4F6EE";
+              const badgeFg = isCancelled ? "#DC2626" : isDone ? "#065F46" : isEmerg ? "#DC2626" : isHomeVisit ? "#2563EB" : "#0C9668";
+              const timeFg = isCancelled ? "#DC2626" : isEmerg ? "#DC2626" : isHomeVisit ? "#2563EB" : "#0C9668";
+              const barBg = isCancelled ? "#DC2626" : isEmerg ? "#DC2626" : isHomeVisit ? "#2563EB" : "#0C9668";
 
               return (
                 <div key={i} style={{ background: "#ffffff", borderRadius: 20, padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10, boxShadow: "0 4px 14px rgba(15,23,42,0.04)", border: "1px solid #E2E8F0" }}>
@@ -3083,52 +3094,54 @@ function BookingCalendar({ title = "My Schedule", subtitle = "Your patient appoi
                     </span>
                   </div>
 
-                  {/* Action Buttons: Consultation over OR Chat */}
-                  <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 8 }}>
-                    {isDone ? (
-                      <button
-                        onClick={() => setChatPatient(b.title)}
-                        aria-label={`Chat with ${b.title}`}
-                        style={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: 6,
-                          background: "#0D9488",
-                          color: "#ffffff",
-                          border: "none",
-                          borderRadius: 999,
-                          padding: "6px 14px",
-                          fontSize: 12,
-                          fontWeight: 700,
-                          cursor: "pointer",
-                          boxShadow: "0 1px 3px rgba(13,148,136,0.3)"
-                        }}
-                      >
-                        <MessageSquare size={14} /> Chat
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => setOverDialogItem(b)}
-                        style={{
-                          border: "1.5px solid #0D9488",
-                          background: "#ffffff",
-                          color: "#0D9488",
-                          borderRadius: 999,
-                          padding: "6px 16px",
-                          fontSize: 12,
-                          fontWeight: 700,
-                          cursor: "pointer",
-                          transition: "all 0.15s",
-                          whiteSpace: "nowrap"
-                        }}
-                      >
-                        Consultation over
-                      </button>
-                    )}
-                  </div>
+                  {/* Action Buttons: Consultation over OR Chat (hidden for cancelled appointments) */}
+                  {!isCancelled && (
+                    <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 8 }}>
+                      {isDone ? (
+                        <button
+                          onClick={() => setChatPatient(b.title)}
+                          aria-label={`Chat with ${b.title}`}
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 6,
+                            background: "#0D9488",
+                            color: "#ffffff",
+                            border: "none",
+                            borderRadius: 999,
+                            padding: "6px 14px",
+                            fontSize: 12,
+                            fontWeight: 700,
+                            cursor: "pointer",
+                            boxShadow: "0 1px 3px rgba(13,148,136,0.3)"
+                          }}
+                        >
+                          <MessageSquare size={14} /> Chat
+                        </button>
+                      ) : !isPatientView ? (
+                        <button
+                          onClick={() => setOverDialogItem(b)}
+                          style={{
+                            border: "1.5px solid #0D9488",
+                            background: "#ffffff",
+                            color: "#0D9488",
+                            borderRadius: 999,
+                            padding: "6px 16px",
+                            fontSize: 12,
+                            fontWeight: 700,
+                            cursor: "pointer",
+                            transition: "all 0.15s",
+                            whiteSpace: "nowrap"
+                          }}
+                        >
+                          Consultation over
+                        </button>
+                      ) : null}
+                    </div>
+                  )}
 
                   {/* Notes beneath row when consultation is marked over */}
-                  {doneInfo?.notes && (
+                  {!isCancelled && doneInfo?.notes && (
                     <div style={{ padding: "8px 12px", background: "#F8FAFC", borderRadius: 10, border: "1px solid #E2E8F0", fontSize: 12.5, color: "#334155" }}>
                       <p style={{ margin: 0, fontWeight: 700, fontSize: 11, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5 }}>Doctor's Notes</p>
                       <p style={{ margin: "4px 0 0", whiteSpace: "pre-wrap" }}>{doneInfo.notes}</p>
@@ -7892,6 +7905,7 @@ function DoctorApp({ req, hubReq, online, setOnline, onAccept, sevaActions }) {
       sub: `${app.service} • ${modeLabel}`,
       status: isCompleted ? 'Consultation over' : (app.status === 'confirmed' || app.status === 'rescheduled' ? 'Confirmed' : app.status === 'cancelled' ? 'Cancelled' : app.status),
       color: app.status === 'cancelled' ? C.emerg : isCompleted ? C.faint : C.primary,
+      rawStatus: app.status,
     };
   });
 
