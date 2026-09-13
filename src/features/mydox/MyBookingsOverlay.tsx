@@ -110,7 +110,7 @@ export default function MyBookingsOverlay({
     let mounted = true;
     (async () => {
       setLoading(true);
-      const [cr, cp, pr, sn, bb, sb, mo, da] = await Promise.all([
+      const [cr, cp, pr, sn, bb, sb, mo, da, pv, sc, comm] = await Promise.all([
         supabase.from("care_requests").select("id, specialty, status, notes, created_at, visit_type, accepted_by").eq("patient_id", uid).order("created_at", { ascending: false }).limit(200),
         supabase.from("care_program_bookings").select("id, program, tier, summary, status, created_at").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
         supabase.from("prosthetics_bookings").select("id, category, subtype, provider_name, status, created_at").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
@@ -119,15 +119,22 @@ export default function MyBookingsOverlay({
         supabase.from("surgery_bookings").select("id, procedure, patient_name, mode, status, created_at").eq("facility_id", uid).order("created_at", { ascending: false }).limit(100),
         supabase.from("medicine_orders").select("id, pharmacy_name, delivery_speed, items, prescription_attached, total, status, created_at").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
         supabase.from("doctor_appointments").select("id, service, mode, status, start_time, end_time, created_at, provider_id").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
+        supabase.from("physio_visits").select("id, therapy_type, area, city, session_number, status, created_at, therapist_id").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
+        supabase.from("specialty_care_bookings").select("id, specialty_label, concern, mode, provider_name, status, created_at").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
+        supabase.from("community_requests").select("id, type, notes, status, created_at").eq("requester_id", uid).order("created_at", { ascending: false }).limit(100),
       ]);
 
       const rows: Item[] = [];
       const crRows = (cr.data as { id: string; specialty: string; status: string; notes: string | null; created_at: string; visit_type: string; accepted_by: string | null }[] | null) ?? [];
       const daRows = (da.data as { id: string; service: string | null; mode: string | null; status: string; start_time: string; end_time: string; created_at: string; provider_id: string | null }[] | null) ?? [];
+      const pvRows = (pv.data as { id: string; therapy_type: string; area: string; city: string; session_number: number; status: string; created_at: string; therapist_id: string | null }[] | null) ?? [];
+      const scRows = (sc.data as { id: string; specialty_label: string; concern: string; mode: string; provider_name: string; status: string; created_at: string }[] | null) ?? [];
+      const commRows = (comm.data as { id: string; type: string; notes: string | null; status: string; created_at: string }[] | null) ?? [];
 
       const doctorIds = Array.from(new Set([
         ...crRows.map((r) => r.accepted_by),
-        ...daRows.map((r) => r.provider_id)
+        ...daRows.map((r) => r.provider_id),
+        ...pvRows.map((r) => r.therapist_id),
       ].filter(Boolean) as string[]));
 
       const doctorNames = new Map<string, string>();
@@ -165,6 +172,42 @@ export default function MyBookingsOverlay({
           status: r.status,
           createdAt: r.created_at,
           doctorName: docName,
+        });
+      }
+
+      for (const r of pvRows) {
+        const therapistName = r.therapist_id ? doctorNames.get(r.therapist_id) : undefined;
+        rows.push({
+          id: `pv:${r.id}`,
+          module: "Home Care",
+          title: `${r.therapy_type.replace(/_/g, " ")} — session ${r.session_number}`,
+          subtitle: `${r.area}, ${r.city}`,
+          status: r.status,
+          createdAt: r.created_at,
+          doctorName: therapistName,
+        });
+      }
+
+      for (const r of scRows) {
+        rows.push({
+          id: `sc:${r.id}`,
+          module: "Doctor / Nurse",
+          title: `${r.specialty_label} — ${r.concern}`,
+          subtitle: `${r.provider_name} · ${r.mode}`,
+          status: r.status,
+          createdAt: r.created_at,
+          doctorName: r.provider_name,
+        });
+      }
+
+      for (const r of commRows) {
+        rows.push({
+          id: `comm:${r.id}`,
+          module: "Special Needs",
+          title: r.type ? r.type.replace(/_/g, " ") : "Community Request",
+          subtitle: r.notes || undefined,
+          status: r.status,
+          createdAt: r.created_at,
         });
       }
 
