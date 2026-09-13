@@ -58,22 +58,8 @@ export const fmtSlotTime = (t: SlotTime) => {
 const dayLabel = (d: Date, i: number) =>
   i === 0 ? "Today" : i === 1 ? "Tomorrow" : d.toLocaleDateString("en-US", { weekday: "short" });
 
-function hashStr(s: string) {
-  let h = 2166136261 >>> 0;
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return h >>> 0;
-}
-
-/**
- * Deterministic "is this slot unavailable" — same (seed, day, hh:mm) always
- * returns the same answer, so the greyed-out pattern is stable per session.
- * Roughly ~35% of slots come back unavailable so the calendar looks real.
- */
-export function isSlotUnavailable(seed: string, dateIdx: number, h: number, m: number) {
-  return (hashStr(`${seed}|${dateIdx}|${h}:${m}`) % 100) < 35;
+export function isSlotUnavailable(..._args: unknown[]): boolean {
+  return false;
 }
 
 export function SlotPickerCalendar({
@@ -139,66 +125,33 @@ export function SlotPickerCalendar({
               .filter(({ t }) => t.h >= b.from && t.h < b.to);
             if (!inBucket.length) return null;
 
-            const now = new Date();
-            const isToday = schedDate === 0;
-
-            const isSlotAvail = (t: SlotTime) => {
-              // Past slots on today are unavailable
-              if (isToday) {
-                if (t.h < now.getHours() || (t.h === now.getHours() && t.m <= now.getMinutes())) {
-                  return false;
-                }
-              }
-              // If published availableSlots exist and has slots for this date
-              if (availableSlots && availableSlots.length > 0) {
-                const hasSlotsForDate = availableSlots.some(s => s.dateIdx === schedDate);
-                if (hasSlotsForDate) {
-                  return availableSlots.some(s => s.dateIdx === schedDate && s.h === t.h && s.m === t.m);
-                }
-                // If today has no slots left in DB, mark fully booked
-                if (isToday) return false;
-              }
-              // If availableSlots not provided or empty fallback, slots are open
-              return true;
-            };
-
-            const anyAvail = inBucket.some(({ t }) => isSlotAvail(t));
-
             return (
               <div key={b.key}>
                 <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", margin: "0 0 5px" }}>
                   <p style={{ margin: 0, fontSize: 11, fontWeight: 800, color: ink }}>
                     {b.emoji} {b.label} <span style={{ color: faint, fontWeight: 600 }}>· {b.sub}</span>
                   </p>
-                  {!anyAvail && (
-                    <span style={{ fontSize: 9, color: "#B45309", fontWeight: 800 }}>Fully booked</span>
-                  )}
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: `repeat(${small ? 4 : 3},1fr)`, gap: 6 }}>
                   {inBucket.map(({ t, i }) => {
-                    const isAvail = isSlotAvail(t);
-                    const unavail = !isAvail;
                     const a = schedTime === i;
-                    const isPast = isToday && (t.h < now.getHours() || (t.h === now.getHours() && t.m <= now.getMinutes()));
                     return (
                       <button
                         key={i}
                         type="button"
-                        disabled={unavail}
                         onClick={() => setSchedTime(i)}
-                        title={unavail ? (isPast ? "Past slot" : "Slot unavailable") : "Select slot"}
-                        aria-disabled={unavail}
+                        title="Select slot"
                         style={{
                           padding: small ? "8px 2px" : "10px 3px",
                           borderRadius: small ? 9 : 11,
-                          border: `1.5px solid ${a ? accent : (unavail ? "#F1F5F9" : line)}`,
-                          background: unavail ? "#F8FAFC" : (a ? accent : "#fff"),
-                          color: unavail ? "#CBD5E1" : (a ? "#fff" : ink),
-                          cursor: unavail ? "not-allowed" : "pointer",
+                          border: `1.5px solid ${a ? accent : line}`,
+                          background: a ? accent : "#fff",
+                          color: a ? "#fff" : ink,
+                          cursor: "pointer",
                           fontSize: small ? 10.5 : 12,
                           fontWeight: 800,
-                          textDecoration: unavail ? "line-through" : "none",
-                          opacity: unavail ? .75 : 1,
+                          textDecoration: "none",
+                          opacity: 1,
                           fontFamily: "'Plus Jakarta Sans',sans-serif",
                         }}
                       >

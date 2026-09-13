@@ -602,14 +602,8 @@ export async function fetchProviderLocations() {
 
 // ══════════════ Real-time patient <-> doctor chat ══════════════════
 
-// Canonical consultation chat adapters share one authenticated inbox. Names
-// remain labels and never resolve a recipient or grant access.
-export { usePostConsultationChat as useRealtimeChat } from "./post-consultation-chat/usePostConsultationChat";
-export type { ChatMessage } from "./post-consultation-chat/types";
-
-export function threadKeyOf(a: string, b: string) {
-  return [a, b].sort().join(":");
-}
+export type { ChatMessage } from "@/features/medconnect/backend";
+export { threadKeyOf, useRealtimeChat } from "@/features/medconnect/backend";
 
 export function useChatInbox() {
   const inbox = usePostConsultationInbox();

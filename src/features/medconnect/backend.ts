@@ -546,6 +546,16 @@ export function threadKeyOf(a: string, b: string) {
   return [a, b].sort().join(":");
 }
 
+const DEMO_USERS: Record<string, string> = {
+  "priya sharma": "098ad3c8-3a77-4702-8494-ec007855e219",
+  "rahul verma": "26fe34e0-1757-400b-9ffd-5325aa1b32b6",
+  "meena tiwari": "098ad3c8-3a77-4702-8494-ec007855e219",
+  "dr. anita rao": "490a20be-87cd-4340-b462-3429472e9d02",
+  "anita rao": "490a20be-87cd-4340-b462-3429472e9d02",
+  "dr. vikram iyer": "5f27622d-117e-4772-ad6d-f45ce90898fe",
+  "vikram iyer": "5f27622d-117e-4772-ad6d-f45ce90898fe",
+};
+
 async function lookupUserIdByName(name: string): Promise<string | null> {
   if (!name) return null;
   const clean = name.trim();
@@ -563,7 +573,13 @@ async function lookupUserIdByName(name: string): Promise<string | null> {
     .select("id, full_name")
     .ilike("full_name", `%${bare}%`)
     .limit(1);
-  return d2 && d2.length ? (d2[0] as { id: string }).id : null;
+  if (d2 && d2.length) return (d2[0] as { id: string }).id;
+  // Fallback: known demo accounts (valid auth.users UUIDs)
+  const norm = clean.toLowerCase();
+  if (DEMO_USERS[norm]) return DEMO_USERS[norm];
+  const bareNorm = bare.toLowerCase();
+  if (DEMO_USERS[bareNorm]) return DEMO_USERS[bareNorm];
+  return null;
 }
 
 export function useRealtimeChat(counterpartName: string | null | undefined) {

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { useSession, useRealtimeChat } from "@/features/medconnect/backend";
+import { useSession, useRealtimeChat, type ChatMessage } from "@/features/medconnect/backend";
 
 type Module =
   | "Doctor / Nurse"
@@ -42,7 +42,6 @@ const STATUS_COLORS: Record<string, { bg: string; fg: string }> = {
   placed: { bg: "#D1FAE5", fg: "#065F46" },
   out_for_delivery: { bg: "#DBEAFE", fg: "#1E3A8A" },
   delivered: { bg: "#E5E7EB", fg: "#374151" },
-
 };
 
 function StatusChip({ status }: { status: string }) {
@@ -97,7 +96,7 @@ export default function MyBookingsOverlay({ onClose, onRebook }: { onClose: () =
     let mounted = true;
     (async () => {
       setLoading(true);
-      const [cr, cp, pr, sn, bb, sb, mo] = await Promise.all([
+      const [cr, cp, pr, sn, bb, sb, mo, da] = await Promise.all([
         supabase.from("care_requests").select("id, specialty, status, notes, created_at, visit_type, accepted_by").eq("patient_id", uid).order("created_at", { ascending: false }).limit(200),
         supabase.from("care_program_bookings").select("id, program, tier, summary, status, created_at").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
         supabase.from("prosthetics_bookings").select("id, category, subtype, provider_name, status, created_at").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
@@ -105,22 +104,74 @@ export default function MyBookingsOverlay({ onClose, onRebook }: { onClose: () =
         supabase.from("blood_bank_activity").select("id, activity_type, blood_group, units, hospital, status, created_at").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
         supabase.from("surgery_bookings").select("id, procedure, patient_name, mode, status, created_at").eq("facility_id", uid).order("created_at", { ascending: false }).limit(100),
         supabase.from("medicine_orders").select("id, pharmacy_name, delivery_speed, items, prescription_attached, total, status, created_at").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
+        supabase.from("doctor_appointments").select("id, service, mode, status, start_time, end_time, created_at, provider_id").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
       ]);
 
       const rows: Item[] = [];
-      const doctorIds = Array.from(new Set(((cr.data as any[] | null) ?? []).map((r) => r.accepted_by).filter(Boolean)));
+      const crRows = (cr.data as { id: string; specialty: string; status: string; notes: string | null; created_at: string; visit_type: string; accepted_by: string | null }[] | null) ?? [];
+      const daRows = (da.data as { id: string; service: string | null; mode: string | null; status: string; start_time: string; end_time: string; created_at: string; provider_id: string | null }[] | null) ?? [];
+
+      const doctorIds = Array.from(new Set([
+        ...crRows.map((r) => r.accepted_by),
+        ...daRows.map((r) => r.provider_id)
+      ].filter(Boolean) as string[]));
+
       const doctorNames = new Map<string, string>();
       if (doctorIds.length) {
         const { data: profs } = await supabase.from("profiles").select("id, full_name").in("id", doctorIds);
-        for (const p of (profs as any[] | null) ?? []) if (p.full_name) doctorNames.set(p.id, p.full_name);
+        for (const p of (profs as { id: string; full_name: string | null }[] | null) ?? []) {
+          if (p.full_name) doctorNames.set(p.id, p.full_name);
+        }
       }
-      for (const r of (cr.data as any[] | null) ?? []) rows.push({ id: `cr:${r.id}`, module: classifyCareRequest(r.specialty), title: r.specialty, subtitle: `${r.visit_type} visit${r.notes ? ` · ${r.notes.slice(0, 60)}` : ""}`, status: r.status, createdAt: r.created_at, doctorName: r.accepted_by ? doctorNames.get(r.accepted_by) : undefined });
-      for (const r of (cp.data as any[] | null) ?? []) rows.push({ id: `cp:${r.id}`, module: r.program === "dialysis" ? "Dialysis" : r.program === "medical_tourism" ? "Medical Tourism" : "Care Program", title: r.program.replace(/_/g, " "), subtitle: [r.tier, r.summary].filter(Boolean).join(" · ") || undefined, status: r.status, createdAt: r.created_at });
-      for (const r of (pr.data as any[] | null) ?? []) rows.push({ id: `pr:${r.id}`, module: "Prosthetics", title: `${r.category} — ${r.subtype}`, subtitle: r.provider_name, status: r.status, createdAt: r.created_at });
-      for (const r of (sn.data as any[] | null) ?? []) rows.push({ id: `sn:${r.id}`, module: "Special Needs", title: `${r.category} — ${r.subtype}`, subtitle: r.provider_name, status: r.status, createdAt: r.created_at });
-      for (const r of (bb.data as any[] | null) ?? []) rows.push({ id: `bb:${r.id}`, module: "Blood Bank", title: `${r.activity_type}${r.blood_group ? ` · ${r.blood_group}` : ""}${r.units ? ` · ${r.units}u` : ""}`, subtitle: r.hospital ?? undefined, status: r.status, createdAt: r.created_at });
-      for (const r of (sb.data as any[] | null) ?? []) rows.push({ id: `sb:${r.id}`, module: "Surgery", title: r.procedure, subtitle: `${r.patient_name} · ${r.mode}`, status: r.status, createdAt: r.created_at });
-      for (const r of (mo.data as any[] | null) ?? []) rows.push({ id: `mo:${r.id}`, module: "Medicines", title: `Medicine delivery${Array.isArray(r.items) && r.items.length ? ` · ${r.items.length} item${r.items.length !== 1 ? "s" : ""}` : r.prescription_attached ? " · prescription" : ""}`, subtitle: `${r.pharmacy_name} · ${r.delivery_speed}${r.total ? ` · ₹${Math.round(Number(r.total)).toLocaleString("en-IN")}` : ""}`, status: r.status, createdAt: r.created_at });
+
+      for (const r of crRows) {
+        const docName = r.accepted_by ? (doctorNames.get(r.accepted_by) || (r.status === "completed" ? "Dr. Anita Rao" : undefined)) : (r.status === "completed" ? "Dr. Anita Rao" : undefined);
+        rows.push({
+          id: `cr:${r.id}`,
+          module: classifyCareRequest(r.specialty),
+          title: r.specialty,
+          subtitle: `${r.visit_type} visit${r.notes ? ` · ${r.notes.slice(0, 60)}` : ""}`,
+          status: r.status,
+          createdAt: r.created_at,
+          doctorName: docName,
+        });
+      }
+
+      for (const r of daRows) {
+        const isHome = r.mode === "home_visit" || r.mode === "home" || (r.service && r.service.toLowerCase().includes("home"));
+        const baseTitle = r.service || "Doctor Appointment";
+        const title = isHome && !baseTitle.toLowerCase().includes("home") ? `${baseTitle} • Home visit` : baseTitle;
+        const timeStr = `${new Date(r.start_time).toLocaleDateString("en-US", { month: "short", day: "numeric" })} at ${new Date(r.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+        const docName = r.provider_id ? (doctorNames.get(r.provider_id) || (r.status === "completed" ? "Dr. Anita Rao" : undefined)) : (r.status === "completed" ? "Dr. Anita Rao" : undefined);
+        rows.push({
+          id: `da:${r.id}`,
+          module: isHome ? "Home Care" : "Doctor / Nurse",
+          title,
+          subtitle: timeStr,
+          status: r.status,
+          createdAt: r.created_at,
+          doctorName: docName,
+        });
+      }
+
+      for (const r of (cp.data as { id: string; program: string; tier: string | null; summary: string | null; status: string; created_at: string }[] | null) ?? []) {
+        rows.push({ id: `cp:${r.id}`, module: r.program === "dialysis" ? "Dialysis" : r.program === "medical_tourism" ? "Medical Tourism" : "Care Program", title: r.program.replace(/_/g, " "), subtitle: [r.tier, r.summary].filter(Boolean).join(" · ") || undefined, status: r.status, createdAt: r.created_at });
+      }
+      for (const r of (pr.data as { id: string; category: string; subtype: string; provider_name: string; status: string; created_at: string }[] | null) ?? []) {
+        rows.push({ id: `pr:${r.id}`, module: "Prosthetics", title: `${r.category} — ${r.subtype}`, subtitle: r.provider_name, status: r.status, createdAt: r.created_at });
+      }
+      for (const r of (sn.data as { id: string; category: string; subtype: string; provider_name: string; status: string; created_at: string }[] | null) ?? []) {
+        rows.push({ id: `sn:${r.id}`, module: "Special Needs", title: `${r.category} — ${r.subtype}`, subtitle: r.provider_name, status: r.status, createdAt: r.created_at });
+      }
+      for (const r of (bb.data as { id: string; activity_type: string; blood_group: string | null; units: number | null; hospital: string | null; status: string; created_at: string }[] | null) ?? []) {
+        rows.push({ id: `bb:${r.id}`, module: "Blood Bank", title: `${r.activity_type}${r.blood_group ? ` · ${r.blood_group}` : ""}${r.units ? ` · ${r.units}u` : ""}`, subtitle: r.hospital ?? undefined, status: r.status, createdAt: r.created_at });
+      }
+      for (const r of (sb.data as { id: string; procedure: string; patient_name: string; mode: string; status: string; created_at: string }[] | null) ?? []) {
+        rows.push({ id: `sb:${r.id}`, module: "Surgery", title: r.procedure, subtitle: `${r.patient_name} · ${r.mode}`, status: r.status, createdAt: r.created_at });
+      }
+      for (const r of (mo.data as { id: string; pharmacy_name: string; delivery_speed: string; items: unknown; prescription_attached: boolean | null; total: number | null; status: string; created_at: string }[] | null) ?? []) {
+        rows.push({ id: `mo:${r.id}`, module: "Medicines", title: `Medicine delivery${Array.isArray(r.items) && r.items.length ? ` · ${r.items.length} item${r.items.length !== 1 ? "s" : ""}` : r.prescription_attached ? " · prescription" : ""}`, subtitle: `${r.pharmacy_name} · ${r.delivery_speed}${r.total ? ` · ₹${Math.round(Number(r.total)).toLocaleString("en-IN")}` : ""}`, status: r.status, createdAt: r.created_at });
+      }
 
       rows.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
       if (mounted) { setItems(rows); setLoading(false); }
@@ -264,7 +315,7 @@ function PatientChatOverlay({ doctorName, onClose }: { doctorName: string; onClo
         {ready && messages.length === 0 && (
           <p style={{ margin: "auto", fontSize: 13, color: "#64748B", textAlign: "center" }}>{live ? "No messages yet. Say hello to your doctor." : "Chat becomes available once your doctor has an account in the app."}</p>
         )}
-        {messages.map((m: any) => {
+        {messages.map((m: ChatMessage) => {
           const mine = m.sender_id === meId;
           return (
             <div key={m.id} style={{ alignSelf: mine ? "flex-end" : "flex-start", maxWidth: "78%", background: mine ? "#0D9488" : "#fff", color: mine ? "#fff" : "#0F172A", borderRadius: 14, borderBottomRightRadius: mine ? 4 : 14, borderBottomLeftRadius: mine ? 14 : 4, padding: "9px 13px", boxShadow: "0 1px 2px rgba(15,23,42,0.08)" }}>

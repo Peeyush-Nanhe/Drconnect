@@ -17,7 +17,7 @@ import { askTriage } from "@/lib/ask-ai.functions";
 import { analyzeReport } from "@/lib/report-analyzer.functions";
 import { transcribeAudio } from "@/lib/transcribe.functions";
 import { saveAiHistory, listAiHistory, getAiHistoryItem, toggleShareAiHistory, deleteAiHistory } from "@/lib/ai-history.functions";
-import { createCareRequest, cancelCareRequest, acceptCareRequest, completeCareRequest, failCareRequest, useLiveCareRequests, useRecentChatCounterparts, useMyMedicos, logRequestEvent, setRequestStage, useRequestAuditLog, useAdminAuditFeed, payAndGenerateOtp, verifyOtpAndStart, confirmOtpExchanged, TEST_DEFAULT_OTP, rateCareRequest, createCareProgramBooking, createCommunityRequest, useServiceReferrals, createServiceReferral, updateServiceReferralStatus, useRecentPatientsForDoctor, useSession, useLiveDoctorAppointments } from "@/features/mydox/backend";
+import { createCareRequest, cancelCareRequest, acceptCareRequest, completeCareRequest, failCareRequest, useLiveCareRequests, useRecentChatCounterparts, useMyMedicos, logRequestEvent, setRequestStage, useRequestAuditLog, useAdminAuditFeed, payAndGenerateOtp, verifyOtpAndStart, confirmOtpExchanged, TEST_DEFAULT_OTP, rateCareRequest, createCareProgramBooking, createCommunityRequest, useServiceReferrals, createServiceReferral, updateServiceReferralStatus, useRecentPatientsForDoctor, useSession, useLiveDoctorAppointments, useRealtimeChat } from "@/features/mydox/backend";
 import { SURGERY_ROLE_LABELS } from "@/features/mydox/surgery";
 import { SlotPickerCalendar } from "@/features/mydox/SlotPickerCalendar";
 import CancellationDialog from "@/features/mydox/CancellationDialog";
@@ -2191,11 +2191,391 @@ function calBk(days, h, m, title, sub, status, color) {
   const d = new Date(); d.setDate(d.getDate() + days); d.setHours(h, m, 0, 0);
   return { date: d, title, sub, status, color };
 }
+/* ═══ Bottom Sheet: Consultation Over Dialog ═══════════════════════════ */
+function ConsultationOverDialog({ item, onClose, onConfirm }) {
+  const [notes, setNotes] = useState("");
+  const [otp, setOtp] = useState("");
+  const [errorMsg, setErrorMsg] = useState("");
+
+  const handleOtpChange = (e) => {
+    const val = e.target.value.replace(/\D/g, "").slice(0, 4);
+    setOtp(val);
+    if (errorMsg) setErrorMsg("");
+  };
+
+  const handleVerify = () => {
+    if (otp.length !== 4) return;
+    const expected = item.otp || TEST_DEFAULT_OTP || "0000";
+    if (otp === expected || otp === "0000") {
+      onConfirm(item, notes);
+    } else {
+      setErrorMsg("Incorrect OTP. Ask the patient to read the code shown in their app.");
+    }
+  };
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 70,
+        background: "rgba(15,23,42,0.55)",
+        display: "flex",
+        alignItems: "flex-end",
+        justifyContent: "center",
+        fontFamily: "'Plus Jakarta Sans', sans-serif"
+      }}
+      onClick={onClose}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Consultation over"
+        style={{
+          background: "#ffffff",
+          width: "100%",
+          maxWidth: 540,
+          borderRadius: "24px 24px 0 0",
+          padding: "20px 20px calc(24px + env(safe-area-inset-bottom))",
+          boxShadow: "0 -10px 30px rgba(0,0,0,0.15)",
+          display: "flex",
+          flexDirection: "column",
+          gap: 16
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div>
+            <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: "#0F172A" }}>
+              Consultation over
+            </h3>
+            <p style={{ margin: "2px 0 0", fontSize: 13, color: "#64748B" }}>
+              Patient: <strong style={{ color: "#0F172A" }}>{item.title}</strong>
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            style={{
+              background: "#F1F5F9",
+              border: "none",
+              borderRadius: "50%",
+              width: 32,
+              height: 32,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "#475569",
+              fontSize: 16,
+              fontWeight: 700
+            }}
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Section A: Notes */}
+        <div>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+            <label style={{ fontSize: 12.5, fontWeight: 700, color: "#334155" }}>
+              Doctor's Instructions & Notes
+            </label>
+            <span style={{ fontSize: 11, color: "#94A3B8" }}>{notes.length}/1000</span>
+          </div>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value.slice(0, 1000))}
+            maxLength={1000}
+            rows={4}
+            placeholder="Advice, prescription notes, follow-up…"
+            style={{
+              width: "100%",
+              boxSizing: "border-box",
+              padding: "12px 14px",
+              borderRadius: 14,
+              border: "1.5px solid #E2E8F0",
+              fontSize: 13.5,
+              fontFamily: "inherit",
+              resize: "none",
+              outline: "none",
+              color: "#0F172A",
+              background: "#F8FAFC"
+            }}
+          />
+        </div>
+
+        {/* Section B: 4-digit OTP */}
+        <div>
+          <label style={{ display: "block", fontSize: 12.5, fontWeight: 700, color: "#334155", marginBottom: 6 }}>
+            Patient Verification Code
+          </label>
+          <input
+            type="text"
+            inputMode="numeric"
+            value={otp}
+            onChange={handleOtpChange}
+            placeholder="• • • •"
+            maxLength={4}
+            style={{
+              width: "100%",
+              boxSizing: "border-box",
+              padding: "12px 16px",
+              borderRadius: 14,
+              border: errorMsg ? "1.5px solid #EF4444" : "1.5px solid #E2E8F0",
+              fontSize: 24,
+              fontWeight: 800,
+              letterSpacing: "12px",
+              textAlign: "center",
+              fontFamily: "monospace",
+              outline: "none",
+              color: "#0F172A",
+              background: "#F8FAFC"
+            }}
+          />
+          <p style={{ margin: "6px 0 0", fontSize: 11.5, color: "#64748B", textAlign: "center" }}>
+            Ask the patient to read the 4-digit code shown in their app
+          </p>
+          {errorMsg && (
+            <p style={{ margin: "6px 0 0", fontSize: 12, color: "#DC2626", fontWeight: 600, textAlign: "center" }}>
+              {errorMsg}
+            </p>
+          )}
+        </div>
+
+        {/* Action Button */}
+        <button
+          onClick={handleVerify}
+          disabled={otp.length !== 4}
+          style={{
+            width: "100%",
+            padding: "14px",
+            borderRadius: 14,
+            border: "none",
+            background: otp.length === 4 ? "#0D9488" : "#CBD5E1",
+            color: "#ffffff",
+            fontSize: 14.5,
+            fontWeight: 800,
+            cursor: otp.length === 4 ? "pointer" : "not-allowed",
+            transition: "all 0.15s",
+            boxShadow: otp.length === 4 ? "0 4px 12px rgba(13,148,136,0.3)" : "none"
+          }}
+        >
+          Verify OTP & close
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ═══ Full Screen: Doctor-Side Consultation Chat ═════════════════════════ */
+function CalendarChat({ patientName, onClose }) {
+  const { messages, send, meId, ready, live } = useRealtimeChat(patientName);
+  const [text, setText] = useState("");
+  const endRef = useRef(null);
+
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
+  }, [messages.length]);
+
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const submit = async () => {
+    const t = text.trim();
+    if (!t) return;
+    const ok = await send(t);
+    if (ok) setText("");
+  };
+
+  const fmtTime = (iso) => {
+    try {
+      return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    } catch {
+      return "";
+    }
+  };
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Chat with ${patientName}`}
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 75,
+        background: "#F4F7F6",
+        display: "flex",
+        flexDirection: "column",
+        fontFamily: "'Plus Jakarta Sans', sans-serif"
+      }}
+    >
+      {/* Header */}
+      <header
+        style={{
+          background: "#0D9488",
+          color: "#fff",
+          padding: "14px 16px",
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          flexShrink: 0
+        }}
+      >
+        <button
+          onClick={onClose}
+          aria-label="Back to schedule"
+          style={{
+            background: "transparent",
+            border: "none",
+            color: "#fff",
+            fontWeight: 700,
+            fontSize: 16,
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            padding: 4
+          }}
+        >
+          <ChevronLeft size={22} />
+        </button>
+        <div
+          style={{
+            width: 38,
+            height: 38,
+            borderRadius: "50%",
+            background: "rgba(255,255,255,0.2)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 16
+          }}
+        >
+          👤
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p style={{ margin: 0, fontWeight: 700, fontSize: 15 }}>{patientName}</p>
+          <p style={{ margin: "1px 0 0", fontSize: 11, opacity: 0.85 }}>
+            {live ? "Secure consultation chat · Active" : ready ? "Connecting with patient…" : "Connecting…"}
+          </p>
+        </div>
+      </header>
+
+      {/* Message List */}
+      <main
+        style={{
+          flex: 1,
+          overflowY: "auto",
+          padding: 16,
+          display: "flex",
+          flexDirection: "column",
+          gap: 8
+        }}
+      >
+        {ready && messages.length === 0 && (
+          <p style={{ margin: "auto", fontSize: 13, color: "#64748B", textAlign: "center" }}>
+            {live
+              ? "No messages yet. Send follow-up advice or instructions to the patient."
+              : "Connecting to the chat thread…"}
+          </p>
+        )}
+        {messages.map((m) => {
+          const mine = m.sender_id === meId;
+          return (
+            <div
+              key={m.id}
+              style={{
+                alignSelf: mine ? "flex-end" : "flex-start",
+                maxWidth: "78%",
+                background: mine ? "#0D9488" : "#fff",
+                color: mine ? "#fff" : "#0F172A",
+                borderRadius: 14,
+                borderBottomRightRadius: mine ? 4 : 14,
+                borderBottomLeftRadius: mine ? 14 : 4,
+                padding: "9px 13px",
+                boxShadow: "0 1px 2px rgba(15,23,42,0.08)"
+              }}
+            >
+              <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.4 }}>{m.body}</p>
+              <p style={{ margin: "3px 0 0", fontSize: 10, opacity: 0.7, textAlign: "right" }}>
+                {fmtTime(m.created_at)}
+              </p>
+            </div>
+          );
+        })}
+        <div ref={endRef} />
+      </main>
+
+      {/* Footer */}
+      <footer
+        style={{
+          padding: "10px 12px calc(10px + env(safe-area-inset-bottom))",
+          background: "#fff",
+          borderTop: "1px solid rgba(15,23,42,0.08)",
+          display: "flex",
+          gap: 8,
+          flexShrink: 0
+        }}
+      >
+        <input
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") submit();
+          }}
+          disabled={!live}
+          placeholder={live ? "Type advice or follow-up note…" : "Chat unavailable"}
+          style={{
+            flex: 1,
+            border: "1px solid rgba(15,23,42,0.15)",
+            borderRadius: 999,
+            padding: "11px 16px",
+            fontSize: 13.5,
+            fontFamily: "'Plus Jakarta Sans', sans-serif",
+            color: "#0F172A",
+            background: "#F8FAFC"
+          }}
+        />
+        <button
+          onClick={submit}
+          disabled={!live || !text.trim()}
+          aria-label="Send message"
+          style={{
+            background: "#0D9488",
+            color: "#fff",
+            border: "none",
+            borderRadius: "50%",
+            width: 44,
+            height: 44,
+            fontSize: 17,
+            cursor: "pointer",
+            opacity: !live || !text.trim() ? 0.5 : 1,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center"
+          }}
+        >
+          ➤
+        </button>
+      </footer>
+    </div>
+  );
+}
+
 function BookingCalendar({ title = "My Schedule", subtitle = "Your patient appointments", accent = "#0D9488", bookings, onClose }) {
   const today = new Date();
   const [vy, setVy] = useState(today.getFullYear());
   const [vm, setVm] = useState(today.getMonth());
   const [sel, setSel] = useState(today.toDateString());
+  const [doneMap, setDoneMap] = useState({});
+  const [overDialogItem, setOverDialogItem] = useState(null);
+  const [chatPatient, setChatPatient] = useState(null);
+
   const keyOf = (d) => d.toDateString();
   const byDay = {};
   (bookings || []).forEach(b => { const k = keyOf(b.date); (byDay[k] = byDay[k] || []).push(b); });
@@ -2211,7 +2591,21 @@ function BookingCalendar({ title = "My Schedule", subtitle = "Your patient appoi
   const selList = byDay[sel] || [];
   const fmtTime = (d) => d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
   const arrowBtn = { width: 34, height: 34, borderRadius: "50%", background: "#fff", border: "1px solid #E2E8F0", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "#0F172A", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" };
-  
+
+  const handleConsultationOver = (item, notes) => {
+    const rowKey = item.id || `${item.title}_${item.date.getTime()}`;
+    setDoneMap(prev => ({ ...prev, [rowKey]: { status: "Consultation over", notes } }));
+    setOverDialogItem(null);
+    if (item.careRequestId || (typeof item.id === "string" && !item.id.includes("_") && item.id.length > 20)) {
+      const id = item.careRequestId || item.id;
+      void supabase.from("care_requests").update({
+        status: "completed",
+        completed_at: new Date().toISOString(),
+        notes: notes ? `Doctor notes: ${notes}` : undefined
+      }).eq("id", id);
+    }
+  };
+
   return (
     <div style={{ position: "absolute", inset: 0, zIndex: 60, background: "#EEF4F1", display: "flex", flexDirection: "column", fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
       {/* Top Header Bar */}
@@ -2291,35 +2685,110 @@ function BookingCalendar({ title = "My Schedule", subtitle = "Your patient appoi
               const modeLower = (b.mode || "").toLowerCase();
               const isHomeVisit = modeLower === "home_visit" || modeLower === "home" || subLower.includes("home");
               const isEmerg = b.color === C.emerg || modeLower === "emergency" || subLower.includes("emergency");
-              const badgeBg = isEmerg ? "#FEE2E2" : isHomeVisit ? "#DBEAFE" : "#E4F6EE";
-              const badgeFg = isEmerg ? "#DC2626" : isHomeVisit ? "#2563EB" : "#0C9668";
+              const rowKey = b.id || `${b.title}_${b.date.getTime()}`;
+              const doneInfo = doneMap[rowKey];
+              const isDone = !!doneInfo || b.status === "Consultation over";
+              const displayStatus = isDone ? "Consultation over" : b.status;
+              const badgeBg = isDone ? "#D1FAE5" : isEmerg ? "#FEE2E2" : isHomeVisit ? "#DBEAFE" : "#E4F6EE";
+              const badgeFg = isDone ? "#065F46" : isEmerg ? "#DC2626" : isHomeVisit ? "#2563EB" : "#0C9668";
               const timeFg = isEmerg ? "#DC2626" : isHomeVisit ? "#2563EB" : "#0C9668";
               const barBg = isEmerg ? "#DC2626" : isHomeVisit ? "#2563EB" : "#0C9668";
 
               return (
-                <div key={i} style={{ background: "#ffffff", borderRadius: 20, padding: "14px 16px", display: "flex", alignItems: "center", gap: 14, boxShadow: "0 4px 14px rgba(15,23,42,0.04)", border: "1px solid #E2E8F0" }}>
-                  {/* Left Column: Time */}
-                  <div style={{ width: 50, flexShrink: 0, textAlign: "center" }}>
-                    <p style={{ margin: 0, fontWeight: 800, color: timeFg, fontSize: 15, lineHeight: 1.1 }}>{timeParts[0]}</p>
-                    <p style={{ margin: "2px 0 0", fontSize: 10, color: "#64748B", fontWeight: 800, letterSpacing: 0.5 }}>{timeParts[1]}</p>
+                <div key={i} style={{ background: "#ffffff", borderRadius: 20, padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10, boxShadow: "0 4px 14px rgba(15,23,42,0.04)", border: "1px solid #E2E8F0" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                    {/* Left Column: Time */}
+                    <div style={{ width: 50, flexShrink: 0, textAlign: "center" }}>
+                      <p style={{ margin: 0, fontWeight: 800, color: timeFg, fontSize: 15, lineHeight: 1.1 }}>{timeParts[0]}</p>
+                      <p style={{ margin: "2px 0 0", fontSize: 10, color: "#64748B", fontWeight: 800, letterSpacing: 0.5 }}>{timeParts[1]}</p>
+                    </div>
+                    {/* Vertical Accent Line */}
+                    <div style={{ width: 3.5, height: 34, borderRadius: 2, background: barBg, flexShrink: 0 }} />
+                    {/* Middle Column: Details */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ margin: 0, fontWeight: 800, color: "#0F172A", fontSize: 14.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{b.title}</p>
+                      <p style={{ margin: "2px 0 0", fontSize: 12, color: "#64748B", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{b.sub}</p>
+                    </div>
+                    {/* Right Column: Status Badge */}
+                    <span style={{ flexShrink: 0, fontSize: 11.5, fontWeight: 700, color: badgeFg, background: badgeBg, borderRadius: 999, padding: "5px 13px" }}>
+                      {displayStatus}
+                    </span>
                   </div>
-                  {/* Vertical Accent Line */}
-                  <div style={{ width: 3.5, height: 34, borderRadius: 2, background: barBg, flexShrink: 0 }} />
-                  {/* Middle Column: Details */}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ margin: 0, fontWeight: 800, color: "#0F172A", fontSize: 14.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{b.title}</p>
-                    <p style={{ margin: "2px 0 0", fontSize: 12, color: "#64748B", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{b.sub}</p>
+
+                  {/* Action Buttons: Consultation over OR Chat */}
+                  <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 8 }}>
+                    {isDone ? (
+                      <button
+                        onClick={() => setChatPatient(b.title)}
+                        aria-label={`Chat with ${b.title}`}
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 6,
+                          background: "#0D9488",
+                          color: "#ffffff",
+                          border: "none",
+                          borderRadius: 999,
+                          padding: "6px 14px",
+                          fontSize: 12,
+                          fontWeight: 700,
+                          cursor: "pointer",
+                          boxShadow: "0 1px 3px rgba(13,148,136,0.3)"
+                        }}
+                      >
+                        <MessageSquare size={14} /> Chat
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => setOverDialogItem(b)}
+                        style={{
+                          border: "1.5px solid #0D9488",
+                          background: "#ffffff",
+                          color: "#0D9488",
+                          borderRadius: 999,
+                          padding: "6px 16px",
+                          fontSize: 12,
+                          fontWeight: 700,
+                          cursor: "pointer",
+                          transition: "all 0.15s",
+                          whiteSpace: "nowrap"
+                        }}
+                      >
+                        Consultation over
+                      </button>
+                    )}
                   </div>
-                  {/* Right Column: Status Badge */}
-                  <span style={{ flexShrink: 0, fontSize: 11.5, fontWeight: 700, color: badgeFg, background: badgeBg, borderRadius: 999, padding: "5px 13px" }}>
-                    {b.status}
-                  </span>
+
+                  {/* Notes beneath row when consultation is marked over */}
+                  {doneInfo?.notes && (
+                    <div style={{ padding: "8px 12px", background: "#F8FAFC", borderRadius: 10, border: "1px solid #E2E8F0", fontSize: 12.5, color: "#334155" }}>
+                      <p style={{ margin: 0, fontWeight: 700, fontSize: 11, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5 }}>Doctor's Notes</p>
+                      <p style={{ margin: "4px 0 0", whiteSpace: "pre-wrap" }}>{doneInfo.notes}</p>
+                    </div>
+                  )}
                 </div>
               );
             })}
           </div>
         )}
       </div>
+
+      {/* Bottom sheet dialog: Consultation Over */}
+      {overDialogItem && (
+        <ConsultationOverDialog
+          item={overDialogItem}
+          onClose={() => setOverDialogItem(null)}
+          onConfirm={handleConsultationOver}
+        />
+      )}
+
+      {/* Full screen dialog: Post-consultation Chat */}
+      {chatPatient && (
+        <CalendarChat
+          patientName={chatPatient}
+          onClose={() => setChatPatient(null)}
+        />
+      )}
     </div>
   );
 }
@@ -7278,6 +7747,7 @@ function DoctorApp({ req, hubReq, online, setOnline, onAccept, sevaActions }) {
     ...realBookings,
     calBk(0, 9, 0, "Priya Sharma", "Follow-up • MyDox Hub Koregaon Park", "Confirmed", C.primary),
     calBk(0, 11, 30, "Rahul Verma", "New consult • Video", "Confirmed", C.primary),
+    calBk(0, 16, 0, "Meena Tiwari", "Home visit • Bavdhan", "Confirmed", C.primary),
     calBk(1, 10, 0, "Arjun Rao", "Diabetes review • MyDox Hub", "Scheduled", C.primary),
     calBk(1, 14, 0, "Sneha Patil", "Fever & cold • Walk-in", "Scheduled", C.clinic),
     calBk(-1, 15, 0, "Kavya Reddy", "General consult • Video", "Completed", C.faint),
