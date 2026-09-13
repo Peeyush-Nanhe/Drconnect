@@ -890,21 +890,24 @@ function PatientReviewModal({
 
 /* Consultation Completion OTP Generator & Supabase Sync */
 async function getOrGenerateBookingOtp(item: Item): Promise<string> {
-  if (item.otp && /^\d{4,6}$/.test(item.otp)) {
+  if (item.otp && /^\d{4}$/.test(item.otp)) {
     return item.otp;
+  }
+  if (item.otp && /^\d{5,6}$/.test(item.otp)) {
+    return item.otp.slice(0, 4);
   }
   const cacheKey = `mydox_booking_otp_${item.id}`;
   if (typeof window !== "undefined") {
     try {
       const cached = window.localStorage.getItem(cacheKey);
-      if (cached && /^\d{4,6}$/.test(cached)) return cached;
+      if (cached && /^\d{4}$/.test(cached)) return cached;
     } catch {
       /* ignore storage errors */
     }
   }
 
-  // Generate 6-digit random OTP
-  const generated = Math.floor(100000 + Math.random() * 900000).toString();
+  // Generate 4-digit random OTP
+  const generated = Math.floor(1000 + Math.random() * 9000).toString();
 
   const [prefix, rawId] = item.id.split(":");
   if (rawId) {
@@ -912,21 +915,27 @@ async function getOrGenerateBookingOtp(item: Item): Promise<string> {
       if (prefix === "cr") {
         const { data } = await supabase.from("care_requests").select("otp").eq("id", rawId).maybeSingle();
         const existing = (data as { otp: string | null } | null)?.otp;
-        if (existing && /^\d{4,6}$/.test(existing)) {
-          if (typeof window !== "undefined") {
-            try { window.localStorage.setItem(cacheKey, existing); } catch { /* ignore */ }
+        if (existing) {
+          const formatted = existing.replace(/\D/g, "").slice(0, 4);
+          if (formatted.length === 4) {
+            if (typeof window !== "undefined") {
+              try { window.localStorage.setItem(cacheKey, formatted); } catch { /* ignore */ }
+            }
+            return formatted;
           }
-          return existing;
         }
         await supabase.from("care_requests").update({ otp: generated } as never).eq("id", rawId).is("otp", null);
       } else if (prefix === "da") {
         const { data } = await supabase.from("doctor_appointments").select("arrival_otp").eq("id", rawId).maybeSingle();
         const existing = (data as { arrival_otp: string | null } | null)?.arrival_otp;
-        if (existing && /^\d{4,6}$/.test(existing)) {
-          if (typeof window !== "undefined") {
-            try { window.localStorage.setItem(cacheKey, existing); } catch { /* ignore */ }
+        if (existing) {
+          const formatted = existing.replace(/\D/g, "").slice(0, 4);
+          if (formatted.length === 4) {
+            if (typeof window !== "undefined") {
+              try { window.localStorage.setItem(cacheKey, formatted); } catch { /* ignore */ }
+            }
+            return formatted;
           }
-          return existing;
         }
         await supabase.from("doctor_appointments").update({ arrival_otp: generated } as never).eq("id", rawId).is("arrival_otp", null);
       }
@@ -956,9 +965,8 @@ function BookingOtpModal({
   onClose: () => void;
   onOpenChat: (doctorName: string) => void;
 }) {
-  const [otp, setOtp] = useState<string>(target.item.otp || "");
+  const [otp, setOtp] = useState<string>(target.item.otp ? target.item.otp.slice(0, 4) : "");
   const [loading, setLoading] = useState<boolean>(!target.item.otp);
-  const [copied, setCopied] = useState<boolean>(false);
 
   useEffect(() => {
     let mounted = true;
@@ -982,18 +990,7 @@ function BookingOtpModal({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const handleCopy = () => {
-    if (!otp) return;
-    try {
-      navigator.clipboard.writeText(otp);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2200);
-    } catch {
-      /* ignore copy errors */
-    }
-  };
-
-  const digits = (otp || "------").split("");
+  const digits = (otp || "----").slice(0, 4).split("");
   const displayDocName = target.doctorName.startsWith("Dr.") ? target.doctorName : `Dr. ${target.doctorName}`;
 
   return (
@@ -1106,7 +1103,7 @@ function BookingOtpModal({
             background: "linear-gradient(180deg, #F0FDFA 0%, #E6FFFA 100%)",
             border: "1.5px dashed #14B8A6",
             borderRadius: 16,
-            padding: "18px 16px",
+            padding: "20px 16px",
             textAlign: "center",
             display: "flex",
             flexDirection: "column",
@@ -1114,7 +1111,7 @@ function BookingOtpModal({
           }}
         >
           <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, color: "#0F766E", textTransform: "uppercase" }}>
-            One-Time Consultation Passcode
+            4-Digit Consultation Passcode
           </span>
 
           {loading ? (
@@ -1125,26 +1122,26 @@ function BookingOtpModal({
             <div
               style={{
                 display: "flex",
-                gap: 8,
+                gap: 12,
                 justifyContent: "center",
-                marginTop: 12,
-                marginBottom: 10,
+                marginTop: 14,
+                marginBottom: 6,
               }}
             >
               {digits.map((d, i) => (
                 <div
                   key={i}
                   style={{
-                    width: 42,
-                    height: 50,
+                    width: 52,
+                    height: 60,
                     background: "#FFFFFF",
-                    borderRadius: 10,
-                    border: "1.5px solid #99F6E4",
-                    boxShadow: "0 2px 4px rgba(13,148,136,0.1)",
+                    borderRadius: 12,
+                    border: "2px solid #99F6E4",
+                    boxShadow: "0 2px 6px rgba(13,148,136,0.12)",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    fontSize: 24,
+                    fontSize: 28,
                     fontWeight: 800,
                     color: "#0F172A",
                     fontFamily: "monospace",
@@ -1155,30 +1152,6 @@ function BookingOtpModal({
               ))}
             </div>
           )}
-
-          <button
-            type="button"
-            disabled={loading}
-            onClick={handleCopy}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 6,
-              background: copied ? "#D1FAE5" : "#FFFFFF",
-              color: copied ? "#065F46" : "#0F766E",
-              border: "1px solid " + (copied ? "#6EE7B7" : "#99F6E4"),
-              borderRadius: 999,
-              padding: "6px 14px",
-              fontSize: 12,
-              fontWeight: 700,
-              cursor: "pointer",
-              marginTop: 4,
-              boxShadow: "0 1px 2px rgba(15,23,42,0.05)",
-              transition: "all 0.15s ease",
-            }}
-          >
-            {copied ? "✓ Copied to clipboard" : "📋 Copy OTP"}
-          </button>
         </div>
 
         {/* Required Notice Box */}
@@ -1200,7 +1173,7 @@ function BookingOtpModal({
               Share this OTP with {displayDocName} once your consultation is over
             </div>
             <div style={{ fontSize: 11.5, color: "#78350F", marginTop: 4, lineHeight: 1.45 }}>
-              Please do not share this passcode beforehand. Your doctor requires this code at the conclusion of your visit to verify and complete the session.
+              Please do not share this passcode beforehand. Your doctor requires this 4-digit code at the conclusion of your visit to verify and complete the session.
             </div>
           </div>
         </div>
