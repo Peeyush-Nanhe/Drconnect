@@ -581,11 +581,40 @@ function EmptyMsg({ text }: { text: string }) {
 function PatientChatOverlay({ doctorName, onClose }: { doctorName: string; onClose: () => void }) {
   const { messages, send, meId, ready, live } = useRealtimeChat(doctorName);
   const [text, setText] = useState("");
+  const [localSentMessages, setLocalSentMessages] = useState<ChatMessage[]>([]);
   const endRef = useRef<HTMLDivElement>(null);
+
+  const [rechargeBonus, setRechargeBonus] = useState<number>(() => {
+    try {
+      return Number(localStorage.getItem(`mydox_chat_recharge_${doctorName}`)) || 0;
+    } catch {
+      return 0;
+    }
+  });
+
+  const BASE_LIMIT = 25;
+  const totalLimit = BASE_LIMIT + rechargeBonus;
+
+  // Combine real-time Supabase messages and local synthetic messages
+  const allMessages = useMemo(() => {
+    const existingIds = new Set(messages.map((m) => m.id));
+    const uniqueLocal = localSentMessages.filter((m) => !existingIds.has(m.id));
+    return [...messages, ...uniqueLocal];
+  }, [messages, localSentMessages]);
+
+  // Count messages sent by the patient (doctor messages do not reduce allowance)
+  const patientSentCount = useMemo(() => {
+    return allMessages.filter(
+      (m) => (meId && m.sender_id === meId) || m.id.startsWith("local_")
+    ).length;
+  }, [allMessages, meId]);
+
+  const messagesRemaining = Math.max(0, totalLimit - patientSentCount);
+  const isLimitReached = messagesRemaining <= 0;
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
-  }, [messages.length]);
+  }, [allMessages.length]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -596,8 +625,35 @@ function PatientChatOverlay({ doctorName, onClose }: { doctorName: string; onClo
   const submit = async () => {
     const t = text.trim();
     if (!t) return;
+    if (isLimitReached) {
+      toast("Message limit reached (0/25). Please recharge ₹200 to continue chatting.");
+      return;
+    }
+    setText("");
     const ok = await send(t);
-    if (ok) setText("");
+    if (!ok) {
+      // Local fallback for offline/demo/unlinked doctor profile
+      const fallbackMsg: ChatMessage = {
+        id: "local_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6),
+        sender_id: meId || "patient",
+        recipient_id: "doctor",
+        body: t,
+        created_at: new Date().toISOString(),
+        thread_key: "thread"
+      };
+      setLocalSentMessages((prev) => [...prev, fallbackMsg]);
+    }
+  };
+
+  const handleRecharge = () => {
+    const newBonus = rechargeBonus + 25;
+    setRechargeBonus(newBonus);
+    try {
+      localStorage.setItem(`mydox_chat_recharge_${doctorName}`, String(newBonus));
+    } catch (_e) {
+      // Storage might be restricted
+    }
+    toast("Recharge ₹200 successful! +25 messages added to your consultation token wallet.");
   };
 
   const fmtTime = (iso: string) => {
@@ -745,7 +801,9 @@ function PatientChatOverlay({ doctorName, onClose }: { doctorName: string; onClo
             textAlign: "center"
           }}
         >
-          <div style={{ color: "#10B981", fontWeight: 800, fontSize: 17 }}>22/25</div>
+          <div style={{ color: messagesRemaining > 5 ? "#10B981" : messagesRemaining > 0 ? "#F59E0B" : "#EF4444", fontWeight: 800, fontSize: 17 }}>
+            {messagesRemaining}/{totalLimit}
+          </div>
           <div style={{ color: "#7B9E93", fontSize: 11, fontWeight: 600, marginTop: 2 }}>Messages Left</div>
         </div>
 
@@ -810,7 +868,7 @@ function PatientChatOverlay({ doctorName, onClose }: { doctorName: string; onClo
           Messages and calls are end-to-end encrypted. No one outside this chat, not even MedConnect, can read or listen to them.
         </div>
 
-        {ready && messages.length === 0 && (
+        {ready && allMessages.length === 0 && (
           <p style={{ margin: "auto", fontSize: 13, color: "#64748B", textAlign: "center" }}>
             {live
               ? "No messages yet. Say hello to your doctor."
@@ -818,8 +876,8 @@ function PatientChatOverlay({ doctorName, onClose }: { doctorName: string; onClo
           </p>
         )}
 
-        {messages.map((m: ChatMessage) => {
-          const mine = m.sender_id === meId;
+        {allMessages.map((m: ChatMessage) => {
+          const mine = (meId && m.sender_id === meId) || m.id.startsWith("local_");
           return (
             <div
               key={m.id}
@@ -946,7 +1004,8 @@ function PatientChatOverlay({ doctorName, onClose }: { doctorName: string; onClo
           onKeyDown={(e) => {
             if (e.key === "Enter") submit();
           }}
-          placeholder="Type a message"
+          disabled={isLimitReached}
+          placeholder={isLimitReached ? "Message limit reached (0/25) · Recharge to chat" : "Type a message"}
           style={{
             flex: 1,
             background: "#0A241D",
@@ -956,13 +1015,14 @@ function PatientChatOverlay({ doctorName, onClose }: { doctorName: string; onClo
             color: "#fff",
             fontSize: 14,
             fontFamily: "'Plus Jakarta Sans', sans-serif",
-            outline: "none"
+            outline: "none",
+            opacity: isLimitReached ? 0.6 : 1
           }}
         />
 
         <button
           onClick={submit}
-          disabled={!text.trim()}
+          disabled={isLimitReached || !text.trim()}
           aria-label="Send message"
           style={{
             width: 42,
@@ -971,8 +1031,8 @@ function PatientChatOverlay({ doctorName, onClose }: { doctorName: string; onClo
             background: "#10B981",
             border: "none",
             color: "#fff",
-            cursor: text.trim() ? "pointer" : "default",
-            opacity: text.trim() ? 1 : 0.6,
+            cursor: !isLimitReached && text.trim() ? "pointer" : "default",
+            opacity: !isLimitReached && text.trim() ? 1 : 0.4,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -1009,7 +1069,7 @@ function PatientChatOverlay({ doctorName, onClose }: { doctorName: string; onClo
               textOverflow: "ellipsis"
             }}
           >
-            Free chat · 22/25 msgs · 10:00 audio · 2/2 calls
+            {messagesRemaining > 0 ? "Free chat" : "Quota reached"} · {messagesRemaining}/{totalLimit} msgs · 10:00 audio · 2/2 calls
           </p>
           <p
             style={{
@@ -1026,7 +1086,7 @@ function PatientChatOverlay({ doctorName, onClose }: { doctorName: string; onClo
         </div>
 
         <button
-          onClick={() => toast("Recharge ₹200 added to your consultation token wallet")}
+          onClick={handleRecharge}
           style={{
             background: "#10B981",
             color: "#fff",
