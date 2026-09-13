@@ -74,6 +74,32 @@ function classifyCareRequest(specialty: string): Module {
   return "Doctor / Nurse";
 }
 
+const REVIEW_KEY = (id: string, name?: string) => `mydox_review_${id || name || "unknown"}`;
+
+function readReview(id: string, name?: string): { stars: number; comment?: string } | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(REVIEW_KEY(id, name));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return { stars: Number(parsed?.stars) || 0, comment: parsed?.comment || "" };
+  } catch {
+    return null;
+  }
+}
+
+function saveReview(id: string, name: string | undefined, stars: number, comment?: string) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(
+      REVIEW_KEY(id, name),
+      JSON.stringify({ stars, comment, at: Date.now(), providerName: name || null })
+    );
+  } catch {
+    /* ignore storage errors */
+  }
+}
+
 export default function MyBookingsOverlay({
   onClose,
   onRebook,
@@ -93,6 +119,8 @@ export default function MyBookingsOverlay({
   const [filter, setFilter] = useState<Module | "All">("All");
   const [tab, setTab] = useState<"upcoming" | "previous">(initialTab);
   const [chatDoctor, setChatDoctor] = useState<string | null>(null);
+  const [reviewTarget, setReviewTarget] = useState<{ item: Item; doctorName: string } | null>(null);
+  const [reviewsMap, setReviewsMap] = useState<Record<string, number>>({});
 
   useEffect(() => {
     setTab(initialTab);
@@ -111,7 +139,7 @@ export default function MyBookingsOverlay({
     (async () => {
       setLoading(true);
       const [cr, cp, pr, sn, bb, sb, mo, da, pv, sc, comm] = await Promise.all([
-        supabase.from("care_requests").select("id, specialty, status, notes, created_at, visit_type, accepted_by").eq("patient_id", uid).order("created_at", { ascending: false }).limit(200),
+        supabase.from("care_requests").select("id, specialty, status, notes, created_at, visit_type, accepted_by, rating_provider").eq("patient_id", uid).order("created_at", { ascending: false }).limit(200),
         supabase.from("care_program_bookings").select("id, program, tier, summary, status, created_at").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
         supabase.from("prosthetics_bookings").select("id, category, subtype, provider_name, status, created_at").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
         supabase.from("special_needs_bookings").select("id, category, subtype, provider_name, status, created_at").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
@@ -125,7 +153,8 @@ export default function MyBookingsOverlay({
       ]);
 
       const rows: Item[] = [];
-      const crRows = (cr.data as { id: string; specialty: string; status: string; notes: string | null; created_at: string; visit_type: string; accepted_by: string | null }[] | null) ?? [];
+      const localReviews: Record<string, number> = {};
+      const crRows = (cr.data as { id: string; specialty: string; status: string; notes: string | null; created_at: string; visit_type: string; accepted_by: string | null; rating_provider: number | null }[] | null) ?? [];
       const daRows = (da.data as { id: string; service: string | null; mode: string | null; status: string; start_time: string; end_time: string; created_at: string; provider_id: string | null }[] | null) ?? [];
       const pvRows = (pv.data as { id: string; therapy_type: string; area: string; city: string; session_number: number; status: string; created_at: string; therapist_id: string | null }[] | null) ?? [];
       const scRows = (sc.data as { id: string; specialty_label: string; concern: string; mode: string; provider_name: string; status: string; created_at: string }[] | null) ?? [];
@@ -147,8 +176,15 @@ export default function MyBookingsOverlay({
 
       for (const r of crRows) {
         const docName = r.accepted_by ? (doctorNames.get(r.accepted_by) || (r.status === "completed" ? "Dr. Anita Rao" : undefined)) : (r.status === "completed" ? "Dr. Anita Rao" : undefined);
+        const itemId = `cr:${r.id}`;
+        if (r.rating_provider) {
+          localReviews[itemId] = r.rating_provider;
+        } else {
+          const saved = readReview(itemId, docName);
+          if (saved?.stars) localReviews[itemId] = saved.stars;
+        }
         rows.push({
-          id: `cr:${r.id}`,
+          id: itemId,
           module: classifyCareRequest(r.specialty),
           title: r.specialty,
           subtitle: `${r.visit_type} visit${r.notes ? ` · ${r.notes.slice(0, 60)}` : ""}`,
@@ -164,8 +200,11 @@ export default function MyBookingsOverlay({
         const title = isHome && !baseTitle.toLowerCase().includes("home") ? `${baseTitle} • Home visit` : baseTitle;
         const timeStr = `${new Date(r.start_time).toLocaleDateString("en-US", { month: "short", day: "numeric" })} at ${new Date(r.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
         const docName = r.provider_id ? (doctorNames.get(r.provider_id) || (r.status === "completed" ? "Dr. Anita Rao" : undefined)) : (r.status === "completed" ? "Dr. Anita Rao" : undefined);
+        const itemId = `da:${r.id}`;
+        const saved = readReview(itemId, docName);
+        if (saved?.stars) localReviews[itemId] = saved.stars;
         rows.push({
-          id: `da:${r.id}`,
+          id: itemId,
           module: isHome ? "Home Care" : "Doctor / Nurse",
           title,
           subtitle: timeStr,
@@ -177,8 +216,11 @@ export default function MyBookingsOverlay({
 
       for (const r of pvRows) {
         const therapistName = r.therapist_id ? doctorNames.get(r.therapist_id) : undefined;
+        const itemId = `pv:${r.id}`;
+        const saved = readReview(itemId, therapistName);
+        if (saved?.stars) localReviews[itemId] = saved.stars;
         rows.push({
-          id: `pv:${r.id}`,
+          id: itemId,
           module: "Home Care",
           title: `${r.therapy_type.replace(/_/g, " ")} — session ${r.session_number}`,
           subtitle: `${r.area}, ${r.city}`,
@@ -189,8 +231,11 @@ export default function MyBookingsOverlay({
       }
 
       for (const r of scRows) {
+        const itemId = `sc:${r.id}`;
+        const saved = readReview(itemId, r.provider_name);
+        if (saved?.stars) localReviews[itemId] = saved.stars;
         rows.push({
-          id: `sc:${r.id}`,
+          id: itemId,
           module: "Doctor / Nurse",
           title: `${r.specialty_label} — ${r.concern}`,
           subtitle: `${r.provider_name} · ${r.mode}`,
@@ -231,7 +276,11 @@ export default function MyBookingsOverlay({
       }
 
       rows.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
-      if (mounted) { setItems(rows); setLoading(false); }
+      if (mounted) {
+        setItems(rows);
+        setReviewsMap(localReviews);
+        setLoading(false);
+      }
     })();
     return () => { mounted = false; };
   }, [uid, ready]);
@@ -274,12 +323,13 @@ export default function MyBookingsOverlay({
               </button>
             ))}
           </div>
-          <div style={{ display: "flex", gap: 6, marginTop: 10, background: "#EEF2F0", borderRadius: 999, padding: 4 }}>
-            {(["upcoming", "previous"] as const).map((t) => (
-              <button key={t} onClick={() => setTab(t)} style={{ flex: 1, border: "none", padding: "8px 12px", borderRadius: 999, fontSize: 13, fontWeight: 700, cursor: "pointer", background: tab === t ? "#fff" : "transparent", color: tab === t ? INK : "#64748B", boxShadow: tab === t ? "0 1px 3px rgba(15,23,42,0.08)" : "none", textTransform: "capitalize" }}>
-                {t} {t === "upcoming" ? `(${upcomingCount})` : `(${previousCount})`}
-              </button>
-            ))}
+          <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+            <button onClick={() => setTab("upcoming")} style={{ flex: 1, padding: "8px 12px", borderRadius: 10, border: "none", background: tab === "upcoming" ? TEAL : "rgba(15,23,42,0.06)", color: tab === "upcoming" ? "#fff" : INK, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
+              Upcoming ({upcomingCount})
+            </button>
+            <button onClick={() => setTab("previous")} style={{ flex: 1, padding: "8px 12px", borderRadius: 10, border: "none", background: tab === "previous" ? TEAL : "rgba(15,23,42,0.06)", color: tab === "previous" ? "#fff" : INK, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
+              Previous ({previousCount})
+            </button>
           </div>
         </header>
 
@@ -296,29 +346,102 @@ export default function MyBookingsOverlay({
                 <section key={date}>
                   <h2 style={{ margin: "0 0 8px 4px", fontSize: 12, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: 0.5 }}>{date}</h2>
                   <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: 10 }}>
-                    {rows.map((it) => (
-                      <li key={it.id} style={{ background: "#fff", borderRadius: 14, padding: "12px 14px", boxShadow: "0 1px 3px rgba(15,23,42,0.06)", display: "flex", alignItems: "flex-start", gap: 12 }}>
-                        <div style={{ fontSize: 22, lineHeight: 1 }}>{MODULE_ICON[it.module]}</div>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                            <span style={{ fontWeight: 700, fontSize: 14, textTransform: "capitalize" }}>{it.title}</span>
-                            <StatusChip status={it.status} />
+                    {rows.map((it) => {
+                      const docName = it.doctorName || (/nurse/i.test(it.title) ? "Nurse Specialist" : /physio/i.test(it.title) ? "Dr. Rajesh K (PT)" : "Dr. Anita Rao");
+                      const userRating = reviewsMap[it.id] ?? (readReview(it.id, docName)?.stars ?? null);
+                      return (
+                        <li key={it.id} style={{ background: "#fff", borderRadius: 14, padding: "14px 16px", boxShadow: "0 1px 3px rgba(15,23,42,0.06)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                          <div style={{ display: "flex", alignItems: "flex-start", gap: 12, flex: "1 1 240px", minWidth: 200 }}>
+                            <div style={{ fontSize: 22, lineHeight: 1, marginTop: 2 }}>{MODULE_ICON[it.module]}</div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                                <span style={{ fontWeight: 700, fontSize: 14, textTransform: "capitalize", color: "#0F172A" }}>{it.title}</span>
+                                <StatusChip status={it.status} />
+                              </div>
+                              {it.subtitle && <div style={{ color: "#475569", fontSize: 12, marginTop: 2 }}>{it.subtitle}</div>}
+                              <div style={{ color: "#94A3B8", fontSize: 11, marginTop: 4 }}>{it.module} · {new Date(it.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
+                            </div>
                           </div>
-                          {it.subtitle && <div style={{ color: "#475569", fontSize: 12, marginTop: 2 }}>{it.subtitle}</div>}
-                          <div style={{ color: "#94A3B8", fontSize: 11, marginTop: 4 }}>{it.module} · {new Date(it.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
-                          {it.status === "completed" && it.doctorName && (
-                            <button onClick={() => setChatDoctor(it.doctorName!)} aria-label={`Chat with ${it.doctorName}`} style={{ marginTop: 8, display: "inline-flex", alignItems: "center", gap: 6, background: "#0D9488", color: "#fff", border: "none", borderRadius: 999, padding: "7px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", boxShadow: "0 1px 2px rgba(13,148,136,0.35)" }}>
-                              💬 Chat with {it.doctorName}
+
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "flex-end", flexShrink: 0 }}>
+                            <button
+                              type="button"
+                              onClick={() => setReviewTarget({ item: it, doctorName: docName })}
+                              aria-label={`Review ${docName}`}
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: 5,
+                                background: userRating ? "#FEF3C7" : "#FFFBEB",
+                                color: "#92400E",
+                                border: "1px solid #FDE68A",
+                                borderRadius: 999,
+                                padding: "7px 12px",
+                                fontSize: 12,
+                                fontWeight: 700,
+                                cursor: "pointer",
+                                whiteSpace: "nowrap",
+                                boxShadow: "0 1px 2px rgba(245,158,11,0.12)",
+                                transition: "all 0.15s ease",
+                              }}
+                            >
+                              <span style={{ color: "#F59E0B", fontSize: 13 }}>★</span>
+                              {userRating ? `${userRating}★ Reviewed` : "Review your doctor"}
                             </button>
-                          )}
-                        </div>
-                        {onRebook && (
-                          <button onClick={() => onRebook(it)} aria-label={`Book ${it.title} again`} style={{ alignSelf: "center", background: TEAL, color: "#fff", border: "none", borderRadius: 999, padding: "8px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap", boxShadow: "0 1px 2px rgba(13,148,136,0.35)" }}>
-                            ↻ Book again
-                          </button>
-                        )}
-                      </li>
-                    ))}
+
+                            <button
+                              type="button"
+                              onClick={() => setChatDoctor(docName)}
+                              aria-label={`Chat with ${docName}`}
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: 5,
+                                background: "#F0FDFA",
+                                color: "#0F766E",
+                                border: "1px solid #99F6E4",
+                                borderRadius: 999,
+                                padding: "7px 13px",
+                                fontSize: 12,
+                                fontWeight: 700,
+                                cursor: "pointer",
+                                whiteSpace: "nowrap",
+                                boxShadow: "0 1px 2px rgba(13,148,136,0.12)",
+                                transition: "all 0.15s ease",
+                              }}
+                            >
+                              <span style={{ fontSize: 13 }}>💬</span>
+                              Chat
+                            </button>
+
+                            {onRebook && (
+                              <button
+                                type="button"
+                                onClick={() => onRebook(it)}
+                                aria-label={`Book ${it.title} again`}
+                                style={{
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: 5,
+                                  background: TEAL,
+                                  color: "#fff",
+                                  border: "none",
+                                  borderRadius: 999,
+                                  padding: "7px 13px",
+                                  fontSize: 12,
+                                  fontWeight: 700,
+                                  cursor: "pointer",
+                                  whiteSpace: "nowrap",
+                                  boxShadow: "0 1px 2px rgba(13,148,136,0.35)",
+                                }}
+                              >
+                                ↻ Book again
+                              </button>
+                            )}
+                          </div>
+                        </li>
+                      );
+                    })}
                   </ul>
                 </section>
               ))}
@@ -326,6 +449,17 @@ export default function MyBookingsOverlay({
           )}
         </main>
         {chatDoctor && <PatientChatOverlay doctorName={chatDoctor} onClose={() => setChatDoctor(null)} />}
+        {reviewTarget && (
+          <PatientReviewModal
+            item={reviewTarget.item}
+            doctorName={reviewTarget.doctorName}
+            initialRating={reviewsMap[reviewTarget.item.id]}
+            onClose={() => setReviewTarget(null)}
+            onSaved={(rating) => {
+              setReviewsMap((prev) => ({ ...prev, [reviewTarget.item.id]: rating }));
+            }}
+          />
+        )}
       </div>
     </div>
   );
@@ -387,6 +521,288 @@ function PatientChatOverlay({ doctorName, onClose }: { doctorName: string; onClo
         <input value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") submit(); }} disabled={!live} placeholder={live ? "Type a message…" : "Chat unavailable"} style={{ flex: 1, border: "1px solid rgba(15,23,42,0.15)", borderRadius: 999, padding: "11px 16px", fontSize: 13.5, fontFamily: "'Plus Jakarta Sans', sans-serif", color: "#0F172A", background: "#F8FAFC" }} />
         <button onClick={submit} disabled={!live || !text.trim()} aria-label="Send message" style={{ background: "#0D9488", color: "#fff", border: "none", borderRadius: "50%", width: 44, height: 44, fontSize: 17, cursor: "pointer", opacity: !live || !text.trim() ? 0.5 : 1 }}>➤</button>
       </footer>
+    </div>
+  );
+}
+
+function PatientReviewModal({
+  item,
+  doctorName,
+  initialRating,
+  onClose,
+  onSaved,
+}: {
+  item: Item;
+  doctorName: string;
+  initialRating?: number;
+  onClose: () => void;
+  onSaved: (rating: number) => void;
+}) {
+  const [rating, setRating] = useState(initialRating || 5);
+  const [hoverRating, setHoverRating] = useState(0);
+  const [comment, setComment] = useState("");
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const TAGS = [
+    "Attentive & Caring",
+    "Clear Explanations",
+    "On-Time Consultation",
+    "Accurate Diagnosis",
+    "Helpful Advice",
+  ];
+
+  const toggleTag = (tag: string) => {
+    setSelectedTags((prev) =>
+      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
+    );
+  };
+
+  const handleSubmit = async () => {
+    if (!rating) return;
+    setSubmitting(true);
+    try {
+      if (item.id.startsWith("cr:")) {
+        const cleanId = item.id.replace("cr:", "");
+        await supabase
+          .from("care_requests")
+          .update({
+            rating_provider: rating,
+            rating_provider_at: new Date().toISOString(),
+          })
+          .eq("id", cleanId);
+      }
+      saveReview(item.id, doctorName, rating, comment);
+      onSaved(rating);
+      setSubmitted(true);
+      setTimeout(() => {
+        onClose();
+      }, 1200);
+    } catch {
+      saveReview(item.id, doctorName, rating, comment);
+      onSaved(rating);
+      setSubmitted(true);
+      setTimeout(() => {
+        onClose();
+      }, 1200);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const displayStars = hoverRating || rating;
+  const ratingLabels: Record<number, string> = {
+    1: "Poor experience",
+    2: "Fair, could be better",
+    3: "Good consultation",
+    4: "Very good experience",
+    5: "Exceptional care & service",
+  };
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Review your doctor"
+      onClick={onClose}
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 1200,
+        background: "rgba(15,23,42,0.65)",
+        backdropFilter: "blur(4px)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 16,
+        fontFamily: "'Plus Jakarta Sans', sans-serif",
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: "#fff",
+          borderRadius: 20,
+          maxWidth: 440,
+          width: "100%",
+          padding: 24,
+          boxShadow: "0 20px 30px -10px rgba(15,23,42,0.25)",
+          boxSizing: "border-box",
+        }}
+      >
+        {submitted ? (
+          <div style={{ textAlign: "center", padding: "20px 10px" }}>
+            <div style={{ fontSize: 44, marginBottom: 8 }}>⭐</div>
+            <h3 style={{ margin: "0 0 8px", fontSize: 18, color: "#0F172A", fontWeight: 800 }}>
+              Thank you for your feedback!
+            </h3>
+            <p style={{ margin: 0, fontSize: 13, color: "#475569", lineHeight: 1.5 }}>
+              Your {rating}-star review for <strong>{doctorName}</strong> has been saved.
+            </p>
+          </div>
+        ) : (
+          <>
+            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: "#0F172A" }}>Review your doctor</h3>
+                <p style={{ margin: "4px 0 0", fontSize: 13, color: "#475569" }}>
+                  {doctorName} · <span style={{ color: "#64748B" }}>{item.title}</span>
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Close review dialog"
+                style={{
+                  background: "#F1F5F9",
+                  border: "none",
+                  borderRadius: "50%",
+                  width: 30,
+                  height: 30,
+                  fontSize: 16,
+                  color: "#64748B",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ textAlign: "center", margin: "20px 0 14px" }}>
+              <div style={{ display: "flex", justifyContent: "center", gap: 8 }}>
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <button
+                    key={star}
+                    type="button"
+                    onClick={() => setRating(star)}
+                    onMouseEnter={() => setHoverRating(star)}
+                    onMouseLeave={() => setHoverRating(0)}
+                    aria-label={`Rate ${star} out of 5 stars`}
+                    style={{
+                      background: "transparent",
+                      border: "none",
+                      fontSize: 34,
+                      cursor: "pointer",
+                      padding: "2px 4px",
+                      color: star <= displayStars ? "#F59E0B" : "#E2E8F0",
+                      transform: star <= displayStars ? "scale(1.1)" : "scale(1)",
+                      transition: "transform 0.12s ease, color 0.12s ease",
+                    }}
+                  >
+                    ★
+                  </button>
+                ))}
+              </div>
+              <p style={{ margin: "8px 0 0", fontSize: 12, fontWeight: 700, color: displayStars ? "#D97706" : "#94A3B8" }}>
+                {displayStars ? ratingLabels[displayStars] : "Select your rating"}
+              </p>
+            </div>
+
+            <div style={{ margin: "14px 0" }}>
+              <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#475569", marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                What went well?
+              </label>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {TAGS.map((tag) => {
+                  const sel = selectedTags.includes(tag);
+                  return (
+                    <button
+                      key={tag}
+                      type="button"
+                      onClick={() => toggleTag(tag)}
+                      style={{
+                        background: sel ? "#0D9488" : "#F8FAFC",
+                        color: sel ? "#fff" : "#475569",
+                        border: sel ? "1px solid #0D9488" : "1px solid #E2E8F0",
+                        borderRadius: 999,
+                        padding: "5px 11px",
+                        fontSize: 11.5,
+                        fontWeight: 600,
+                        cursor: "pointer",
+                        transition: "all 0.15s ease",
+                      }}
+                    >
+                      {sel ? "✓ " : ""}{tag}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div style={{ margin: "14px 0" }}>
+              <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#475569", marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                Additional comments (optional)
+              </label>
+              <textarea
+                rows={3}
+                value={comment}
+                onChange={(e) => setComment(e.target.value)}
+                placeholder="Share your experience to help us improve consultation quality..."
+                style={{
+                  width: "100%",
+                  borderRadius: 10,
+                  border: "1px solid #CBD5E1",
+                  padding: "10px 12px",
+                  fontSize: 13,
+                  fontFamily: "inherit",
+                  boxSizing: "border-box",
+                  resize: "none",
+                  outline: "none",
+                }}
+              />
+            </div>
+
+            <div style={{ display: "flex", gap: 10, marginTop: 18 }}>
+              <button
+                type="button"
+                onClick={onClose}
+                style={{
+                  flex: 1,
+                  background: "#F1F5F9",
+                  color: "#334155",
+                  border: "none",
+                  borderRadius: 12,
+                  padding: "11px",
+                  fontSize: 13,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={submitting || !rating}
+                onClick={handleSubmit}
+                style={{
+                  flex: 1.4,
+                  background: !rating ? "#CBD5E1" : TEAL,
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: 12,
+                  padding: "11px",
+                  fontSize: 13,
+                  fontWeight: 700,
+                  cursor: !rating || submitting ? "not-allowed" : "pointer",
+                  boxShadow: rating ? "0 2px 6px rgba(13,148,136,0.3)" : "none",
+                }}
+              >
+                {submitting ? "Submitting…" : "Submit Review"}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }
