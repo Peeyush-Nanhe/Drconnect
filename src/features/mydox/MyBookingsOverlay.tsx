@@ -2,6 +2,17 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useSession, useRealtimeChat, ensureConsultationPasscode, type ChatMessage } from "@/features/mydox/backend";
 import { ChevronLeft, Eye, Phone, ShieldCheck, Plus, Send, Scissors, MessageSquare } from "lucide-react";
+import {
+  parseChatAttachment,
+  processImageFile,
+  processPdfFile,
+  AttachmentMenu,
+  AttachmentPreviewBar,
+  ChatAttachmentBubbleContent,
+  ImageLightboxModal,
+  type ChatAttachment,
+  type StagedAttachment
+} from "@/features/mydox/chatAttachmentUtils";
 
 function toast(msg: string) {
   let el = document.getElementById("mc-toast");
@@ -582,7 +593,12 @@ function PatientChatOverlay({ doctorName, onClose }: { doctorName: string; onClo
   const { messages, send, meId, ready, live } = useRealtimeChat(doctorName);
   const [text, setText] = useState("");
   const [localSentMessages, setLocalSentMessages] = useState<ChatMessage[]>([]);
+  const [pendingAttachment, setPendingAttachment] = useState<StagedAttachment | null>(null);
+  const [showAttachMenu, setShowAttachMenu] = useState(false);
+  const [selectedImageModal, setSelectedImageModal] = useState<{ name: string; dataUrl: string } | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+  const pdfInputRef = useRef<HTMLInputElement>(null);
 
   const [rechargeBonus, setRechargeBonus] = useState<number>(() => {
     try {
@@ -614,7 +630,7 @@ function PatientChatOverlay({ doctorName, onClose }: { doctorName: string; onClo
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
-  }, [allMessages.length]);
+  }, [allMessages.length, pendingAttachment]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -622,22 +638,69 @@ function PatientChatOverlay({ doctorName, onClose }: { doctorName: string; onClo
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const submit = async () => {
-    const t = text.trim();
-    if (!t) return;
+  const handlePhotoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
     if (isLimitReached) {
       toast("Message limit reached (0/25). Please recharge ₹200 to continue chatting.");
       return;
     }
+    try {
+      const processed = await processImageFile(file);
+      setPendingAttachment(processed);
+    } catch (err: any) {
+      toast(err?.message || "Failed to load photo");
+    } finally {
+      e.target.value = "";
+    }
+  };
+
+  const handlePdfSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (isLimitReached) {
+      toast("Message limit reached (0/25). Please recharge ₹200 to continue chatting.");
+      return;
+    }
+    try {
+      const processed = await processPdfFile(file);
+      setPendingAttachment(processed);
+    } catch (err: any) {
+      toast(err?.message || "Failed to load PDF");
+    } finally {
+      e.target.value = "";
+    }
+  };
+
+  const submit = async () => {
+    const t = text.trim();
+    if (!t && !pendingAttachment) return;
+    if (isLimitReached) {
+      toast("Message limit reached (0/25). Please recharge ₹200 to continue chatting.");
+      return;
+    }
+    let bodyToSend = t;
+    if (pendingAttachment) {
+      bodyToSend = JSON.stringify({
+        _type: "attachment",
+        fileType: pendingAttachment.type,
+        name: pendingAttachment.name,
+        size: pendingAttachment.size,
+        dataUrl: pendingAttachment.dataUrl,
+        caption: t
+      });
+    }
     setText("");
-    const ok = await send(t);
+    setPendingAttachment(null);
+    setShowAttachMenu(false);
+    const ok = await send(bodyToSend);
     if (!ok) {
       // Local fallback for offline/demo/unlinked doctor profile
       const fallbackMsg: ChatMessage = {
         id: "local_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6),
         sender_id: meId || "patient",
         recipient_id: "doctor",
-        body: t,
+        body: bodyToSend,
         created_at: new Date().toISOString(),
         thread_key: "thread"
       };
@@ -878,6 +941,7 @@ function PatientChatOverlay({ doctorName, onClose }: { doctorName: string; onClo
 
         {allMessages.map((m: ChatMessage) => {
           const mine = (meId && m.sender_id === meId) || m.id.startsWith("local_");
+          const att = parseChatAttachment(m.body);
           return (
             <div
               key={m.id}
@@ -892,7 +956,15 @@ function PatientChatOverlay({ doctorName, onClose }: { doctorName: string; onClo
                 boxShadow: "0 1px 3px rgba(0,0,0,0.25)"
               }}
             >
-              <p style={{ margin: 0, fontSize: 14, lineHeight: 1.45 }}>{m.body}</p>
+              {att ? (
+                <ChatAttachmentBubbleContent
+                  attachment={att}
+                  mine={mine}
+                  onViewImage={(img) => setSelectedImageModal(img)}
+                />
+              ) : (
+                <p style={{ margin: 0, fontSize: 14, lineHeight: 1.45 }}>{m.body}</p>
+              )}
               <p
                 style={{
                   margin: "4px 0 0",
@@ -913,6 +985,22 @@ function PatientChatOverlay({ doctorName, onClose }: { doctorName: string; onClo
         })}
         <div ref={endRef} />
       </main>
+
+      {/* Hidden File Pickers */}
+      <input
+        ref={photoInputRef}
+        type="file"
+        accept="image/*"
+        style={{ display: "none" }}
+        onChange={handlePhotoSelect}
+      />
+      <input
+        ref={pdfInputRef}
+        type="file"
+        accept="application/pdf,.pdf"
+        style={{ display: "none" }}
+        onChange={handlePdfSelect}
+      />
 
       {/* Floating Tool Buttons on Right */}
       <div style={{ position: "fixed", right: 16, bottom: 132, display: "flex", flexDirection: "column", gap: 10, zIndex: 10 }}>
@@ -967,9 +1055,18 @@ function PatientChatOverlay({ doctorName, onClose }: { doctorName: string; onClo
         </button>
       </div>
 
+      {/* Attachment Staging Preview Bar */}
+      {pendingAttachment && (
+        <AttachmentPreviewBar
+          attachment={pendingAttachment}
+          onRemove={() => setPendingAttachment(null)}
+        />
+      )}
+
       {/* Input Row */}
       <div
         style={{
+          position: "relative",
           padding: "10px 14px",
           background: "#061A14",
           display: "flex",
@@ -978,24 +1075,50 @@ function PatientChatOverlay({ doctorName, onClose }: { doctorName: string; onClo
           flexShrink: 0
         }}
       >
+        {/* Attachment Options Menu */}
+        {showAttachMenu && !isLimitReached && (
+          <AttachmentMenu
+            onSelectPhoto={() => photoInputRef.current?.click()}
+            onSelectPdf={() => pdfInputRef.current?.click()}
+            onClose={() => setShowAttachMenu(false)}
+          />
+        )}
+
         <button
-          onClick={() => toast("Attach prescription, photo or report")}
-          aria-label="Add attachment"
+          onClick={() => {
+            if (isLimitReached) {
+              toast("Message limit reached (0/25). Please recharge ₹200 to continue chatting.");
+              return;
+            }
+            setShowAttachMenu((prev) => !prev);
+          }}
+          disabled={isLimitReached}
+          aria-label="Add attachment: photo or PDF"
+          title="Attach photo or PDF file"
           style={{
             width: 42,
             height: 42,
             borderRadius: "50%",
-            background: "#123328",
+            background: showAttachMenu ? "#10B981" : "#123328",
             border: "1px solid #1C4D3E",
             color: "#fff",
-            cursor: "pointer",
+            cursor: isLimitReached ? "not-allowed" : "pointer",
+            opacity: isLimitReached ? 0.5 : 1,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            flexShrink: 0
+            flexShrink: 0,
+            transition: "background 0.2s"
           }}
         >
-          <Plus size={22} color="#fff" />
+          <Plus
+            size={22}
+            color="#fff"
+            style={{
+              transform: showAttachMenu ? "rotate(45deg)" : "none",
+              transition: "transform 0.2s"
+            }}
+          />
         </button>
 
         <input
@@ -1005,7 +1128,7 @@ function PatientChatOverlay({ doctorName, onClose }: { doctorName: string; onClo
             if (e.key === "Enter") submit();
           }}
           disabled={isLimitReached}
-          placeholder={isLimitReached ? "Message limit reached (0/25) · Recharge to chat" : "Type a message"}
+          placeholder={isLimitReached ? "Message limit reached (0/25) · Recharge to chat" : pendingAttachment ? "Add a caption (optional)" : "Type a message"}
           style={{
             flex: 1,
             background: "#0A241D",
@@ -1022,7 +1145,7 @@ function PatientChatOverlay({ doctorName, onClose }: { doctorName: string; onClo
 
         <button
           onClick={submit}
-          disabled={isLimitReached || !text.trim()}
+          disabled={isLimitReached || (!text.trim() && !pendingAttachment)}
           aria-label="Send message"
           style={{
             width: 42,
@@ -1031,8 +1154,8 @@ function PatientChatOverlay({ doctorName, onClose }: { doctorName: string; onClo
             background: "#10B981",
             border: "none",
             color: "#fff",
-            cursor: !isLimitReached && text.trim() ? "pointer" : "default",
-            opacity: !isLimitReached && text.trim() ? 1 : 0.4,
+            cursor: !isLimitReached && (text.trim() || pendingAttachment) ? "pointer" : "default",
+            opacity: !isLimitReached && (text.trim() || pendingAttachment) ? 1 : 0.4,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -1043,6 +1166,12 @@ function PatientChatOverlay({ doctorName, onClose }: { doctorName: string; onClo
           <Send size={18} color="#fff" style={{ transform: "translate(1px, -1px)" }} />
         </button>
       </div>
+
+      {/* Image Lightbox Modal */}
+      <ImageLightboxModal
+        image={selectedImageModal}
+        onClose={() => setSelectedImageModal(null)}
+      />
 
       {/* Bottom Allowance & Recharge Bar */}
       <div

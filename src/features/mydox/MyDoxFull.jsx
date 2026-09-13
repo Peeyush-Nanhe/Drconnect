@@ -26,6 +26,15 @@ import { HOME_VISIT_CONSENT } from "@/features/mydox/consent-texts";
 import { TwoWayChatModal } from "@/features/mydox/TwoWayChatModal";
 import { usePostConsultationInbox } from "@/features/mydox/post-consultation-chat/usePostConsultationChat";
 import { recordHomeVisitConsent } from "@/lib/consents.functions";
+import {
+  parseChatAttachment,
+  processImageFile,
+  processPdfFile,
+  AttachmentMenu,
+  AttachmentPreviewBar,
+  ChatAttachmentBubbleContent,
+  ImageLightboxModal
+} from "@/features/mydox/chatAttachmentUtils";
 
 /* ── Local form capture ───────────────────────────────────────────
    Completed forms stay inside this app's configured Supabase project.
@@ -2379,13 +2388,17 @@ function ConsultationOverDialog({ item, onClose, onConfirm }) {
   );
 }
 
-/* ═══ Full Screen: Doctor-Side Consultation Chat ═════════════════════════ */
 /* ═══ Full Screen: Consultation Chat (matching design spec) ═════════════════════════ */
 function CalendarChat({ patientName, onClose, specialty, subtitle }) {
   const { messages, send, meId, ready, live } = useRealtimeChat(patientName);
   const [text, setText] = useState("");
   const [localSentMessages, setLocalSentMessages] = useState([]);
+  const [pendingAttachment, setPendingAttachment] = useState(null);
+  const [showAttachMenu, setShowAttachMenu] = useState(false);
+  const [selectedImageModal, setSelectedImageModal] = useState(null);
   const endRef = useRef(null);
+  const photoInputRef = useRef(null);
+  const pdfInputRef = useRef(null);
 
   const BASE_LIMIT = 25;
 
@@ -2407,7 +2420,7 @@ function CalendarChat({ patientName, onClose, specialty, subtitle }) {
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
-  }, [allMessages.length]);
+  }, [allMessages.length, pendingAttachment]);
 
   useEffect(() => {
     const onKey = (e) => { if (e.key === "Escape") onClose(); };
@@ -2415,17 +2428,56 @@ function CalendarChat({ patientName, onClose, specialty, subtitle }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  const handlePhotoSelect = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const processed = await processImageFile(file);
+      setPendingAttachment(processed);
+    } catch (err) {
+      toast(err?.message || "Failed to load photo");
+    } finally {
+      e.target.value = "";
+    }
+  };
+
+  const handlePdfSelect = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const processed = await processPdfFile(file);
+      setPendingAttachment(processed);
+    } catch (err) {
+      toast(err?.message || "Failed to load PDF");
+    } finally {
+      e.target.value = "";
+    }
+  };
+
   const submit = async () => {
     const t = text.trim();
-    if (!t) return;
+    if (!t && !pendingAttachment) return;
+    let bodyToSend = t;
+    if (pendingAttachment) {
+      bodyToSend = JSON.stringify({
+        _type: "attachment",
+        fileType: pendingAttachment.type,
+        name: pendingAttachment.name,
+        size: pendingAttachment.size,
+        dataUrl: pendingAttachment.dataUrl,
+        caption: t
+      });
+    }
     setText("");
-    const ok = await send(t);
+    setPendingAttachment(null);
+    setShowAttachMenu(false);
+    const ok = await send(bodyToSend);
     if (!ok) {
       const fallbackMsg = {
         id: "local_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6),
         sender_id: meId || "sender",
         recipient_id: "recipient",
-        body: t,
+        body: bodyToSend,
         created_at: new Date().toISOString(),
         thread_key: "thread"
       };
@@ -2470,113 +2522,139 @@ function CalendarChat({ patientName, onClose, specialty, subtitle }) {
         color: "#fff"
       }}
     >
+      {/* Hidden File Pickers */}
+      <input
+        ref={photoInputRef}
+        type="file"
+        accept="image/*"
+        style={{ display: "none" }}
+        onChange={handlePhotoSelect}
+      />
+      <input
+        ref={pdfInputRef}
+        type="file"
+        accept="application/pdf,.pdf"
+        style={{ display: "none" }}
+        onChange={handlePdfSelect}
+      />
+
       {/* Top Header */}
       <header
         style={{
-          background: "#061A14",
-          color: "#fff",
-          padding: "12px 16px",
           display: "flex",
           alignItems: "center",
-          gap: 12,
-          flexShrink: 0,
-          borderBottom: "1px solid #0E2E23"
+          justifyContent: "space-between",
+          padding: "12px 16px",
+          background: "#061A14",
+          borderBottom: "1px solid #0E2E23",
+          flexShrink: 0
         }}
       >
-        <button
-          onClick={onClose}
-          aria-label="Back"
-          style={{
-            background: "transparent",
-            border: "none",
-            color: "#fff",
-            cursor: "pointer",
-            display: "flex",
-            alignItems: "center",
-            padding: 4
-          }}
-        >
-          <ChevronLeft size={24} color="#fff" />
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <button
+            onClick={onClose}
+            aria-label="Back to appointments"
+            style={{
+              background: "transparent",
+              border: "none",
+              color: "#fff",
+              cursor: "pointer",
+              padding: 4,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center"
+            }}
+          >
+            <ChevronLeft size={24} />
+          </button>
 
-        <div
-          style={{
-            width: 42,
-            height: 42,
-            borderRadius: "50%",
-            background: "#00875A",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontWeight: 800,
-            fontSize: 16,
-            color: "#fff",
-            flexShrink: 0
-          }}
-        >
-          {initials}
+          <div
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: "50%",
+              background: "#123328",
+              border: "1.5px solid #10B981",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontWeight: 800,
+              fontSize: 14,
+              color: "#10B981"
+            }}
+          >
+            {initials}
+          </div>
+
+          <div>
+            <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800, color: "#fff", lineHeight: 1.2 }}>
+              {displayName}
+            </h3>
+            <p style={{ margin: "2px 0 0", fontSize: 11, color: "#8EE0C4" }}>
+              {live ? "Online" : "Active"} · {sub}
+            </p>
+          </div>
         </div>
 
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <p style={{ margin: 0, fontWeight: 800, fontSize: 16, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-            {displayName}
-          </p>
-          <p style={{ margin: "2px 0 0", fontSize: 12, color: "#8EABA0", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-            Online · {sub}
-          </p>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <button
+            onClick={() => toast("Consultation History")}
+            aria-label="View history"
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: "50%",
+              background: "transparent",
+              border: "none",
+              color: "#C5D1B8",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center"
+            }}
+          >
+            <Eye size={19} />
+          </button>
+          <button
+            onClick={() => toast(`Calling ${displayName}…`)}
+            aria-label={`Call ${displayName}`}
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: "50%",
+              background: "transparent",
+              border: "none",
+              color: "#C5D1B8",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center"
+            }}
+          >
+            <Phone size={19} />
+          </button>
         </div>
-
-        <button
-          onClick={() => toast("Viewing medical history & case file")}
-          aria-label="View history"
-          style={{
-            background: "transparent",
-            border: "none",
-            color: "#fff",
-            cursor: "pointer",
-            padding: 6,
-            display: "flex",
-            alignItems: "center"
-          }}
-        >
-          <Eye size={20} color="#fff" />
-        </button>
-
-        <button
-          onClick={() => toast(`Calling ${displayName}...`)}
-          aria-label="Phone call"
-          style={{
-            background: "transparent",
-            border: "none",
-            color: "#fff",
-            cursor: "pointer",
-            padding: 6,
-            display: "flex",
-            alignItems: "center"
-          }}
-        >
-          <Phone size={20} color="#fff" />
-        </button>
       </header>
 
-      {/* Top 3 Quota Allowance Cards */}
+      {/* Top 3 Metric Cards */}
       <div
         style={{
-          display: "flex",
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr 1fr",
           gap: 10,
-          padding: "12px 14px 8px",
-          background: "#061A14",
+          padding: "10px 14px",
+          background: "#04120E",
+          borderBottom: "1px solid #0E2E23",
           flexShrink: 0
         }}
       >
         <div
           style={{
-            flex: 1,
-            background: "#0A241D",
-            border: "1px solid #144436",
+            background: "#081E17",
             borderRadius: 14,
-            padding: "10px 6px",
-            textAlign: "center"
+            padding: "10px 8px",
+            textAlign: "center",
+            border: "1px solid #123328"
           }}
         >
           <div style={{ color: messagesRemaining > 5 ? "#10B981" : messagesRemaining > 0 ? "#F59E0B" : "#EF4444", fontWeight: 800, fontSize: 17 }}>
@@ -2587,12 +2665,11 @@ function CalendarChat({ patientName, onClose, specialty, subtitle }) {
 
         <div
           style={{
-            flex: 1,
-            background: "#0A241D",
-            border: "1px solid #144436",
+            background: "#081E17",
             borderRadius: 14,
-            padding: "10px 6px",
-            textAlign: "center"
+            padding: "10px 8px",
+            textAlign: "center",
+            border: "1px solid #123328"
           }}
         >
           <div style={{ color: "#F59E0B", fontWeight: 800, fontSize: 17 }}>10:00</div>
@@ -2601,12 +2678,11 @@ function CalendarChat({ patientName, onClose, specialty, subtitle }) {
 
         <div
           style={{
-            flex: 1,
-            background: "#0A241D",
-            border: "1px solid #144436",
+            background: "#081E17",
             borderRadius: 14,
-            padding: "10px 6px",
-            textAlign: "center"
+            padding: "10px 8px",
+            textAlign: "center",
+            border: "1px solid #123328"
           }}
         >
           <div style={{ color: "#38BDF8", fontWeight: 800, fontSize: 17 }}>2/2</div>
@@ -2614,7 +2690,7 @@ function CalendarChat({ patientName, onClose, specialty, subtitle }) {
         </div>
       </div>
 
-      {/* Scrollable Message List */}
+      {/* Main Chat Stream */}
       <main
         style={{
           flex: 1,
@@ -2656,6 +2732,7 @@ function CalendarChat({ patientName, onClose, specialty, subtitle }) {
 
         {allMessages.map((m) => {
           const mine = (meId && m.sender_id === meId) || m.id?.startsWith("local_");
+          const att = parseChatAttachment(m.body);
           return (
             <div
               key={m.id}
@@ -2670,7 +2747,15 @@ function CalendarChat({ patientName, onClose, specialty, subtitle }) {
                 boxShadow: "0 1px 3px rgba(0,0,0,0.25)"
               }}
             >
-              <p style={{ margin: 0, fontSize: 14, lineHeight: 1.45 }}>{m.body}</p>
+              {att ? (
+                <ChatAttachmentBubbleContent
+                  attachment={att}
+                  mine={mine}
+                  onViewImage={(img) => setSelectedImageModal(img)}
+                />
+              ) : (
+                <p style={{ margin: 0, fontSize: 14, lineHeight: 1.45 }}>{m.body}</p>
+              )}
               <p
                 style={{
                   margin: "4px 0 0",
@@ -2745,9 +2830,18 @@ function CalendarChat({ patientName, onClose, specialty, subtitle }) {
         </div>
       </main>
 
+      {/* Attachment Staging Preview Bar */}
+      {pendingAttachment && (
+        <AttachmentPreviewBar
+          attachment={pendingAttachment}
+          onRemove={() => setPendingAttachment(null)}
+        />
+      )}
+
       {/* Input Row */}
       <div
         style={{
+          position: "relative",
           padding: "10px 14px calc(10px + env(safe-area-inset-bottom))",
           background: "#061A14",
           borderTop: "1px solid #0E2E23",
@@ -2757,24 +2851,42 @@ function CalendarChat({ patientName, onClose, specialty, subtitle }) {
           flexShrink: 0
         }}
       >
+        {/* Attachment Options Menu */}
+        {showAttachMenu && (
+          <AttachmentMenu
+            onSelectPhoto={() => photoInputRef.current?.click()}
+            onSelectPdf={() => pdfInputRef.current?.click()}
+            onClose={() => setShowAttachMenu(false)}
+          />
+        )}
+
         <button
-          onClick={() => toast("Attach prescription, photo or report")}
-          aria-label="Add attachment"
+          onClick={() => setShowAttachMenu((prev) => !prev)}
+          aria-label="Add attachment: photo or PDF"
+          title="Attach photo or PDF file"
           style={{
             width: 42,
             height: 42,
             borderRadius: "50%",
-            background: "#123328",
+            background: showAttachMenu ? "#10B981" : "#123328",
             border: "1px solid #1C4D3E",
             color: "#fff",
             cursor: "pointer",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            flexShrink: 0
+            flexShrink: 0,
+            transition: "background 0.2s"
           }}
         >
-          <Plus size={22} color="#fff" />
+          <Plus
+            size={22}
+            color="#fff"
+            style={{
+              transform: showAttachMenu ? "rotate(45deg)" : "none",
+              transition: "transform 0.2s"
+            }}
+          />
         </button>
 
         <input
@@ -2783,7 +2895,7 @@ function CalendarChat({ patientName, onClose, specialty, subtitle }) {
           onKeyDown={(e) => {
             if (e.key === "Enter") submit();
           }}
-          placeholder="Type a message"
+          placeholder={pendingAttachment ? "Add a caption (optional)" : "Type a message"}
           style={{
             flex: 1,
             background: "#0A241D",
@@ -2799,7 +2911,7 @@ function CalendarChat({ patientName, onClose, specialty, subtitle }) {
 
         <button
           onClick={submit}
-          disabled={!text.trim()}
+          disabled={!text.trim() && !pendingAttachment}
           aria-label="Send message"
           style={{
             width: 42,
@@ -2808,8 +2920,8 @@ function CalendarChat({ patientName, onClose, specialty, subtitle }) {
             background: "#10B981",
             border: "none",
             color: "#fff",
-            cursor: text.trim() ? "pointer" : "default",
-            opacity: text.trim() ? 1 : 0.4,
+            cursor: text.trim() || pendingAttachment ? "pointer" : "default",
+            opacity: text.trim() || pendingAttachment ? 1 : 0.4,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -2820,6 +2932,12 @@ function CalendarChat({ patientName, onClose, specialty, subtitle }) {
           <Send size={18} color="#fff" style={{ transform: "translate(1px, -1px)" }} />
         </button>
       </div>
+
+      {/* Image Lightbox Modal */}
+      <ImageLightboxModal
+        image={selectedImageModal}
+        onClose={() => setSelectedImageModal(null)}
+      />
     </div>
   );
 }
