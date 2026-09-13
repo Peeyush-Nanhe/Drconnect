@@ -368,6 +368,7 @@ export default function MyBookingsOverlay({
                     {rows.map((it) => {
                       const docName = it.doctorName || (/nurse/i.test(it.title) ? "Nurse Specialist" : /physio/i.test(it.title) ? "Dr. Rajesh K (PT)" : "Dr. Anita Rao");
                       const userRating = reviewsMap[it.id] ?? (readReview(it.id, docName)?.stars ?? null);
+                      const isConsultationOver = ["completed", "delivered", "closed", "finished"].includes((it.status || "").toLowerCase());
                       return (
                         <li
                           key={it.id}
@@ -457,28 +458,33 @@ export default function MyBookingsOverlay({
 
                             <button
                               type="button"
+                              disabled={!isConsultationOver}
+                              aria-disabled={!isConsultationOver}
                               onClick={(e) => {
                                 e.stopPropagation();
+                                if (!isConsultationOver) return;
                                 setChatDoctor(docName);
                               }}
-                              aria-label={`Chat with ${docName}`}
+                              aria-label={isConsultationOver ? `Chat with ${docName}` : `Chat available after consultation`}
+                              title={isConsultationOver ? `Chat with ${docName}` : "Chat will be enabled once consultation is over"}
                               style={{
                                 display: "inline-flex",
                                 alignItems: "center",
                                 gap: 5,
-                                background: "#F0FDFA",
-                                color: "#0F766E",
-                                border: "1px solid #99F6E4",
+                                background: isConsultationOver ? "#F0FDFA" : "#F8FAFC",
+                                color: isConsultationOver ? "#0F766E" : "#94A3B8",
+                                border: isConsultationOver ? "1px solid #99F6E4" : "1px solid #E2E8F0",
                                 borderRadius: 999,
                                 padding: "8px 12px",
                                 fontSize: 12,
                                 fontWeight: 700,
-                                cursor: "pointer",
+                                cursor: isConsultationOver ? "pointer" : "not-allowed",
                                 whiteSpace: "nowrap",
-                                boxShadow: "0 1px 2px rgba(13,148,136,0.12)",
+                                boxShadow: isConsultationOver ? "0 1px 2px rgba(13,148,136,0.12)" : "none",
+                                opacity: isConsultationOver ? 1 : 0.65,
                               }}
                             >
-                              <span style={{ fontSize: 13 }}>💬</span>
+                              <span style={{ fontSize: 13, filter: isConsultationOver ? "none" : "grayscale(100%)" }}>💬</span>
                               Chat
                             </button>
 
@@ -967,6 +973,7 @@ function BookingOtpModal({
 }) {
   const [otp, setOtp] = useState<string>(target.item.otp ? target.item.otp.slice(0, 4) : "");
   const [loading, setLoading] = useState<boolean>(!target.item.otp);
+  const isConsultationOver = ["completed", "delivered", "closed", "finished"].includes((target.item.status || "").toLowerCase());
 
   useEffect(() => {
     let mounted = true;
@@ -1182,24 +1189,31 @@ function BookingOtpModal({
         <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
           <button
             type="button"
-            onClick={() => onOpenChat(target.doctorName)}
+            disabled={!isConsultationOver}
+            aria-disabled={!isConsultationOver}
+            onClick={() => {
+              if (isConsultationOver) onOpenChat(target.doctorName);
+            }}
+            title={isConsultationOver ? `Chat with ${displayDocName}` : "Chat will be enabled once your consultation is over"}
             style={{
               flex: 1,
               display: "inline-flex",
               alignItems: "center",
               justifyContent: "center",
               gap: 6,
-              background: "#F0FDFA",
-              color: "#0F766E",
-              border: "1px solid #99F6E4",
+              background: isConsultationOver ? "#F0FDFA" : "#F8FAFC",
+              color: isConsultationOver ? "#0F766E" : "#94A3B8",
+              border: isConsultationOver ? "1px solid #99F6E4" : "1px solid #E2E8F0",
               borderRadius: 12,
               padding: "11px 14px",
               fontSize: 13,
               fontWeight: 700,
-              cursor: "pointer",
+              cursor: isConsultationOver ? "pointer" : "not-allowed",
+              opacity: isConsultationOver ? 1 : 0.65,
             }}
           >
-            💬 Chat with Doctor
+            <span style={{ filter: isConsultationOver ? "none" : "grayscale(100%)" }}>💬</span>
+            {isConsultationOver ? "Chat with Doctor" : "Chat (after visit)"}
           </button>
           <button
             type="button"
@@ -1220,6 +1234,11 @@ function BookingOtpModal({
             Done
           </button>
         </div>
+        {!isConsultationOver && (
+          <div style={{ fontSize: 11, color: "#94A3B8", textAlign: "center", marginTop: 8 }}>
+            🔒 Chat unlocks once your doctor completes the consultation.
+          </div>
+        )}
       </div>
     </div>
   );
