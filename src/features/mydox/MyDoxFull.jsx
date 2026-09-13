@@ -7146,247 +7146,26 @@ function HistoryCompletedActions({ requestId, providerName, specialty }) {
   );
 }
 
-/* ── Patient-side previous consultations ─────────────────────────
-   Lists this patient's care_requests grouped by outcome (paid, unpaid,
-   pending OTP, in progress, cancelled, failed, completed). Each row
-   carries a short "next step" advice hint. */
 function PatientHistoryOverlay({ onClose, onRebook }) {
-  const [uid, setUid] = useState(null);
-  const [rows, setRows] = useState([]);
-  const [names, setNames] = useState({});
-  const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState("all");
-
-  useEffect(() => {
-    let m = true;
-    (async () => {
-      const { data: sess } = await supabase.auth.getSession();
-      const u = sess.session?.user?.id || null;
-      if (!m) return;
-      setUid(u);
-      if (!u) { setLoading(false); return; }
-      const { data } = await supabase.from("care_requests")
-        .select("id, patient_id, specialty, emergency, accepted_by, accepted_at, status, paid_at, amount, otp, otp_verified_at, arrival_deadline, completed_at, created_at, updated_at")
-        .eq("patient_id", u)
-        .order("created_at", { ascending: false })
-        .limit(200);
-      if (!m) return;
-      const list = data || [];
-      setRows(list);
-      const provIds = Array.from(new Set(list.map(r => r.accepted_by).filter(Boolean)));
-      if (provIds.length) {
-        const { data: profs } = await supabase.from("profiles").select("id, full_name").in("id", provIds);
-        if (!m) return;
-        const nm = {}; (profs || []).forEach(p => { nm[p.id] = p.full_name || "Provider"; });
-        setNames(nm);
-      }
-      setLoading(false);
-    })();
-    return () => { m = false; };
-  }, []);
-
-  function classify(r) {
-    if (r.status === "completed") return { key: "completed", label: "Consultation over", color: "#065F46", bg: "#D1FAE5", advice: "Rate the doctor and book a follow-up if needed." };
-    if (r.status === "cancelled") return { key: "cancelled", label: "Cancelled", color: "#4B5563", bg: "#F3F4F6", advice: "You can book again anytime — nothing was charged." };
-    if (r.status === "failed") return { key: "failed", label: "Failed / expired", color: "#B91C1C", bg: "#FEE2E2", advice: "Payment window expired. Rebook if you still need care." };
-    if (r.status === "open") return { key: "pending", label: "Finding medico", color: "#92400E", bg: "#FEF3C7", advice: "Still searching. You can wait or cancel and try a nearby hub." };
-    if (r.status === "accepted") {
-      if (!r.paid_at) return { key: "unpaid", label: "Unpaid — awaiting payment", color: "#B45309", bg: "#FEF3C7", advice: "Complete the payment so your medico can be dispatched." };
-      if (!r.otp_verified_at) return { key: "paid_pending", label: "Paid — OTP pending", color: "#92400E", bg: "#FEF3C7", advice: "Meet the doctor in person and share your 4-digit OTP." };
-      return { key: "in_progress", label: "Consultation in progress", color: "#1E40AF", bg: "#DBEAFE", advice: "Tap 'Consultation over' once the doctor is done." };
-    }
-    return { key: "other", label: r.status || "—", color: "#4B5563", bg: "#F3F4F6", advice: "" };
-  }
-
-  const enriched = useMemo(() => rows.map(r => ({ r, cat: classify(r) })), [rows]);
-  const counts = useMemo(() => {
-    const c = { all: enriched.length, unpaid: 0, paid_pending: 0, in_progress: 0, pending: 0, completed: 0, cancelled: 0, failed: 0 };
-    enriched.forEach(({ cat }) => { if (c[cat.key] !== undefined) c[cat.key]++; });
-    return c;
-  }, [enriched]);
-  const visible = filter === "all" ? enriched : enriched.filter(x => x.cat.key === filter);
-  const chips = [
-    ["all", "All"], ["unpaid", "Unpaid"], ["paid_pending", "OTP pending"], ["in_progress", "In progress"],
-    ["pending", "Finding"], ["completed", "Over"], ["cancelled", "Cancelled"], ["failed", "Failed"],
-  ];
-
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.55)", zIndex: 70, display: "flex", justifyContent: "center", alignItems: "flex-end" }}>
-      <div style={{ width: "100%", maxWidth: 420, background: "#fff", borderTopLeftRadius: 22, borderTopRightRadius: 22, maxHeight: "88vh", display: "flex", flexDirection: "column", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
-        <div style={{ padding: "14px 16px", borderBottom: `1px solid ${C.line}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div>
-            <p style={{ margin: 0, fontWeight: 800, color: C.ink, fontSize: 15 }}>Previous consultations</p>
-            <p style={{ margin: "2px 0 0", fontSize: 11, color: C.sub, fontWeight: 600 }}>Status, amount and next-step advice</p>
-          </div>
-          <button onClick={onClose} style={{ background: "transparent", border: "none", fontSize: 22, color: C.sub, cursor: "pointer", lineHeight: 1 }}>×</button>
-        </div>
-        <div style={{ padding: "10px 12px", display: "flex", gap: 6, overflowX: "auto", borderBottom: `1px solid ${C.line}` }}>
-          {chips.map(([k, l]) => (
-            <button key={k} onClick={() => setFilter(k)} style={{ flexShrink: 0, background: filter === k ? C.primary : C.canvas, color: filter === k ? "#fff" : C.ink, border: "none", borderRadius: 99, padding: "6px 11px", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
-              {l}{counts[k] ? ` · ${counts[k]}` : ""}
-            </button>
-          ))}
-        </div>
-        <div style={{ flex: 1, overflowY: "auto", padding: "10px 14px 20px" }}>
-          {["all", "completed"].includes(filter) && <HomeVisitPanel audience="patient" completedOnly />}
-          {loading && <p style={{ color: C.sub, fontSize: 12 }}>Loading…</p>}
-          {!loading && visible.length === 0 && <p style={{ color: C.sub, fontSize: 12, marginTop: 14 }}>No consultations in this category yet.</p>}
-          {visible.map(({ r, cat }) => {
-            const providerName = r.accepted_by ? (names[r.accepted_by] || "Provider") : "—";
-            const when = new Date(r.created_at).toLocaleString([], { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
-            return (
-              <div key={r.id} style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 14, padding: "11px 12px", marginTop: 8 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ margin: 0, fontWeight: 800, color: C.ink, fontSize: 13 }}>{r.emergency ? "🚨 " : ""}{r.specialty || "Consultation"}</p>
-                    <p style={{ margin: "2px 0 0", fontSize: 10.5, color: C.sub, fontWeight: 600 }}>{providerName} · {when}</p>
-                  </div>
-                  {cat.key === "completed" && <HistoryCompletedActions requestId={r.id} providerName={providerName} specialty={r.specialty} />}
-                  <span style={{ background: cat.bg, color: cat.color, fontSize: 10, fontWeight: 800, borderRadius: 99, padding: "3px 8px", flexShrink: 0, whiteSpace: "nowrap" }}>{cat.label}</span>
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
-                  {r.amount != null && <span style={{ fontSize: 10.5, fontWeight: 800, color: r.paid_at ? "#065F46" : C.sub, background: r.paid_at ? "#D1FAE5" : C.canvas, borderRadius: 99, padding: "2px 8px" }}>{r.paid_at ? "Paid" : "Unpaid"} · {inr(r.amount)}</span>}
-                  {r.otp_verified_at && <span style={{ fontSize: 10.5, fontWeight: 800, color: "#1E40AF", background: "#DBEAFE", borderRadius: 99, padding: "2px 8px" }}>OTP verified</span>}
-                  {r.completed_at && <span style={{ fontSize: 10.5, fontWeight: 700, color: C.sub }}>Completed {new Date(r.completed_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>}
-                </div>
-                {cat.advice && (
-                  <p style={{ margin: "8px 0 0", fontSize: 11, color: cat.color, fontWeight: 700, lineHeight: 1.4, background: cat.bg, borderRadius: 10, padding: "7px 9px" }}>
-                    💡 {cat.advice}
-                  </p>
-                )}
-                {(cat.key === "cancelled" || cat.key === "failed" || cat.key === "completed") && onRebook && (
-                  <div style={{ marginTop: 8, display: "flex", justifyContent: "flex-end" }}>
-                    <button onClick={() => { onRebook(r); onClose(); }} style={{ background: C.primarySoft, color: C.primaryDeep, border: "none", borderRadius: 10, padding: "7px 12px", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
-                      Book again
-                    </button>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </div>
+    <MyBookingsOverlay
+      initialTab="previous"
+      title="Consultation History"
+      onClose={onClose}
+      onRebook={onRebook}
+    />
   );
 }
 
-// Full-page (in-app) variant of PatientHistoryOverlay — same data & filters,
-// styled as a page (no dim backdrop, full viewport, back button in header).
+// Full-page (in-app) variant of PatientHistoryOverlay — same unified bookings listview.
 function PatientHistoryPage({ onClose, onRebook }) {
-  const [uid, setUid] = useState(null);
-  const [rows, setRows] = useState([]);
-  const [names, setNames] = useState({});
-  const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState("all");
-
-  useEffect(() => {
-    let m = true;
-    (async () => {
-      const { data: sess } = await supabase.auth.getSession();
-      const u = sess.session?.user?.id || null;
-      if (!m) return;
-      setUid(u);
-      if (!u) { setLoading(false); return; }
-      const { data } = await supabase.from("care_requests")
-        .select("id, patient_id, specialty, emergency, accepted_by, accepted_at, status, paid_at, amount, otp, otp_verified_at, arrival_deadline, completed_at, created_at, updated_at")
-        .eq("patient_id", u)
-        .order("created_at", { ascending: false })
-        .limit(200);
-      if (!m) return;
-      const list = data || [];
-      setRows(list);
-      const provIds = Array.from(new Set(list.map(r => r.accepted_by).filter(Boolean)));
-      if (provIds.length) {
-        const { data: profs } = await supabase.from("profiles").select("id, full_name").in("id", provIds);
-        if (!m) return;
-        const nm = {}; (profs || []).forEach(p => { nm[p.id] = p.full_name || "Provider"; });
-        setNames(nm);
-      }
-      setLoading(false);
-    })();
-    return () => { m = false; };
-  }, []);
-
-  function classify(r) {
-    if (r.status === "completed") return { key: "completed", label: "Consultation over", color: "#065F46", bg: "#D1FAE5", advice: "Rate the doctor and book a follow-up if needed." };
-    if (r.status === "cancelled") return { key: "cancelled", label: "Cancelled", color: "#4B5563", bg: "#F3F4F6", advice: "You can book again anytime — nothing was charged." };
-    if (r.status === "failed") return { key: "failed", label: "Failed / expired", color: "#B91C1C", bg: "#FEE2E2", advice: "Payment window expired. Rebook if you still need care." };
-    if (r.status === "open") return { key: "pending", label: "Finding medico", color: "#92400E", bg: "#FEF3C7", advice: "Still searching. You can wait or cancel and try a nearby hub." };
-    if (r.status === "accepted") {
-      if (!r.paid_at) return { key: "unpaid", label: "Unpaid — awaiting payment", color: "#B45309", bg: "#FEF3C7", advice: "Complete the payment so your medico can be dispatched." };
-      if (!r.otp_verified_at) return { key: "paid_pending", label: "Paid — OTP pending", color: "#92400E", bg: "#FEF3C7", advice: "Meet the doctor in person and share your 4-digit OTP." };
-      return { key: "in_progress", label: "Consultation in progress", color: "#1E40AF", bg: "#DBEAFE", advice: "Tap 'Consultation over' once the doctor is done." };
-    }
-    return { key: "other", label: r.status || "—", color: "#4B5563", bg: "#F3F4F6", advice: "" };
-  }
-
-  const enriched = useMemo(() => rows.map(r => ({ r, cat: classify(r) })), [rows]);
-  const counts = useMemo(() => {
-    const c = { all: enriched.length, unpaid: 0, paid_pending: 0, in_progress: 0, pending: 0, completed: 0, cancelled: 0, failed: 0 };
-    enriched.forEach(({ cat }) => { if (c[cat.key] !== undefined) c[cat.key]++; });
-    return c;
-  }, [enriched]);
-  const visible = filter === "all" ? enriched : enriched.filter(x => x.cat.key === filter);
-  const chips = [
-    ["all", "All"], ["unpaid", "Unpaid"], ["paid_pending", "OTP pending"], ["in_progress", "In progress"],
-    ["pending", "Finding"], ["completed", "Over"], ["cancelled", "Cancelled"], ["failed", "Failed"],
-  ];
-
   return (
-    <div style={{ position: "fixed", inset: 0, background: "#fff", zIndex: 80, display: "flex", flexDirection: "column", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
-      <div style={{ padding: "14px 16px", background: "linear-gradient(135deg,#0F172A,#1E293B)", display: "flex", alignItems: "center", gap: 12, color: "#fff" }}>
-        <button onClick={onClose} aria-label="Back" style={{ background: "rgba(255,255,255,.14)", border: "none", width: 34, height: 34, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#fff", fontSize: 20, lineHeight: 1 }}>‹</button>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <p style={{ margin: 0, fontWeight: 800, fontSize: 16 }}>Consultation History</p>
-          <p style={{ margin: "2px 0 0", fontSize: 11, color: "rgba(255,255,255,.8)", fontWeight: 600 }}>Status, amount and next-step advice</p>
-        </div>
-      </div>
-      <div style={{ padding: "10px 12px", display: "flex", gap: 6, overflowX: "auto", borderBottom: `1px solid ${C.line}`, background: "#fff" }}>
-        {chips.map(([k, l]) => (
-          <button key={k} onClick={() => setFilter(k)} style={{ flexShrink: 0, background: filter === k ? C.primary : C.canvas, color: filter === k ? "#fff" : C.ink, border: "none", borderRadius: 99, padding: "6px 11px", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
-            {l}{counts[k] ? ` · ${counts[k]}` : ""}
-          </button>
-        ))}
-      </div>
-      <div style={{ flex: 1, overflowY: "auto", padding: "10px 14px 24px", background: C.canvas }}>
-        {["all", "completed"].includes(filter) && <HomeVisitPanel audience="patient" completedOnly />}
-          {loading && <p style={{ color: C.sub, fontSize: 12 }}>Loading…</p>}
-        {!loading && visible.length === 0 && <p style={{ color: C.sub, fontSize: 12, marginTop: 14 }}>No consultations in this category yet.</p>}
-        {visible.map(({ r, cat }) => {
-          const providerName = r.accepted_by ? (names[r.accepted_by] || "Provider") : "—";
-          const when = new Date(r.created_at).toLocaleString([], { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
-          return (
-            <div key={r.id} style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 14, padding: "11px 12px", marginTop: 8 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ margin: 0, fontWeight: 800, color: C.ink, fontSize: 13 }}>{r.emergency ? "🚨 " : ""}{r.specialty || "Consultation"}</p>
-                  <p style={{ margin: "2px 0 0", fontSize: 10.5, color: C.sub, fontWeight: 600 }}>{providerName} · {when}</p>
-                </div>
-                {cat.key === "completed" && <HistoryCompletedActions requestId={r.id} providerName={providerName} specialty={r.specialty} />}
-                <span style={{ background: cat.bg, color: cat.color, fontSize: 10, fontWeight: 800, borderRadius: 99, padding: "3px 8px", flexShrink: 0, whiteSpace: "nowrap" }}>{cat.label}</span>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
-                {r.amount != null && <span style={{ fontSize: 10.5, fontWeight: 800, color: r.paid_at ? "#065F46" : C.sub, background: r.paid_at ? "#D1FAE5" : "#fff", border: `1px solid ${C.line}`, borderRadius: 99, padding: "2px 8px" }}>{r.paid_at ? "Paid" : "Unpaid"} · {inr(r.amount)}</span>}
-                {r.otp_verified_at && <span style={{ fontSize: 10.5, fontWeight: 800, color: "#1E40AF", background: "#DBEAFE", borderRadius: 99, padding: "2px 8px" }}>OTP verified</span>}
-                {r.completed_at && <span style={{ fontSize: 10.5, fontWeight: 700, color: C.sub }}>Completed {new Date(r.completed_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>}
-              </div>
-              {cat.advice && (
-                <p style={{ margin: "8px 0 0", fontSize: 11, color: cat.color, fontWeight: 700, lineHeight: 1.4, background: cat.bg, borderRadius: 10, padding: "7px 9px" }}>
-                  💡 {cat.advice}
-                </p>
-              )}
-              {(cat.key === "cancelled" || cat.key === "failed" || cat.key === "completed") && onRebook && (
-                <div style={{ marginTop: 8, display: "flex", justifyContent: "flex-end" }}>
-                  <button onClick={() => { onRebook(r); onClose(); }} style={{ background: C.primarySoft, color: C.primaryDeep, border: "none", borderRadius: 10, padding: "7px 12px", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
-                    Book again
-                  </button>
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
+    <MyBookingsOverlay
+      initialTab="previous"
+      title="Consultation History"
+      onClose={onClose}
+      onRebook={onRebook}
+    />
   );
 }
 
@@ -13912,6 +13691,8 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
   const [showClinicSkin, setShowClinicSkin] = useState(false); // white-label clinic skin demo
   const [showNotifs, setShowNotifs] = useState(false); // notifications center
   const [showMyBookings, setShowMyBookings] = useState(false); // unified bookings overlay
+  const [bookingsInitialTab, setBookingsInitialTab] = useState("upcoming");
+  const [bookingsTitle, setBookingsTitle] = useState("My Bookings");
   const [showSeva, setShowSeva] = useState(false); // free-care (Seva) enrolment
   const [showSocietyShield, setShowSocietyShield] = useState(false); // society shield enrolment
   const [showInsurance, setShowInsurance] = useState(false); // B2B insurance member portal
@@ -14619,7 +14400,9 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
     const handlers = {
       search: () => setSearchFocused(true), ai: () => askAIWith(), companion: () => setShowCompanion(true),
       aiHistory: () => setShowAIHistory(true), emergency: () => setShowEmergency(true), sos: () => setShowSOS(true),
-      bookings: () => setShowMyBookings(true), history: () => setShowHistoryPage(true), records: () => setShowRecords(true),
+      bookings: () => { setBookingsInitialTab("upcoming"); setBookingsTitle("My Bookings"); setShowMyBookings(true); },
+      history: () => { setBookingsInitialTab("previous"); setBookingsTitle("Consultation History"); setShowMyBookings(true); },
+      records: () => setShowRecords(true),
       calendar: () => setShowCal(true), preferred: () => setShowPrefMgr(true), profile: () => setShowProfile(true),
       rewards: () => setShowRewards(true), notifications: () => setShowNotifs(true), signout: handleSignOut,
       prosthetics: () => setShowProsthetics(true), secondOpinion: () => setShowSecondOp(true),
@@ -15282,7 +15065,7 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
       {showProfile && <HealthProfileOverlay allergyDone={allergyDone} onClose={() => setShowProfile(false)} onOpenRecords={() => { setShowProfile(false); setShowRecords(true); }} />}
       {showRecords && <HealthRecordsOverlay onClose={() => setShowRecords(false)} onBookDoctor={(sugg) => { setShowRecords(false); setActiveTab("doctor"); setSelectedSpec(null); setQuery(""); toast("Pick a " + (sugg ? sugg.split(" / ")[0] : "doctor") + " below"); setBookingOpen(true); setTimeout(() => { try { pickerRef.current && pickerRef.current.scrollIntoView({ behavior: "smooth", block: "start" }); } catch (e) { } }, 80); }} />}
       {showCal && <BookingCalendar title="My Bookings" subtitle="Appointments, labs & scans" accent={C.primary} bookings={PATIENT_BOOKINGS} onClose={() => setShowCal(false)} />}
-      {showMyBookings && <MyBookingsOverlay onClose={() => setShowMyBookings(false)} onRebook={(it) => {
+      {showMyBookings && <MyBookingsOverlay initialTab={bookingsInitialTab} title={bookingsTitle} onClose={() => setShowMyBookings(false)} onRebook={(it) => {
         setShowMyBookings(false);
         const m = it.module;
         if (m === "Doctor / Nurse") { setBookingOpen(true); const tab = /nurse/i.test(it.title) ? "nurse" : "doctor"; setActiveTab(tab); setSelectedSpec(null); setQuery(it.title || ""); toast(`Rebook: ${it.title} — pick a provider below`); }
@@ -15298,8 +15081,8 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
         else if (m === "Blood Bank") { setShowBloodBank(true); }
         else if (m === "Surgery") { setShowSurgery(true); }
       }} />}
-      {showPrevConsults && <PatientHistoryOverlay onClose={() => setShowPrevConsults(false)} onRebook={(r) => { setBookingOpen(true); setActiveTab("doctor"); toast(`Rebook a ${r.specialty || "consultation"} — pick a doctor below`); }} />}
-      {showHistoryPage && <PatientHistoryPage onClose={() => setShowHistoryPage(false)} onRebook={(r) => { setShowHistoryPage(false); setBookingOpen(true); setActiveTab("doctor"); toast(`Rebook a ${r.specialty || "consultation"} — pick a doctor below`); }} />}
+      {showPrevConsults && <PatientHistoryOverlay onClose={() => setShowPrevConsults(false)} onRebook={(r) => { setBookingOpen(true); setActiveTab("doctor"); toast(`Rebook a ${r?.specialty || r?.title || "consultation"} — pick a doctor below`); }} />}
+      {showHistoryPage && <PatientHistoryPage onClose={() => setShowHistoryPage(false)} onRebook={(r) => { setShowHistoryPage(false); setBookingOpen(true); setActiveTab("doctor"); toast(`Rebook a ${r?.specialty || r?.title || "consultation"} — pick a doctor below`); }} />}
       {showRewards && <RewardsOverlay onClose={() => setShowRewards(false)} />}
       {showHomeCare && <HomeCarePackageOverlay area={area} onClose={() => setShowHomeCare(false)} onChatDoctor={(doc) => { setShowHomeCare(false); setChatDoctor({ name: doc.name, spec: doc.spec }); }} onBook={(pkg) => toast(`${pkg.days}-day home care package requested \u2014 coordinator will call to confirm`)} />}
       {showDrugDelivery && <DrugDeliveryOverlay area={area} onClose={() => setShowDrugDelivery(false)} onOrdered={(o) => { mcCapture("medicine_delivery", o); toast(`Medicine order placed with ${o.pharmacy_name}`); }} />}

@@ -74,15 +74,29 @@ function classifyCareRequest(specialty: string): Module {
   return "Doctor / Nurse";
 }
 
-export default function MyBookingsOverlay({ onClose, onRebook }: { onClose: () => void; onRebook?: (item: Item) => void }) {
+export default function MyBookingsOverlay({
+  onClose,
+  onRebook,
+  initialTab = "upcoming",
+  title = "My Bookings",
+}: {
+  onClose: () => void;
+  onRebook?: (item: Item) => void;
+  initialTab?: "upcoming" | "previous";
+  title?: string;
+}) {
   const { session, loading: sessionLoading } = useSession();
   const uid = session?.user?.id ?? null;
   const ready = !sessionLoading;
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<Module | "All">("All");
-  const [tab, setTab] = useState<"upcoming" | "previous">("upcoming");
+  const [tab, setTab] = useState<"upcoming" | "previous">(initialTab);
   const [chatDoctor, setChatDoctor] = useState<string | null>(null);
+
+  useEffect(() => {
+    setTab(initialTab);
+  }, [initialTab]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -202,12 +216,12 @@ export default function MyBookingsOverlay({ onClose, onRebook }: { onClose: () =
   }, [visible]);
 
   return (
-    <div role="dialog" aria-modal="true" aria-label="My Bookings" style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.55)", zIndex: 1000, display: "flex", justifyContent: "center", alignItems: "stretch", padding: "env(safe-area-inset-top) 0 env(safe-area-inset-bottom)", fontFamily: "'Plus Jakarta Sans', sans-serif" }} onClick={onClose}>
+    <div role="dialog" aria-modal="true" aria-label={title} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.55)", zIndex: 1000, display: "flex", justifyContent: "center", alignItems: "stretch", padding: "env(safe-area-inset-top) 0 env(safe-area-inset-bottom)", fontFamily: "'Plus Jakarta Sans', sans-serif" }} onClick={onClose}>
       <div onClick={(e) => e.stopPropagation()} style={{ background: "#DCE6E1", color: INK, width: "100%", maxWidth: 900, height: "100%", overflowY: "auto", display: "flex", flexDirection: "column" }}>
         <header style={{ position: "sticky", top: 0, zIndex: 10, background: "rgba(255,255,255,0.95)", backdropFilter: "blur(8px)", borderBottom: "1px solid rgba(15,23,42,0.06)", padding: "14px 16px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <button onClick={onClose} style={{ background: "transparent", border: "none", color: TEAL, fontWeight: 700, fontSize: 14, cursor: "pointer" }}>← Close</button>
-            <h1 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>My Bookings</h1>
+            <h1 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>{title}</h1>
             <span style={{ marginLeft: "auto", fontSize: 12, color: "#64748B" }}>{loading ? "Loading…" : `${visible.length} of ${items.length}`}</span>
           </div>
           <div style={{ display: "flex", gap: 8, overflowX: "auto", marginTop: 10, paddingBottom: 4 }}>
