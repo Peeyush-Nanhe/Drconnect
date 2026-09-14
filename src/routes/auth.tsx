@@ -143,6 +143,23 @@ function AuthPage() {
     await afterLogin(userId);
   }
 
+  async function handleQuickDemoLogin(demoEmail: string, demoPassword = "CareDemo!2026") {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: demoEmail,
+        password: demoPassword,
+      });
+      if (error) throw error;
+      if (data.user) await afterLogin(data.user.id);
+    } catch (err: unknown) {
+      setMsg(err instanceof Error ? err.message : "Quick demo access failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -457,31 +474,110 @@ function AuthPage() {
           )}
         </form>
 
-        {!adminMode && (
+        {!adminMode ? (
+          <div className="mt-3 space-y-2">
+            <div className="flex items-center justify-between px-0.5">
+              <span className="flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                <span>⚡</span> Quick Demo Logins
+              </span>
+              <span className="text-[10px] font-semibold text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded border border-teal-200/60">Staging Demo</span>
+            </div>
+
+            {/* Primary: Patient */}
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => handleQuickDemoLogin("patient1@demo.med")}
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-teal-200 bg-teal-50/90 py-2 text-xs font-bold text-teal-800 transition hover:bg-teal-100 hover:border-teal-300 disabled:opacity-60 shadow-xs"
+              title="Priya Sharma (patient1@demo.med)"
+            >
+              <span>⚡</span>
+              <span>One-Click Demo Patient Access (Priya Sharma)</span>
+            </button>
+
+            {/* Doctor & Hospital Hub */}
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => handleQuickDemoLogin("medico1@demo.med")}
+                className="flex items-center justify-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50/90 py-2 px-2 text-xs font-bold text-sky-800 transition hover:bg-sky-100 hover:border-sky-300 disabled:opacity-60 shadow-xs"
+                title="Dr. Anita Rao (medico1@demo.med)"
+              >
+                <span>🩺</span>
+                <span className="truncate">Doctor (Dr. Anita)</span>
+              </button>
+
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => handleQuickDemoLogin("hub1@demo.med")}
+                className="flex items-center justify-center gap-1.5 rounded-xl border border-purple-200 bg-purple-50/90 py-2 px-2 text-xs font-bold text-purple-800 transition hover:bg-purple-100 hover:border-purple-300 disabled:opacity-60 shadow-xs"
+                title="Demo Hub 1 (hub1@demo.med)"
+              >
+                <span>🏥</span>
+                <span className="truncate">Hospital Hub</span>
+              </button>
+            </div>
+
+            {/* Additional Facility & Staff Roles */}
+            <div className="grid grid-cols-4 gap-1.5 pt-0.5">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => handleQuickDemoLogin("scan1@demo.med")}
+                className="flex items-center justify-center gap-1 rounded-lg border border-slate-200 bg-slate-50/80 py-1.5 px-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-100 hover:border-slate-300 disabled:opacity-60"
+                title="Demo Scan Centre (scan1@demo.med)"
+              >
+                <span>🔬</span>
+                <span className="truncate">Scans</span>
+              </button>
+
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => handleQuickDemoLogin("ambulance1@demo.med")}
+                className="flex items-center justify-center gap-1 rounded-lg border border-slate-200 bg-slate-50/80 py-1.5 px-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-100 hover:border-slate-300 disabled:opacity-60"
+                title="Demo Ambulance (ambulance1@demo.med)"
+              >
+                <span>🚑</span>
+                <span className="truncate">Ambulance</span>
+              </button>
+
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => handleQuickDemoLogin("coordinator1@demo.med")}
+                className="flex items-center justify-center gap-1 rounded-lg border border-slate-200 bg-slate-50/80 py-1.5 px-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-100 hover:border-slate-300 disabled:opacity-60"
+                title="Asha Nair (coordinator1@demo.med)"
+              >
+                <span>📋</span>
+                <span className="truncate">Coord</span>
+              </button>
+
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => handleQuickDemoLogin("pharmacy1@demo.med")}
+                className="flex items-center justify-center gap-1 rounded-lg border border-slate-200 bg-slate-50/80 py-1.5 px-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-100 hover:border-slate-300 disabled:opacity-60"
+                title="Demo Pharmacy (pharmacy1@demo.med)"
+              >
+                <span>💊</span>
+                <span className="truncate">Pharmacy</span>
+              </button>
+            </div>
+          </div>
+        ) : (
           <div className="mt-3">
             <button
               type="button"
               disabled={busy}
-              onClick={async () => {
-                setBusy(true);
-                setMsg(null);
-                try {
-                  const { data, error } = await supabase.auth.signInWithPassword({
-                    email: "patient1@demo.med",
-                    password: "CareDemo!2026",
-                  });
-                  if (error) throw error;
-                  if (data.user) await afterLogin(data.user.id);
-                } catch (err: unknown) {
-                  setMsg(err instanceof Error ? err.message : "Quick demo access failed.");
-                } finally {
-                  setBusy(false);
-                }
-              }}
-              className="flex w-full items-center justify-center gap-2 rounded-xl border border-teal-200 bg-teal-50/90 py-2 text-xs font-bold text-teal-800 transition hover:bg-teal-100 hover:border-teal-300 disabled:opacity-60 shadow-xs"
+              onClick={() => handleQuickDemoLogin("superadmin.demo@careconnect.health")}
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-amber-300 bg-amber-50/90 py-2 text-xs font-bold text-amber-900 transition hover:bg-amber-100 hover:border-amber-400 disabled:opacity-60 shadow-xs"
+              title="superadmin.demo@careconnect.health"
             >
-              <span>⚡</span>
-              <span>One-Click Demo Patient Access (Priya Sharma)</span>
+              <span>🛡️</span>
+              <span>One-Click Super Admin Demo Access</span>
             </button>
           </div>
         )}
