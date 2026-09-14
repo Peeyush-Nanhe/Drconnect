@@ -58,6 +58,38 @@ const SUBTYPES: Record<"provider" | "facility", { view: string; label: string; d
   ],
 };
 
+interface DemoAccountItem {
+  label: string;
+  email: string;
+  defaultPass: string;
+  fallbackEmail?: string;
+  isAdmin?: boolean;
+  testNote?: string;
+}
+
+const DEMO_BUTTONS: DemoAccountItem[] = [
+  { label: "Patient 1", email: "patient1@demo.med", defaultPass: "demo123456", testNote: "One-Click Demo Patient Access" },
+  { label: "Patient 2", email: "patient2@demo.med", defaultPass: "demo123456" },
+  { label: "Medico 1", email: "medico1@demo.med", defaultPass: "demo123456" },
+  { label: "Medico 2", email: "medico2@demo.med", defaultPass: "demo123456" },
+  { label: "Hub 1", email: "hub1@demo.med", defaultPass: "demo123456" },
+  { label: "Hub 2", email: "hub2@demo.med", defaultPass: "demo123456" },
+  { label: "Scan 1", email: "scan1@demo.med", defaultPass: "demo123456" },
+  { label: "Scan 2", email: "scan2@demo.med", defaultPass: "demo123456" },
+  { label: "Ambulance 1", email: "ambulance1@demo.med", defaultPass: "demo123456" },
+  { label: "Ambulance 2", email: "ambulance2@demo.med", defaultPass: "demo123456" },
+  { label: "Pharmacy 1", email: "pharmacy1@demo.med", defaultPass: "demo123456" },
+  { label: "Pharmacy 2", email: "pharmacy2@demo.med", defaultPass: "demo123456" },
+  { label: "Labs 1", email: "labs1@demo.med", defaultPass: "demo123456" },
+  { label: "Labs 2", email: "labs2@demo.med", defaultPass: "demo123456" },
+  { label: "Seva 1", email: "seva1@demo.med", defaultPass: "demo123456" },
+  { label: "Seva 2", email: "seva2@demo.med", defaultPass: "demo123456" },
+  { label: "Coordinator", email: "coordinator1@demo.med", defaultPass: "CareDemo!2026" },
+  { label: "Care Physician", email: "carephysician1@demo.med", defaultPass: "CareDemo!2026" },
+  { label: "Admin console", email: "admin.demo@careconnect.health", defaultPass: "CareDemo!2026", fallbackEmail: "admin1@demo.med", isAdmin: true },
+  { label: "Super admin console", email: "superadmin.demo@careconnect.health", defaultPass: "CareDemo!2026", fallbackEmail: "admin2@demo.med", isAdmin: true },
+];
+
 function AuthPage() {
   const navigate = useNavigate();
   const search = Route.useSearch();
@@ -143,21 +175,31 @@ function AuthPage() {
     await afterLogin(userId);
   }
 
-  async function handleQuickDemoLogin(demoEmail: string, demoPassword = "CareDemo!2026") {
+  async function handleQuickDemoLogin(demoEmail: string, preferredPass = "CareDemo!2026", fallbackEmail?: string) {
     setBusy(true);
     setMsg(null);
-    try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: demoEmail,
-        password: demoPassword,
-      });
-      if (error) throw error;
-      if (data.user) await afterLogin(data.user.id);
-    } catch (err: unknown) {
-      setMsg(err instanceof Error ? err.message : "Quick demo access failed.");
-    } finally {
-      setBusy(false);
+    const emails = fallbackEmail ? [demoEmail, fallbackEmail] : [demoEmail];
+    const passwords = Array.from(new Set([preferredPass, "CareDemo!2026", "demo123456"]));
+    let lastError: unknown = null;
+    for (const em of emails) {
+      for (const pwd of passwords) {
+        try {
+          const { data, error } = await supabase.auth.signInWithPassword({
+            email: em,
+            password: pwd,
+          });
+          if (!error && data.user) {
+            await afterLogin(data.user.id);
+            return;
+          }
+          if (error) lastError = error;
+        } catch (err: unknown) {
+          lastError = err;
+        }
+      }
     }
+    setMsg(lastError instanceof Error ? lastError.message : "Quick demo access failed.");
+    setBusy(false);
   }
 
   async function submit(e: React.FormEvent) {
@@ -332,18 +374,20 @@ function AuthPage() {
         href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
       />
       <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl">
-        <div className="mb-5 flex items-center gap-2">
+        <div className="mb-5 flex items-center gap-3">
           <div
-            className="flex h-9 w-9 items-center justify-center rounded-xl text-white"
-            style={{ background: "linear-gradient(135deg,#0D9488,#14B8A6)" }}
+            className="flex h-10 w-10 items-center justify-center rounded-2xl text-white shadow-xs"
+            style={{ background: "#0D9488" }}
           >
-            ❤
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+              <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+            </svg>
           </div>
           <div>
-            <div className="text-lg font-extrabold text-slate-900">
-              {adminMode ? "MyDox · Super Admin" : "MyDox"}
+            <div className="text-lg font-bold text-slate-900 leading-tight">
+              {adminMode ? "MedConnect · Super Admin" : "MedConnect"}
             </div>
-            <div className="text-[11px] text-slate-500">
+            <div className="text-xs text-slate-500 font-normal">
               {adminMode
                 ? "Restricted — platform administrators only"
                 : isSignup
@@ -455,8 +499,8 @@ function AuthPage() {
           <button
             type="submit"
             disabled={busy}
-            className="w-full rounded-xl py-2.5 text-sm font-bold text-white transition disabled:opacity-60"
-            style={{ background: "linear-gradient(135deg,#0D9488,#14B8A6)" }}
+            className="w-full rounded-xl py-2.5 text-sm font-semibold text-white transition hover:opacity-95 disabled:opacity-60"
+            style={{ background: "#0D9488" }}
           >
             {busy
               ? "Please wait…"
@@ -474,135 +518,62 @@ function AuthPage() {
           )}
         </form>
 
-        {!adminMode ? (
-          <div className="mt-3 space-y-2">
-            <div className="flex items-center justify-between px-0.5">
-              <span className="flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                <span>⚡</span> Quick Demo Logins
-              </span>
-              <span className="text-[10px] font-semibold text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded border border-teal-200/60">Staging Demo</span>
-            </div>
-
-            {/* Primary: Patient */}
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => handleQuickDemoLogin("patient1@demo.med")}
-              className="flex w-full items-center justify-center gap-2 rounded-xl border border-teal-200 bg-teal-50/90 py-2 text-xs font-bold text-teal-800 transition hover:bg-teal-100 hover:border-teal-300 disabled:opacity-60 shadow-xs"
-              title="Priya Sharma (patient1@demo.med)"
-            >
-              <span>⚡</span>
-              <span>One-Click Demo Patient Access (Priya Sharma)</span>
-            </button>
-
-            {/* Doctor & Hospital Hub */}
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => handleQuickDemoLogin("medico1@demo.med")}
-                className="flex items-center justify-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50/90 py-2 px-2 text-xs font-bold text-sky-800 transition hover:bg-sky-100 hover:border-sky-300 disabled:opacity-60 shadow-xs"
-                title="Dr. Anita Rao (medico1@demo.med)"
-              >
-                <span>🩺</span>
-                <span className="truncate">Doctor (Dr. Anita)</span>
-              </button>
-
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => handleQuickDemoLogin("hub1@demo.med")}
-                className="flex items-center justify-center gap-1.5 rounded-xl border border-purple-200 bg-purple-50/90 py-2 px-2 text-xs font-bold text-purple-800 transition hover:bg-purple-100 hover:border-purple-300 disabled:opacity-60 shadow-xs"
-                title="Demo Hub 1 (hub1@demo.med)"
-              >
-                <span>🏥</span>
-                <span className="truncate">Hospital Hub</span>
-              </button>
-            </div>
-
-            {/* Additional Facility & Staff Roles */}
-            <div className="grid grid-cols-4 gap-1.5 pt-0.5">
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => handleQuickDemoLogin("scan1@demo.med")}
-                className="flex items-center justify-center gap-1 rounded-lg border border-slate-200 bg-slate-50/80 py-1.5 px-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-100 hover:border-slate-300 disabled:opacity-60"
-                title="Demo Scan Centre (scan1@demo.med)"
-              >
-                <span>🔬</span>
-                <span className="truncate">Scans</span>
-              </button>
-
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => handleQuickDemoLogin("ambulance1@demo.med")}
-                className="flex items-center justify-center gap-1 rounded-lg border border-slate-200 bg-slate-50/80 py-1.5 px-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-100 hover:border-slate-300 disabled:opacity-60"
-                title="Demo Ambulance (ambulance1@demo.med)"
-              >
-                <span>🚑</span>
-                <span className="truncate">Ambulance</span>
-              </button>
-
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => handleQuickDemoLogin("coordinator1@demo.med")}
-                className="flex items-center justify-center gap-1 rounded-lg border border-slate-200 bg-slate-50/80 py-1.5 px-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-100 hover:border-slate-300 disabled:opacity-60"
-                title="Asha Nair (coordinator1@demo.med)"
-              >
-                <span>📋</span>
-                <span className="truncate">Coord</span>
-              </button>
-
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => handleQuickDemoLogin("pharmacy1@demo.med")}
-                className="flex items-center justify-center gap-1 rounded-lg border border-slate-200 bg-slate-50/80 py-1.5 px-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-100 hover:border-slate-300 disabled:opacity-60"
-                title="Demo Pharmacy (pharmacy1@demo.med)"
-              >
-                <span>💊</span>
-                <span className="truncate">Pharmacy</span>
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div className="mt-3">
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => handleQuickDemoLogin("superadmin.demo@careconnect.health")}
-              className="flex w-full items-center justify-center gap-2 rounded-xl border border-amber-300 bg-amber-50/90 py-2 text-xs font-bold text-amber-900 transition hover:bg-amber-100 hover:border-amber-400 disabled:opacity-60 shadow-xs"
-              title="superadmin.demo@careconnect.health"
-            >
-              <span>🛡️</span>
-              <span>One-Click Super Admin Demo Access</span>
-            </button>
-          </div>
-        )}
-
         {mode === "password" && !adminMode && (
-          <p className="mt-4 text-center text-xs text-slate-600">
+          <p className="mt-3 text-center text-xs text-slate-600">
             {isSignup ? "Already have an account?" : "New here?"}{" "}
             <button
               type="button"
               onClick={() => setIsSignup((s) => !s)}
-              className="font-bold text-teal-700"
+              className="font-bold text-teal-700 hover:underline"
             >
               {isSignup ? "Sign in" : "Create one"}
             </button>
           </p>
         )}
 
-        <div className="mt-4 border-t border-slate-100 pt-3 flex items-center justify-between text-[11px] text-slate-500">
-          <span>Sign in to access your care dashboard</span>
+        <div className="my-4 text-center">
+          <span className="text-[11px] font-bold tracking-wider text-slate-400 uppercase">
+            DEMO ONE-CLICK LOGIN
+          </span>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2.5">
+          {DEMO_BUTTONS.map((item) => (
+            <button
+              key={item.label}
+              type="button"
+              disabled={busy}
+              onClick={() => handleQuickDemoLogin(item.email, item.defaultPass, item.fallbackEmail)}
+              className={
+                item.isAdmin
+                  ? "w-full rounded-full border border-teal-400 bg-white py-2 px-3 text-center text-xs font-semibold text-teal-700 shadow-xs transition hover:bg-teal-50/50 hover:border-teal-500 disabled:opacity-50"
+                  : "w-full rounded-full border border-slate-200 bg-white py-2 px-3 text-center text-xs font-semibold text-slate-700 shadow-xs transition hover:bg-slate-50 hover:border-slate-300 disabled:opacity-50"
+              }
+            >
+              {item.label}
+              {item.testNote && <span className="sr-only"> ({item.testNote})</span>}
+            </button>
+          ))}
+        </div>
+
+        <p className="mt-3 text-center text-[10.5px] leading-relaxed text-slate-400">
+          Most demo accounts use <span className="font-mono font-medium text-slate-600">demo123456</span> ; Coordinator, Care Physician and the admin consoles use <span className="font-semibold text-slate-600">CareDemo!2026</span>
+        </p>
+
+        <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3 text-[11px] text-slate-500">
+          <Link
+            to="/"
+            className="inline-flex items-center gap-1 text-slate-500 hover:text-slate-800 transition"
+          >
+            <span>←</span>
+            <span>Continue browsing without an account</span>
+          </Link>
           <Link
             to="/auth"
             search={{ admin: "1" } as never}
             aria-label="Super admin login"
             title="Super admin"
-            className="inline-flex items-center justify-center rounded-full border border-slate-200 p-1 text-slate-400 hover:text-slate-600"
+            className="inline-flex items-center justify-center rounded-full border border-slate-200 p-1 text-slate-400 hover:text-slate-600 transition"
           >
             <ShieldCheck size={14} />
           </Link>
