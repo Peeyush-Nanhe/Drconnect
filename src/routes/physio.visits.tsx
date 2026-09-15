@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { getMyPhysioVisits, submitPhysioVisitFeedback } from "@/lib/physio-patient.functions";
+import { cancelPhysioVisit, getMyPhysioVisits, submitPhysioVisitFeedback } from "@/lib/physio-patient.functions";
 
 export const Route = createFileRoute("/physio/visits")({
   head: () => ({
@@ -77,11 +77,14 @@ function Stars({ value, onChange }: { value: number; onChange?: (v: number) => v
 function PatientPhysioVisits() {
   const fetchVisits = useServerFn(getMyPhysioVisits);
   const sendFeedback = useServerFn(submitPhysioVisitFeedback);
+  const sendCancel = useServerFn(cancelPhysioVisit);
   const qc = useQueryClient();
   const [tab, setTab] = useState<"upcoming" | "previous">("upcoming");
   const [feedbackFor, setFeedbackFor] = useState<string | null>(null);
   const [form, setForm] = useState({ rating: 5, punctuality: 5, professionalism: 5, wouldRebook: true, comment: "" });
   const [notice, setNotice] = useState("");
+  const [cancellingFor, setCancellingFor] = useState<string | null>(null);
+  const [cancelReason, setCancelReason] = useState("");
 
   const query = useQuery({
     queryKey: ["my-physio-visits"],
@@ -104,6 +107,17 @@ function PatientPhysioVisits() {
       qc.invalidateQueries({ queryKey: ["my-physio-visits"] });
     },
     onError: (e: unknown) => setNotice(e instanceof Error ? e.message : "Could not save feedback"),
+  });
+
+  const cancelMutation = useMutation({
+    mutationFn: (vars: { visitId: string; reason: string }) => sendCancel({ data: vars }),
+    onSuccess: () => {
+      setCancellingFor(null);
+      setCancelReason("");
+      setNotice("Your visit has been cancelled.");
+      qc.invalidateQueries({ queryKey: ["my-physio-visits"] });
+    },
+    onError: (e: unknown) => setNotice(e instanceof Error ? e.message : "Could not cancel visit"),
   });
 
   const visits = query.data ?? [];
@@ -231,6 +245,57 @@ function PatientPhysioVisits() {
                           Cancelled {fmt(v.cancelledAt)}
                           {v.cancelReason ? ` · ${v.cancelReason}` : ""}
                         </p>
+                      ) : null}
+
+                      {UPCOMING.has(v.status) ? (
+                        <div className="mt-3 border-t border-slate-100 pt-3">
+                          {cancellingFor === v.id ? (
+                            <form
+                              className="space-y-2"
+                              onSubmit={(e) => {
+                                e.preventDefault();
+                                setNotice("");
+                                cancelMutation.mutate({ visitId: v.id, reason: cancelReason });
+                              }}
+                            >
+                              <textarea
+                                value={cancelReason}
+                                onChange={(e) => setCancelReason(e.target.value)}
+                                placeholder="Reason for cancelling (optional)"
+                                className="w-full rounded-xl border border-slate-200 p-2 text-xs"
+                                rows={2}
+                                maxLength={300}
+                              />
+                              <div className="flex gap-2">
+                                <button
+                                  type="submit"
+                                  disabled={cancelMutation.isPending}
+                                  className="rounded-full bg-red-600 px-4 py-1.5 text-xs font-bold text-white disabled:opacity-60"
+                                >
+                                  {cancelMutation.isPending ? "Cancelling…" : "Confirm cancel"}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="rounded-full bg-slate-100 px-4 py-1.5 text-xs font-bold text-slate-600"
+                                  onClick={() => {
+                                    setCancellingFor(null);
+                                    setCancelReason("");
+                                  }}
+                                >
+                                  Keep visit
+                                </button>
+                              </div>
+                            </form>
+                          ) : (
+                            <button
+                              type="button"
+                              className="text-xs font-semibold text-red-600"
+                              onClick={() => setCancellingFor(v.id)}
+                            >
+                              Cancel visit
+                            </button>
+                          )}
+                        </div>
                       ) : null}
 
                       {v.status === "completed" ? (
