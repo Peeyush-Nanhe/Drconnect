@@ -534,8 +534,14 @@ async function refreshLiveProviders() {
 function liveOnlineByView(view) {
   return (LIVE_BY_VIEW[view] || []).filter(p => p.online);
 }
-// prime once at module load
+// prime once at module load (may return nothing if user is not yet authed)
 refreshLiveProviders();
+// Re-fetch as soon as a session is established — the RLS policy on profiles
+// requires auth, so the module-load fetch above returns [] for unauthenticated
+// visitors. We need to refresh again after login so the doctor panel is populated.
+supabase.auth.onAuthStateChange((event) => {
+  if (event === "SIGNED_IN") refreshLiveProviders();
+});
 
 // Heartbeat: while any patient/medico session is open, mark the current
 // account as online so other users' broadcasts include them. Fire-and-forget.
