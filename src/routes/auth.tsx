@@ -68,23 +68,23 @@ interface DemoAccountItem {
 }
 
 const DEMO_BUTTONS: DemoAccountItem[] = [
-  { label: "Patient 1", email: "patient1@demo.med", defaultPass: "demo123456", testNote: "One-Click Demo Patient Access" },
-  { label: "Patient 2", email: "patient2@demo.med", defaultPass: "demo123456" },
-  { label: "Medico 1", email: "medico1@demo.med", defaultPass: "demo123456" },
-  { label: "Medico 2", email: "medico2@demo.med", defaultPass: "demo123456" },
-  { label: "Therapist (Rahul Nair)", email: "rahul.nair@demo.med", defaultPass: "demo123456" },
-  { label: "Hub 1", email: "hub1@demo.med", defaultPass: "demo123456" },
-  { label: "Hub 2", email: "hub2@demo.med", defaultPass: "demo123456" },
-  { label: "Scan 1", email: "scan1@demo.med", defaultPass: "demo123456" },
-  { label: "Scan 2", email: "scan2@demo.med", defaultPass: "demo123456" },
-  { label: "Ambulance 1", email: "ambulance1@demo.med", defaultPass: "demo123456" },
-  { label: "Ambulance 2", email: "ambulance2@demo.med", defaultPass: "demo123456" },
-  { label: "Pharmacy 1", email: "pharmacy1@demo.med", defaultPass: "demo123456" },
-  { label: "Pharmacy 2", email: "pharmacy2@demo.med", defaultPass: "demo123456" },
-  { label: "Labs 1", email: "labs1@demo.med", defaultPass: "demo123456" },
-  { label: "Labs 2", email: "labs2@demo.med", defaultPass: "demo123456" },
-  { label: "Seva 1", email: "seva1@demo.med", defaultPass: "demo123456" },
-  { label: "Seva 2", email: "seva2@demo.med", defaultPass: "demo123456" },
+  { label: "Patient 1", email: "patient1@demo.med", defaultPass: "CareDemo!2026", testNote: "One-Click Demo Patient Access" },
+  { label: "Patient 2", email: "patient2@demo.med", defaultPass: "CareDemo!2026" },
+  { label: "Medico 1", email: "medico1@demo.med", defaultPass: "CareDemo!2026" },
+  { label: "Medico 2", email: "medico2@demo.med", defaultPass: "CareDemo!2026" },
+  { label: "Therapist (Rahul Nair)", email: "rahul.nair@demo.med", defaultPass: "CareDemo!2026" },
+  { label: "Hub 1", email: "hub1@demo.med", defaultPass: "CareDemo!2026" },
+  { label: "Hub 2", email: "hub2@demo.med", defaultPass: "CareDemo!2026" },
+  { label: "Scan 1", email: "scan1@demo.med", defaultPass: "CareDemo!2026" },
+  { label: "Scan 2", email: "scan2@demo.med", defaultPass: "CareDemo!2026" },
+  { label: "Ambulance 1", email: "ambulance1@demo.med", defaultPass: "CareDemo!2026" },
+  { label: "Ambulance 2", email: "ambulance2@demo.med", defaultPass: "CareDemo!2026" },
+  { label: "Pharmacy 1", email: "pharmacy1@demo.med", defaultPass: "CareDemo!2026" },
+  { label: "Pharmacy 2", email: "pharmacy2@demo.med", defaultPass: "CareDemo!2026" },
+  { label: "Labs 1", email: "labs1@demo.med", defaultPass: "CareDemo!2026" },
+  { label: "Labs 2", email: "labs2@demo.med", defaultPass: "CareDemo!2026" },
+  { label: "Seva 1", email: "seva1@demo.med", defaultPass: "CareDemo!2026" },
+  { label: "Seva 2", email: "seva2@demo.med", defaultPass: "CareDemo!2026" },
   { label: "Coordinator", email: "coordinator1@demo.med", defaultPass: "CareDemo!2026" },
   { label: "Care Physician", email: "carephysician1@demo.med", defaultPass: "CareDemo!2026" },
   { label: "Admin console", email: "admin.demo@careconnect.health", defaultPass: "CareDemo!2026", fallbackEmail: "admin1@demo.med", isAdmin: true },
@@ -229,7 +229,15 @@ function AuthPage() {
           if (isRahulNair) {
             targetEmail = "medico1@demo.med";
           }
-          const { data, error } = await supabase.auth.signInWithPassword({ email: targetEmail, password });
+          let { data, error } = await supabase.auth.signInWithPassword({ email: targetEmail, password });
+          if (error && (password === "demo123456" || password === "CareDemo!2026")) {
+            const altPass = password === "demo123456" ? "CareDemo!2026" : "demo123456";
+            const retry = await supabase.auth.signInWithPassword({ email: targetEmail, password: altPass });
+            if (!retry.error && retry.data) {
+              data = retry.data;
+              error = null;
+            }
+          }
           if (error) throw error;
           if (data?.user) await afterLogin(data.user.id, "medico", isRahulNair ? "Rahul Nair" : undefined);
         }
