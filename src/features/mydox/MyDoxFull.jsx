@@ -7982,6 +7982,7 @@ function DoctorApp({ req, hubReq, online, setOnline, onAccept, sevaActions }) {
   const youCand = activeIncoming?.r?.candidates?.find(c => c.id === "you") || (activeIncoming ? { id: "you", distanceKm: 1.4, etaMin: 8 } : null);
   const broadcastType = activeIncoming?.r?.spec?.name || "providers";
 
+  const [showRahulProfile, setShowRahulProfile] = useState(false);
   const currentName = (typeof window !== "undefined" && window.localStorage.getItem("mc_user_name")) || YOU.name;
   const isTherapist = currentName.toLowerCase().includes("rahul") || currentName.toLowerCase().includes("therapist") || currentName.toLowerCase().includes("physio");
   const specialtyLabel = isTherapist ? "Physiotherapist · BPT, MPT" : "General Physician · ★ 4.9";
@@ -7990,9 +7991,9 @@ function DoctorApp({ req, hubReq, online, setOnline, onAccept, sevaActions }) {
     <Screen>
       <div className="px-5 pt-4 pb-4" style={{ background: online ? grad : "#3A4A45" }}>
         <div className="flex items-center justify-between text-white">
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2.5 cursor-pointer" onClick={() => setShowRahulProfile(true)}>
             <Avatar name={currentName} size={40} />
-            <div><p className="font-extrabold leading-tight" style={{ fontSize: 15 }}>{currentName}</p><p className="text-xs opacity-85">{specialtyLabel}</p></div>
+            <div><p className="font-extrabold leading-tight" style={{ fontSize: 15 }}>{currentName}</p><p className="text-xs opacity-85">{specialtyLabel} <span style={{ textDecoration: "underline", opacity: 0.9 }}>· View Profile</span></p></div>
           </div>
           <div className="flex items-center gap-2">
             <button onClick={() => setShowCal(true)} className="rounded-full flex items-center justify-center" style={{ width: 34, height: 34, background: "rgba(255,255,255,.22)", border: "none", cursor: "pointer", color: "#fff" }} aria-label="My schedule"><Calendar size={15} /></button>
@@ -8003,6 +8004,56 @@ function DoctorApp({ req, hubReq, online, setOnline, onAccept, sevaActions }) {
             <ModuleProfilePill />
           </div>
         </div>
+        {showRahulProfile && (
+          <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(15,23,42,.65)", display: "flex", alignItems: "flex-end", justifyContent: "center" }} onClick={() => setShowRahulProfile(false)}>
+            <div style={{ width: "100%", maxWidth: 440, background: "#fff", borderRadius: "24px 24px 0 0", padding: "22px 20px 28px", fontFamily: "'Plus Jakarta Sans', sans-serif" }} onClick={(e) => e.stopPropagation()}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <Avatar name="Rahul Nair" size={48} />
+                  <div>
+                    <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: "#0F172A" }}>Rahul Nair</h2>
+                    <p style={{ margin: "2px 0 0", fontSize: 12, fontWeight: 600, color: "#0EA5E9" }}>Physiotherapist · BPT, MPT (Neuro & Ortho)</p>
+                  </div>
+                </div>
+                <button onClick={() => setShowRahulProfile(false)} style={{ background: "#F1F5F9", border: "none", borderRadius: "50%", width: 32, height: 32, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 700, color: "#64748B" }}>✕</button>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 16 }}>
+                <div style={{ background: "#F8FAFC", borderRadius: 12, padding: "10px 8px", textAlign: "center", border: "1px solid #E2E8F0" }}>
+                  <p style={{ margin: 0, fontSize: 16, fontWeight: 800, color: "#0F172A" }}>4.9 ★</p>
+                  <p style={{ margin: "2px 0 0", fontSize: 10, fontWeight: 600, color: "#64748B" }}>RATING</p>
+                </div>
+                <div style={{ background: "#F8FAFC", borderRadius: 12, padding: "10px 8px", textAlign: "center", border: "1px solid #E2E8F0" }}>
+                  <p style={{ margin: 0, fontSize: 16, fontWeight: 800, color: "#0F172A" }}>8+ Yrs</p>
+                  <p style={{ margin: "2px 0 0", fontSize: 10, fontWeight: 600, color: "#64748B" }}>EXPERIENCE</p>
+                </div>
+                <div style={{ background: "#F8FAFC", borderRadius: 12, padding: "10px 8px", textAlign: "center", border: "1px solid #E2E8F0" }}>
+                  <p style={{ margin: 0, fontSize: 16, fontWeight: 800, color: "#0EA5E9" }}>₹700</p>
+                  <p style={{ margin: "2px 0 0", fontSize: 10, fontWeight: 600, color: "#64748B" }}>BASE FEE</p>
+                </div>
+              </div>
+
+              <div style={{ marginBottom: 14 }}>
+                <p style={{ margin: "0 0 6px", fontSize: 11, fontWeight: 800, color: "#475569", textTransform: "uppercase" }}>Specializations & Skills</p>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {["Neurological Rehab", "Orthopedic Physiotherapy", "Post-Surgery Recovery", "Sports Injury", "Movement Therapy", "Geriatric Rehab"].map(s => (
+                    <span key={s} style={{ background: "#E0F2FE", color: "#0369A1", fontSize: 11, fontWeight: 700, borderRadius: 20, padding: "4px 10px" }}>{s}</span>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 14, padding: "12px 14px", marginBottom: 16, display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#22C55E" }} />
+                <div>
+                  <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: "#15803D" }}>Active & Available for Home & Hub Visits</p>
+                  <p style={{ margin: "1px 0 0", fontSize: 11, color: "#166534" }}>Koregaon Park & nearby Pune service radius</p>
+                </div>
+              </div>
+
+              <button onClick={() => setShowRahulProfile(false)} style={{ width: "100%", borderRadius: 14, padding: "12px", border: "none", background: "#0EA5E9", color: "#fff", fontWeight: 800, fontSize: 14, cursor: "pointer" }}>Close Profile</button>
+            </div>
+          </div>
+        )}
         {showCal && <BookingCalendar title="My Schedule" subtitle="Your patient appointments" accent={C.primary} bookings={DOC_BOOKINGS} onClose={() => setShowCal(false)} />}
         <div className="grid grid-cols-3 gap-2 mt-4">
           {[["Today", "₹6,400"], ["Visits", "7"], ["Score", "94%"]].map(([l, v]) => (
