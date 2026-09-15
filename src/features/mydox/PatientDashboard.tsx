@@ -25,11 +25,48 @@ import {
   Users,
   type LucideIcon,
 } from "lucide-react";
-import { PATIENT_SERVICE_GROUPS } from "./patient-services";
+import { PATIENT_SERVICE_GROUPS, HEALTH_CARE_SERVICES } from "./patient-services";
 import "./patient-dashboard.css";
 import StitchPatientHome from "./stitch/StitchPatientHome";
 import { IconPod } from "./stitch/StitchPrimitives";
 import "./patient-stitch-theme.css";
+
+export function HealthCareServicesBanner({ onAction }: { onAction: (action: string) => void }) {
+  return (
+    <div className="mdx-hcs-banner" aria-label="Health Care Services">
+      <div className="mdx-hcs-header">
+        <span className="mdx-hcs-line" />
+        <span className="mdx-hcs-badge">HEALTH CARE SERVICES</span>
+        <span className="mdx-hcs-line" />
+      </div>
+      <div className="mdx-hcs-grid">
+        {HEALTH_CARE_SERVICES.map((item) => (
+          <button
+            key={item.id}
+            className="mdx-hcs-card"
+            style={
+              {
+                "--hcs-bg": item.bg,
+                "--hcs-border": item.borderColor,
+              } as React.CSSProperties
+            }
+            onClick={() => onAction(item.id)}
+            aria-label={`Open ${item.label}`}
+          >
+            <div className="mdx-hcs-visual">
+              {item.image ? (
+                <img src={item.image} alt={item.label} />
+              ) : (
+                <span>{item.emoji}</span>
+              )}
+            </div>
+            <span className="mdx-hcs-title">{item.label}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export type PatientTab = "home" | "services" | "care" | "consult" | "nearby" | "profile";
 type Action = (action: string) => void;
@@ -231,6 +268,7 @@ export default function PatientDashboard({
               onChange={(e) => setFilter(e.target.value)}
             />
           </label>
+          <HealthCareServicesBanner onAction={onAction} />
           <div className="mdx-service-groups">
             {filteredGroups.map(({ id, label, description, icon: Icon, services }) => {
               const open = Boolean(filter.trim()) || expanded === id;
