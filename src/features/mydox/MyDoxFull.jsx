@@ -14513,7 +14513,7 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
 
           // Use the structured ISO string passed by the picker (reliable, no string parsing).
           // Falls back to re-parsing the human-readable strings for legacy callers.
-          let start: Date;
+          let start;
           if (spec.scheduled.iso) {
             start = new Date(spec.scheduled.iso);
           } else {
