@@ -24,7 +24,7 @@ function resolveAuthTarget(inputEmail) {
   const email = (inputEmail || '').trim().toLowerCase();
   const isRahulNair = email === 'rahul.nair@demo.med' || email === 'therapist1@demo.med';
   return {
-    targetEmail: isRahulNair ? 'rahul.nair@demo.med' : email,
+    targetEmail: isRahulNair ? 'medico1@demo.med' : email,
     isRahulNair,
     overrideName: isRahulNair ? 'Rahul Nair' : undefined,
     overrideView: isRahulNair ? 'medico' : undefined,
@@ -37,7 +37,7 @@ test('Rahul Nair credential resolution maps to therapist profile and medico view
   assert.equal(creds.password.length >= 6, true, 'Password must satisfy minimum length of 6');
 
   const resolved = resolveAuthTarget(creds.email);
-  assert.equal(resolved.targetEmail, 'rahul.nair@demo.med');
+  assert.equal(resolved.targetEmail, 'medico1@demo.med');
   assert.equal(resolved.isRahulNair, true);
   assert.equal(resolved.overrideName, 'Rahul Nair');
   assert.equal(resolved.overrideView, 'medico');
@@ -48,7 +48,7 @@ test('Rahul Nair credential resolution maps to therapist profile and medico view
 
 test('Alias therapist1@demo.med maps seamlessly to Rahul Nair', () => {
   const resolved = resolveAuthTarget('therapist1@demo.med');
-  assert.equal(resolved.targetEmail, 'rahul.nair@demo.med');
+  assert.equal(resolved.targetEmail, 'medico1@demo.med');
   assert.equal(resolved.overrideName, 'Rahul Nair');
 });
 
