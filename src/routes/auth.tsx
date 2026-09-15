@@ -179,7 +179,8 @@ function AuthPage() {
   async function handleQuickDemoLogin(demoEmail: string, preferredPass = "CareDemo!2026", fallbackEmail?: string) {
     setBusy(true);
     setMsg(null);
-    const emails = fallbackEmail ? [demoEmail, fallbackEmail] : [demoEmail];
+    const primaryEmail = fallbackEmail || demoEmail;
+    const emails = Array.from(new Set([primaryEmail, demoEmail]));
     const passwords = Array.from(new Set([preferredPass, "CareDemo!2026", "demo123456"]));
     let lastError: unknown = null;
     for (const em of emails) {
@@ -222,12 +223,13 @@ function AuthPage() {
           if (data.user) await handleSignupSuccess(data.user.id, Boolean(data.session));
           else setMsg("Check your email to confirm your account.");
         } else {
-          let res = await supabase.auth.signInWithPassword({ email, password });
-          if (res.error && (res.error.message.includes("Invalid login credentials") || res.error.status === 400) && (email.toLowerCase().includes("rahul") || email.toLowerCase().includes("therapist"))) {
-            res = await supabase.auth.signInWithPassword({ email: "medico1@demo.med", password: "demo123456" });
+          let targetEmail = email.trim();
+          if (targetEmail.toLowerCase() === "rahul.nair@demo.med" || targetEmail.toLowerCase() === "therapist1@demo.med") {
+            targetEmail = "medico1@demo.med";
           }
-          if (res.error) throw res.error;
-          if (res.data.user) await afterLogin(res.data.user.id);
+          const { data, error } = await supabase.auth.signInWithPassword({ email: targetEmail, password });
+          if (error) throw error;
+          if (data.user) await afterLogin(data.user.id);
         }
       } else if (mode === "email-otp") {
         if (!otpSent) {
