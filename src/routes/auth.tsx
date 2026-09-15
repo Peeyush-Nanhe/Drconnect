@@ -229,9 +229,16 @@ function AuthPage() {
           if (isRahulNair) {
             targetEmail = "rahul.nair@demo.med";
           }
-          const { data, error } = await supabase.auth.signInWithPassword({ email: targetEmail, password });
+          let { data, error } = await supabase.auth.signInWithPassword({ email: targetEmail, password });
+          if (error && isRahulNair) {
+            const fallbackResult = await supabase.auth.signInWithPassword({ email: "medico1@demo.med", password });
+            if (!fallbackResult.error) {
+              data = fallbackResult.data;
+              error = null;
+            }
+          }
           if (error) throw error;
-          if (data.user) await afterLogin(data.user.id, "medico", isRahulNair ? "Rahul Nair" : undefined);
+          if (data?.user) await afterLogin(data.user.id, "medico", isRahulNair ? "Rahul Nair" : undefined);
         }
       } else if (mode === "email-otp") {
         if (!otpSent) {
