@@ -11,6 +11,7 @@ const ids = {
   nurseA: '40000000-0000-4000-8000-000000000002',
   nurseB: '40000000-0000-4000-8000-000000000003',
   nurseC: '40000000-0000-4000-8000-000000000004',
+  doctor: '40000000-0000-4000-8000-000000000005',
 };
 
 function actor(uid, sql, params = [], role = 'authenticated') {
@@ -49,8 +50,12 @@ before(async () => {
   for (const n of [ids.nurseA, ids.nurseB, ids.nurseC]) {
     await db.query(`insert into public.user_roles(user_id,role) values ($1,'provider')
                     on conflict do nothing`, [n]);
-    await db.query(`update public.profiles set view='medico' where id=$1`, [n]);
+    await db.query(`update public.profiles set view='nurse' where id=$1`, [n]);
   }
+  // A doctor on the same roster table. Nursing work must never reach him.
+  await db.query(`insert into public.user_roles(user_id,role) values ($1,'provider')
+                  on conflict do nothing`, [ids.doctor]);
+  await db.query(`update public.profiles set view='medico' where id=$1`, [ids.doctor]);
 });
 after(() => db.close());
 
@@ -70,6 +75,14 @@ async function book(days = 7, startOffset = 1) {
   await db.query('update public.nursing_visits set assigned_nurse_id=$2 where engagement_id=$1',
     [eng.id, ids.nurseA]);
   return eng;
+}
+// The family issues a code, the nurse enters it. There is no other way in.
+async function arrive(nurse, visitId) {
+  await actor(nurse, `select public.advance_nursing_visit($1,'en_route')`, [visitId]);
+  const code = (await actor(ids.patient,
+    'select public.issue_nursing_arrival_code($1) as c', [visitId])).rows[0].c;
+  await actor(nurse, 'select public.verify_nursing_arrival($1,$2)', [visitId, code]);
+  return code;
 }
 const visits = eng =>
   db.query('select * from public.nursing_visits where engagement_id=$1 order by seq', [eng.id])
@@ -201,6 +214,7 @@ test('a covered day never penalises anyone', async () => {
   const v = await visits(eng);
   await actor(ids.nurseA, `select public.release_nursing_visit($1,'leave')`, [v[0].id]);
   await actor(ids.nurseB, 'select public.accept_nursing_visit($1)', [v[0].id]);
+  await arrive(ids.nurseB, v[0].id);
   await actor(ids.nurseB, `select public.advance_nursing_visit($1,'completed')`, [v[0].id]);
   await actor(null, 'select public.nursing_tick()', [], 'service_role');
   assert.equal(await scoreOf(ids.nurseA), null);
@@ -244,4 +258,112 @@ test('anonymous callers cannot reach the nursing RPCs', async () => {
   await assert.rejects(
     actor(null, `select public.create_nursing_engagement(7, current_date + 1)`, [], 'anon'),
     /permission denied/);
+});
+
+test('a new package is offered to nurses, not silently confirmed', async () => {
+  const eng = (await actor(ids.patient,
+    `select * from public.create_nursing_engagement(7::int, current_date + 2, time '09:00')`)).rows[0];
+  assert.equal(eng.assignment_state, 'seeking_nurse', 'nobody has accepted yet');
+  assert.equal(eng.primary_nurse_id, null);
+  const offers = await db.query(
+    'select nurse_id from public.nursing_engagement_offers where engagement_id=$1', [eng.id]);
+  assert.equal(offers.rows.length, 3, 'all three nurses were told');
+});
+
+test('first nurse to accept takes the package; the others are refused', async () => {
+  const eng = (await actor(ids.patient,
+    `select * from public.create_nursing_engagement(3::int, current_date + 2, time '09:00')`)).rows[0];
+  const won = await actor(ids.nurseB, 'select * from public.accept_nursing_engagement($1)', [eng.id]);
+  assert.equal(won.rows[0].primary_nurse_id, ids.nurseB);
+  assert.equal(won.rows[0].assignment_state, 'assigned');
+  await assert.rejects(
+    actor(ids.nurseC, 'select public.accept_nursing_engagement($1)', [eng.id]),
+    /NURSING_ALREADY_TAKEN/);
+  const days = await db.query(
+    'select count(*)::int n from public.nursing_visits where engagement_id=$1 and assigned_nurse_id=$2',
+    [eng.id, ids.nurseB]);
+  assert.equal(days.rows[0].n, 3, 'accepting the package assigns every day');
+});
+
+test('an unaccepted package is marked unfilled once its start passes', async () => {
+  const eng = (await actor(ids.patient,
+    `select * from public.create_nursing_engagement(2::int, current_date, time '09:00')`)).rows[0];
+  await db.query(
+    `update public.nursing_engagements set start_date = current_date - 1 where id=$1`, [eng.id]);
+  await actor(null, 'select public.nursing_sweep_unfilled()', [], 'service_role');
+  const after = await db.query(
+    'select assignment_state from public.nursing_engagements where id=$1', [eng.id]);
+  assert.equal(after.rows[0].assignment_state, 'unfilled',
+    'the patient has paid, so this must surface rather than sit as active');
+});
+
+
+// --- nothing is booked until a nurse accepts (20260913160000) --------------
+
+const bookWith = (nurse, days = 3) => actor(ids.patient,
+  `select * from public.create_nursing_engagement($2::int, current_date + 2, time '09:00',
+     'General Duty Nurse', null, null, null, $1::uuid)`, [nurse, days]).then(r => r.rows[0]);
+
+test('asking for a nurse by name does NOT book her - it asks her', async () => {
+  const eng = await bookWith(ids.nurseB);
+  assert.equal(eng.assignment_state, 'seeking_nurse');
+  assert.equal(eng.primary_nurse_id, null, 'nobody is assigned until somebody accepts');
+  assert.equal(eng.preferred_nurse_id, ids.nurseB);
+  const v = await db.query(
+    'select assigned_nurse_id from public.nursing_visits where engagement_id=$1', [eng.id]);
+  assert.ok(v.rows.every(r => r.assigned_nurse_id === null));
+});
+
+test('the requested nurse is asked alone, before anyone else', async () => {
+  const eng = await bookWith(ids.nurseB);
+  const offers = await db.query(
+    'select nurse_id from public.nursing_engagement_offers where engagement_id=$1', [eng.id]);
+  assert.equal(offers.rows.length, 1, 'asked alone, before anyone else');
+  assert.equal(offers.rows[0].nurse_id, ids.nurseB);
+});
+
+test('she accepts, and only then is it booked', async () => {
+  const eng = await bookWith(ids.nurseB);
+  const done = await actor(ids.nurseB, 'select * from public.accept_nursing_engagement($1)', [eng.id]);
+  assert.equal(done.rows[0].primary_nurse_id, ids.nurseB);
+  assert.equal(done.rows[0].assignment_state, 'assigned');
+  const v = await db.query(
+    'select assigned_nurse_id from public.nursing_visits where engagement_id=$1', [eng.id]);
+  assert.ok(v.rows.every(r => r.assigned_nurse_id === ids.nurseB));
+});
+
+test('she declines, and it opens to everyone straight away', async () => {
+  const eng = await bookWith(ids.nurseB);
+  await actor(ids.nurseB, 'select public.decline_nursing_engagement($1)', [eng.id]);
+  const offers = await db.query(
+    'select nurse_id from public.nursing_engagement_offers where engagement_id=$1', [eng.id]);
+  assert.ok(offers.rows.length > 1, 'no waiting out the grace period after a decline');
+  const others = await actor(ids.nurseC, 'select id from public.list_nursing_engagement_offers()');
+  assert.ok(others.rows.some(r => r.id === eng.id));
+});
+
+test('silence opens it to everyone only after the timeout', async () => {
+  const eng = await bookWith(ids.nurseB);
+  await actor(ids.patient, 'select public.escalate_nursing_engagement($1)', [eng.id]);
+  let offers = await db.query(
+    'select 1 from public.nursing_engagement_offers where engagement_id=$1', [eng.id]);
+  assert.equal(offers.rows.length, 1, 'too early: still hers alone');
+
+  await db.query(
+    `update public.nursing_engagements set broadcast_after = now() - interval '1 minute' where id=$1`,
+    [eng.id]);
+  await actor(ids.patient, 'select public.escalate_nursing_engagement($1)', [eng.id]);
+  offers = await db.query(
+    'select 1 from public.nursing_engagement_offers where engagement_id=$1', [eng.id]);
+  assert.ok(offers.rows.length > 1);
+});
+
+test('a nurse who was not asked cannot grab a requested booking early', async () => {
+  const eng = await bookWith(ids.nurseB);
+  const seen = await actor(ids.nurseC, 'select id from public.list_nursing_engagement_offers()');
+  assert.ok(!seen.rows.some(r => r.id === eng.id), 'it is not in her queue yet');
+});
+
+test('a patient cannot request someone who is not a provider', async () => {
+  await assert.rejects(bookWith(ids.patient, 1), /NURSING_BAD_NURSE/);
 });

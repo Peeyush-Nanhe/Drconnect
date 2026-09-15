@@ -5,11 +5,17 @@ import { SlotPickerCalendarStandalone } from "./SlotPickerCalendar";
 import { TwoWayChatModal } from "@/features/mydox/TwoWayChatModal";
 import type { ChatReference } from "@/features/mydox/post-consultation-chat/types";
 import { HomeVisitPanel } from "./home-visits/HomeVisitPanel";
+import { NursingEngagementPanel } from "./nursing/NursingEngagementPanel";
+import {
+  NURSING_ENGAGEMENT_LABEL, NURSING_UPCOMING, nursingSubtitle, listMyNursingEngagements,
+  type NursingEngagement,
+} from "./nursing/nursing-client";
 
 type Module =
   | "Doctor / Nurse"
   | "Lab / Scan"
   | "Home Care"
+  | "Home Nursing"
   | "Medicines"
   | "Care Program"
   | "Dialysis"
@@ -46,6 +52,11 @@ const STATUS_COLORS: Record<string, { bg: string; fg: string }> = {
   placed: { bg: "#D1FAE5", fg: "#065F46" },
   out_for_delivery: { bg: "#DBEAFE", fg: "#1E3A8A" },
   delivered: { bg: "#E5E7EB", fg: "#374151" },
+  // Nursing engagement states. 'unfilled' means the family paid and nobody
+  // came, so it is red rather than grey: somebody has to act on it.
+  seeking_nurse: { bg: "#FEF3C7", fg: "#92400E" },
+  assigned: { bg: "#D1FAE5", fg: "#065F46" },
+  unfilled: { bg: "#FEE2E2", fg: "#991B1B" },
 
 };
 
@@ -53,7 +64,7 @@ function StatusChip({ status }: { status: string }) {
   const s = STATUS_COLORS[status] ?? { bg: "#E5E7EB", fg: "#374151" };
   return (
     <span style={{ background: s.bg, color: s.fg, padding: "2px 10px", borderRadius: 999, fontSize: 11, fontWeight: 600, textTransform: "capitalize", whiteSpace: "nowrap" }}>
-      {status.replace(/_/g, " ")}
+      {(NURSING_ENGAGEMENT_LABEL as Record<string, string>)[status] ?? status.replace(/_/g, " ")}
     </span>
   );
 }
@@ -62,6 +73,7 @@ const MODULE_ICON: Record<Module, string> = {
   "Doctor / Nurse": "🩺",
   "Lab / Scan": "🧪",
   "Home Care": "🏠",
+  "Home Nursing": "👩‍⚕️",
   Medicines: "💊",
   "Care Program": "💚",
   Dialysis: "💧",
@@ -122,7 +134,7 @@ export default function MyBookingsOverlay({ onClose, onRebook }: { onClose: () =
     let mounted = true;
     (async () => {
       setLoading(true);
-      const [cr, cp, pr, sn, bb, sb, mo, da] = await Promise.all([
+      const [cr, cp, pr, sn, bb, sb, mo, da, ne] = await Promise.all([
         supabase.from("care_requests").select("id, specialty, status, notes, created_at, visit_type").eq("patient_id", uid).order("created_at", { ascending: false }).limit(200),
         supabase.from("care_program_bookings").select("id, program, tier, summary, status, created_at").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
         supabase.from("prosthetics_bookings").select("id, category, subtype, provider_name, status, created_at").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
@@ -131,6 +143,12 @@ export default function MyBookingsOverlay({ onClose, onRebook }: { onClose: () =
         supabase.from("surgery_bookings").select("id, procedure, patient_name, mode, status, created_at").eq("facility_id", uid).order("created_at", { ascending: false }).limit(100),
         supabase.from("medicine_orders").select("id, pharmacy_name, delivery_speed, items, prescription_attached, total, status, created_at").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
         supabase.from("doctor_appointments").select("id, service, mode, status, start_time, end_time, created_at, provider_id").eq("patient_id", uid).or("mode.is.null,mode.not.in.(home,home_visit)").order("created_at", { ascending: false }).limit(100),
+        // Nursing lives in its own tables and was absent from this list, so a
+        // paid multi-day package was invisible to the family who booked it.
+        // Goes through the nursing client: the generated Supabase types have not
+        // been regenerated since the nursing tables landed, so supabase.from()
+        // does not know the name yet. A failure here must not blank the whole list.
+        listMyNursingEngagements(uid).catch(() => [] as NursingEngagement[]),
       ]);
 
       const rows: Item[] = [];
@@ -157,6 +175,30 @@ export default function MyBookingsOverlay({ onClose, onRebook }: { onClose: () =
         });
       }
 
+      const nurseIds = Array.from(new Set((ne ?? []).map(r => r.primary_nurse_id).filter(Boolean))) as string[];
+      const nurseNames: Record<string, string> = {};
+      if (nurseIds.length > 0) {
+        const { data: profs } = await supabase.from("profiles").select("id, full_name").in("id", nurseIds);
+        if (profs) {
+          profs.forEach(p => { if (p.full_name) nurseNames[p.id] = p.full_name; });
+        }
+      }
+
+      for (const r of ne ?? []) {
+        const assignedName = r.primary_nurse_id ? (nurseNames[r.primary_nurse_id] || "Pooja (Nurse)") : null;
+        rows.push({
+          id: `ne:${r.id}`,
+          module: "Home Nursing",
+          title: r.kind,
+          subtitle: (assignedName ? `Nurse: ${assignedName} · ` : "") + nursingSubtitle(r),
+          // The engagement's own status is 'active' for the whole run, which
+          // says nothing useful. Whether a nurse is found is the live fact.
+          status: r.status === "active" ? r.assignment_state : r.status,
+          createdAt: r.created_at,
+          raw: r,
+        });
+      }
+
       rows.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
       if (mounted) { setItems(rows); setLoading(false); }
     })();
@@ -168,7 +210,7 @@ export default function MyBookingsOverlay({ onClose, onRebook }: { onClose: () =
     items.forEach((i) => set.add(i.module));
     return ["All", ...Array.from(set)];
   }, [items]);
-  const UPCOMING = new Set(["open", "pending", "broadcasting", "accepted", "confirmed", "en_route", "arrived", "in_consultation", "in_progress", "booked", "placed", "out_for_delivery"]);
+  const UPCOMING = new Set(["open", "pending", "broadcasting", "accepted", "confirmed", "en_route", "arrived", "in_consultation", "in_progress", "booked", "placed", "out_for_delivery", ...NURSING_UPCOMING]);
   const byTab = items.filter((i) => (tab === "upcoming" ? UPCOMING.has(i.status) : !UPCOMING.has(i.status)));
   const visible = filter === "All" ? byTab : byTab.filter((i) => i.module === filter);
   const upcomingCount = items.filter((i) => UPCOMING.has(i.status)).length;
@@ -258,13 +300,16 @@ export default function MyBookingsOverlay({ onClose, onRebook }: { onClose: () =
                                 Cancel
                               </button>
                             </div>
-                          ) : onRebook && (
+                          ) : it.id.startsWith("ne:") && NURSING_UPCOMING.has(it.status) ? null : onRebook && (
                             <button onClick={() => onRebook(it)} aria-label={`Book ${it.title} again`} style={{ alignSelf: "center", background: TEAL, color: "#fff", border: "none", borderRadius: 999, padding: "8px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap", boxShadow: "0 1px 2px rgba(13,148,136,0.35)" }}>
                               ↻ Book again
                             </button>
                           )}
                         </div>
 
+                        {it.id.startsWith("ne:") && (
+                          <NursingEngagementPanel engagement={it.raw as NursingEngagement} />
+                        )}
                       </li>
                     ))}
                   </ul>

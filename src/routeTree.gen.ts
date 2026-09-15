@@ -22,6 +22,7 @@ import { Route as Char91DotmcpChar93ListToolsRouteImport } from './routes/[.mcp]
 import { Route as Char91DotwellKnownChar93OauthProtectedResourceRouteImport } from './routes/[.well-known]/oauth-protected-resource'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as AdminCredentialsRouteImport } from './routes/admin.credentials'
+import { Route as AdminEmergencyRouteImport } from './routes/admin.emergency'
 import { Route as AdminLiveRouteImport } from './routes/admin.live'
 import { Route as AdminLocumRouteImport } from './routes/admin.locum'
 import { Route as AdminPhysicianRouteImport } from './routes/admin.physician'
@@ -29,6 +30,10 @@ import { Route as AdminPhysioRouteImport } from './routes/admin.physio'
 import { Route as AdminUsersRouteImport } from './routes/admin.users'
 import { Route as AdminWellnessRouteImport } from './routes/admin.wellness'
 import { Route as DevRaceAcceptRouteImport } from './routes/dev.race-accept'
+import { Route as EmergencyAmbulanceRouteImport } from './routes/emergency.ambulance'
+import { Route as EmergencyDoctorRouteImport } from './routes/emergency.doctor'
+import { Route as EmergencyHospitalRouteImport } from './routes/emergency.hospital'
+import { Route as EmergencyPatientRouteImport } from './routes/emergency.patient'
 import { Route as PhysioBookRouteImport } from './routes/physio.book'
 import { Route as PhysioVisitsRouteImport } from './routes/physio.visits'
 import { Route as ProviderAvailabilityRouteImport } from './routes/provider.availability'
@@ -106,6 +111,11 @@ const AdminCredentialsRoute = AdminCredentialsRouteImport.update({
   path: '/admin/credentials',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminEmergencyRoute = AdminEmergencyRouteImport.update({
+  id: '/admin/emergency',
+  path: '/admin/emergency',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminLiveRoute = AdminLiveRouteImport.update({
   id: '/admin/live',
   path: '/admin/live',
@@ -139,6 +149,26 @@ const AdminWellnessRoute = AdminWellnessRouteImport.update({
 const DevRaceAcceptRoute = DevRaceAcceptRouteImport.update({
   id: '/dev/race-accept',
   path: '/dev/race-accept',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EmergencyAmbulanceRoute = EmergencyAmbulanceRouteImport.update({
+  id: '/emergency/ambulance',
+  path: '/emergency/ambulance',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EmergencyDoctorRoute = EmergencyDoctorRouteImport.update({
+  id: '/emergency/doctor',
+  path: '/emergency/doctor',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EmergencyHospitalRoute = EmergencyHospitalRouteImport.update({
+  id: '/emergency/hospital',
+  path: '/emergency/hospital',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EmergencyPatientRoute = EmergencyPatientRouteImport.update({
+  id: '/emergency/patient',
+  path: '/emergency/patient',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PhysioBookRoute = PhysioBookRouteImport.update({
@@ -202,6 +232,7 @@ export interface FileRoutesByFullPath {
   '/.mcp/list-tools': typeof Char91DotmcpChar93ListToolsRoute
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/admin/credentials': typeof AdminCredentialsRoute
+  '/admin/emergency': typeof AdminEmergencyRoute
   '/admin/live': typeof AdminLiveRoute
   '/admin/locum': typeof AdminLocumRoute
   '/admin/physician': typeof AdminPhysicianRoute
@@ -209,6 +240,10 @@ export interface FileRoutesByFullPath {
   '/admin/users': typeof AdminUsersRoute
   '/admin/wellness': typeof AdminWellnessRoute
   '/dev/race-accept': typeof DevRaceAcceptRoute
+  '/emergency/ambulance': typeof EmergencyAmbulanceRoute
+  '/emergency/doctor': typeof EmergencyDoctorRoute
+  '/emergency/hospital': typeof EmergencyHospitalRoute
+  '/emergency/patient': typeof EmergencyPatientRoute
   '/physio/book': typeof PhysioBookRoute
   '/physio/visits': typeof PhysioVisitsRoute
   '/provider/availability': typeof ProviderAvailabilityRoute
@@ -233,6 +268,7 @@ export interface FileRoutesByTo {
   '/.mcp/list-tools': typeof Char91DotmcpChar93ListToolsRoute
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/admin/credentials': typeof AdminCredentialsRoute
+  '/admin/emergency': typeof AdminEmergencyRoute
   '/admin/live': typeof AdminLiveRoute
   '/admin/locum': typeof AdminLocumRoute
   '/admin/physician': typeof AdminPhysicianRoute
@@ -240,6 +276,10 @@ export interface FileRoutesByTo {
   '/admin/users': typeof AdminUsersRoute
   '/admin/wellness': typeof AdminWellnessRoute
   '/dev/race-accept': typeof DevRaceAcceptRoute
+  '/emergency/ambulance': typeof EmergencyAmbulanceRoute
+  '/emergency/doctor': typeof EmergencyDoctorRoute
+  '/emergency/hospital': typeof EmergencyHospitalRoute
+  '/emergency/patient': typeof EmergencyPatientRoute
   '/physio/book': typeof PhysioBookRoute
   '/physio/visits': typeof PhysioVisitsRoute
   '/provider/availability': typeof ProviderAvailabilityRoute
@@ -265,6 +305,7 @@ export interface FileRoutesById {
   '/.mcp/list-tools': typeof Char91DotmcpChar93ListToolsRoute
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/admin/credentials': typeof AdminCredentialsRoute
+  '/admin/emergency': typeof AdminEmergencyRoute
   '/admin/live': typeof AdminLiveRoute
   '/admin/locum': typeof AdminLocumRoute
   '/admin/physician': typeof AdminPhysicianRoute
@@ -272,6 +313,10 @@ export interface FileRoutesById {
   '/admin/users': typeof AdminUsersRoute
   '/admin/wellness': typeof AdminWellnessRoute
   '/dev/race-accept': typeof DevRaceAcceptRoute
+  '/emergency/ambulance': typeof EmergencyAmbulanceRoute
+  '/emergency/doctor': typeof EmergencyDoctorRoute
+  '/emergency/hospital': typeof EmergencyHospitalRoute
+  '/emergency/patient': typeof EmergencyPatientRoute
   '/physio/book': typeof PhysioBookRoute
   '/physio/visits': typeof PhysioVisitsRoute
   '/provider/availability': typeof ProviderAvailabilityRoute
@@ -298,6 +343,7 @@ export interface FileRouteTypes {
     | '/.mcp/list-tools'
     | '/.well-known/oauth-protected-resource'
     | '/admin/credentials'
+    | '/admin/emergency'
     | '/admin/live'
     | '/admin/locum'
     | '/admin/physician'
@@ -305,6 +351,10 @@ export interface FileRouteTypes {
     | '/admin/users'
     | '/admin/wellness'
     | '/dev/race-accept'
+    | '/emergency/ambulance'
+    | '/emergency/doctor'
+    | '/emergency/hospital'
+    | '/emergency/patient'
     | '/physio/book'
     | '/physio/visits'
     | '/provider/availability'
@@ -329,6 +379,7 @@ export interface FileRouteTypes {
     | '/.mcp/list-tools'
     | '/.well-known/oauth-protected-resource'
     | '/admin/credentials'
+    | '/admin/emergency'
     | '/admin/live'
     | '/admin/locum'
     | '/admin/physician'
@@ -336,6 +387,10 @@ export interface FileRouteTypes {
     | '/admin/users'
     | '/admin/wellness'
     | '/dev/race-accept'
+    | '/emergency/ambulance'
+    | '/emergency/doctor'
+    | '/emergency/hospital'
+    | '/emergency/patient'
     | '/physio/book'
     | '/physio/visits'
     | '/provider/availability'
@@ -360,6 +415,7 @@ export interface FileRouteTypes {
     | '/.mcp/list-tools'
     | '/.well-known/oauth-protected-resource'
     | '/admin/credentials'
+    | '/admin/emergency'
     | '/admin/live'
     | '/admin/locum'
     | '/admin/physician'
@@ -367,6 +423,10 @@ export interface FileRouteTypes {
     | '/admin/users'
     | '/admin/wellness'
     | '/dev/race-accept'
+    | '/emergency/ambulance'
+    | '/emergency/doctor'
+    | '/emergency/hospital'
+    | '/emergency/patient'
     | '/physio/book'
     | '/physio/visits'
     | '/provider/availability'
@@ -392,6 +452,7 @@ export interface RootRouteChildren {
   Char91DotmcpChar93ListToolsRoute: typeof Char91DotmcpChar93ListToolsRoute
   Char91DotwellKnownChar93OauthProtectedResourceRoute: typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   AdminCredentialsRoute: typeof AdminCredentialsRoute
+  AdminEmergencyRoute: typeof AdminEmergencyRoute
   AdminLiveRoute: typeof AdminLiveRoute
   AdminLocumRoute: typeof AdminLocumRoute
   AdminPhysicianRoute: typeof AdminPhysicianRoute
@@ -399,6 +460,10 @@ export interface RootRouteChildren {
   AdminUsersRoute: typeof AdminUsersRoute
   AdminWellnessRoute: typeof AdminWellnessRoute
   DevRaceAcceptRoute: typeof DevRaceAcceptRoute
+  EmergencyAmbulanceRoute: typeof EmergencyAmbulanceRoute
+  EmergencyDoctorRoute: typeof EmergencyDoctorRoute
+  EmergencyHospitalRoute: typeof EmergencyHospitalRoute
+  EmergencyPatientRoute: typeof EmergencyPatientRoute
   PhysioBookRoute: typeof PhysioBookRoute
   PhysioVisitsRoute: typeof PhysioVisitsRoute
   ProviderAvailabilityRoute: typeof ProviderAvailabilityRoute
@@ -504,6 +569,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminCredentialsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/emergency': {
+      id: '/admin/emergency'
+      path: '/admin/emergency'
+      fullPath: '/admin/emergency'
+      preLoaderRoute: typeof AdminEmergencyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin/live': {
       id: '/admin/live'
       path: '/admin/live'
@@ -551,6 +623,34 @@ declare module '@tanstack/react-router' {
       path: '/dev/race-accept'
       fullPath: '/dev/race-accept'
       preLoaderRoute: typeof DevRaceAcceptRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/emergency/ambulance': {
+      id: '/emergency/ambulance'
+      path: '/emergency/ambulance'
+      fullPath: '/emergency/ambulance'
+      preLoaderRoute: typeof EmergencyAmbulanceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/emergency/doctor': {
+      id: '/emergency/doctor'
+      path: '/emergency/doctor'
+      fullPath: '/emergency/doctor'
+      preLoaderRoute: typeof EmergencyDoctorRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/emergency/hospital': {
+      id: '/emergency/hospital'
+      path: '/emergency/hospital'
+      fullPath: '/emergency/hospital'
+      preLoaderRoute: typeof EmergencyHospitalRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/emergency/patient': {
+      id: '/emergency/patient'
+      path: '/emergency/patient'
+      fullPath: '/emergency/patient'
+      preLoaderRoute: typeof EmergencyPatientRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/physio/book': {
@@ -633,6 +733,7 @@ const rootRouteChildren: RootRouteChildren = {
   Char91DotwellKnownChar93OauthProtectedResourceRoute:
     Char91DotwellKnownChar93OauthProtectedResourceRoute,
   AdminCredentialsRoute: AdminCredentialsRoute,
+  AdminEmergencyRoute: AdminEmergencyRoute,
   AdminLiveRoute: AdminLiveRoute,
   AdminLocumRoute: AdminLocumRoute,
   AdminPhysicianRoute: AdminPhysicianRoute,
@@ -640,6 +741,10 @@ const rootRouteChildren: RootRouteChildren = {
   AdminUsersRoute: AdminUsersRoute,
   AdminWellnessRoute: AdminWellnessRoute,
   DevRaceAcceptRoute: DevRaceAcceptRoute,
+  EmergencyAmbulanceRoute: EmergencyAmbulanceRoute,
+  EmergencyDoctorRoute: EmergencyDoctorRoute,
+  EmergencyHospitalRoute: EmergencyHospitalRoute,
+  EmergencyPatientRoute: EmergencyPatientRoute,
   PhysioBookRoute: PhysioBookRoute,
   PhysioVisitsRoute: PhysioVisitsRoute,
   ProviderAvailabilityRoute: ProviderAvailabilityRoute,

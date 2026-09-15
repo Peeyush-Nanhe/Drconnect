@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { EMERGENCY_V2, EmergencyPatient, EmergencyResponderPanel } from "./emergency/DispatchScreens";
+import { NurseRequestsPanel } from "./nursing/NurseRequestsPanel";
 import { Link } from "@tanstack/react-router";
 import PatientDashboard, { PatientHeader, PatientBottomNav } from "@/features/mydox/PatientDashboard";
 import MyBookingsOverlay from "@/features/mydox/MyBookingsOverlay";
@@ -7183,6 +7184,22 @@ function DoctorReferralsTracker({ onClose }) {
 
 
 function DoctorApp({ req, hubReq, online, setOnline, onAccept, sevaActions }) {
+  // Signed-in provider id and profile, used by the nursing and provider queue.
+  const [nurseUid, setNurseUid] = React.useState(null);
+  const [providerProfile, setProviderProfile] = React.useState(null);
+  React.useEffect(() => {
+    let alive = true;
+    supabase.auth.getSession().then(({ data }) => {
+      const id = data.session?.user?.id || null;
+      if (alive) setNurseUid(id);
+      if (id) {
+        supabase.from("profiles").select("full_name, specialty, view").eq("id", id).maybeSingle().then(({ data: prof }) => {
+          if (alive && prof) setProviderProfile(prof);
+        });
+      }
+    });
+    return () => { alive = false; };
+  }, []);
 
 
   const [acted, setActed] = useState(false);
@@ -7290,13 +7307,16 @@ function DoctorApp({ req, hubReq, online, setOnline, onAccept, sevaActions }) {
   const youCand = activeIncoming?.r?.candidates?.find(c => c.id === "you") || (activeIncoming ? { id: "you", distanceKm: 1.4, etaMin: 8 } : null);
   const broadcastType = activeIncoming?.r?.spec?.name || "providers";
 
+  const displayName = providerProfile?.full_name || YOU.name;
+  const displaySpec = providerProfile?.specialty || (providerProfile?.view === "nurse" ? "Nurse" : "General Physician");
+
   return (
     <Screen>
       <div className="px-5 pt-4 pb-4" style={{ background: online ? grad : "#3A4A45" }}>
         <div className="flex items-center justify-between text-white">
           <div className="flex items-center gap-2.5">
-            <Avatar name={YOU.name} size={40} />
-            <div><p className="font-extrabold leading-tight" style={{ fontSize: 15 }}>{YOU.name}</p><p className="text-xs opacity-85">General Physician · ★ {YOU.rating}</p></div>
+            <Avatar name={displayName} size={40} />
+            <div><p className="font-extrabold leading-tight" style={{ fontSize: 15 }}>{displayName}</p><p className="text-xs opacity-85">{displaySpec} · ★ {YOU.rating}</p></div>
           </div>
           <div className="flex items-center gap-2">
             <button onClick={() => setShowCal(true)} className="rounded-full flex items-center justify-center" style={{ width: 34, height: 34, background: "rgba(255,255,255,.22)", border: "none", cursor: "pointer", color: "#fff" }} aria-label="My schedule"><Calendar size={15} /></button>
@@ -7402,6 +7422,9 @@ function DoctorApp({ req, hubReq, online, setOnline, onAccept, sevaActions }) {
         )}
         {online && !activeIncoming && !wonReq && (
           <div>
+            {/* Nursing lives in its own tables, so it never reaches the feed
+                above. Surface it here or a nurse never sees her work. */}
+            <NurseRequestsPanel userId={nurseUid} />
             <Empty Icon={Radio} title="Waiting for requests" desc="You'll be pinged when a patient or health hub needs your speciality nearby." />
             <div className="rounded-2xl p-3 mt-2" style={{ background: C.canvas }}>
               <p className="font-bold mb-2" style={{ color: C.ink, fontSize: 12.5 }}>Your hubs</p>
@@ -11202,6 +11225,11 @@ function DispatchRow({ icon, title, waiting, doneText, done, R, C }) {
 }
 
 function EmergencyPathwayFlow({ onClose }) {
+  // Everything below this line is a scripted demo: fixed timers mark the
+  // ambulance, hospital and specialist "done" after a few seconds with no
+  // responder involved, and the names are hardcoded. Route to the real
+  // dispatch flow instead.
+  if (EMERGENCY_V2) return <EmergencyPatient variant="guided" onClose={onClose} />;
   const C = { ink: "#1F2937", sub: "#6B7280", faint: "#9CA3AF", line: "#E5E7EB", canvas: "#F9FAFB", surface: "#fff" };
   const R = "#DC2626", RD = "#B91C1C";
   const [stage, setStage] = React.useState("entry");
@@ -13661,6 +13689,77 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
     return () => { cancelled = true; clearInterval(poll); supabase.removeChannel(channel); };
   }, [directReq?.dbId, directReq?.provider?.name, directReq?.spec?.name, directReq?.emergency, actions]);
 
+  // Live Nursing Engagement Sync:
+  // When a nurse accepts, immediately update confirmedBooking popup to confirmed and set activeNursing
+  const [activeNursing, setActiveNursing] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const syncNursing = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user || cancelled) return;
+        const { data: engs } = await supabase
+          .from("nursing_engagements")
+          .select("id, kind, days_scheduled, start_date, slot_time, assignment_state, primary_nurse_id, total_amount, address_snapshot")
+          .eq("patient_id", user.id)
+          .eq("status", "active")
+          .order("created_at", { ascending: false })
+          .limit(3);
+        if (cancelled || !engs || !engs.length) return;
+
+        const latest = engs[0];
+        if (latest.assignment_state === "assigned" && latest.primary_nurse_id) {
+          const { data: nurseProf } = await supabase
+            .from("profiles")
+            .select("full_name, specialty")
+            .eq("id", latest.primary_nurse_id)
+            .maybeSingle();
+          if (cancelled) return;
+          const nurseName = nurseProf?.full_name || "Pooja (Nurse)";
+          setActiveNursing({
+            id: latest.id,
+            nurseName,
+            kind: latest.kind,
+            startDate: latest.start_date,
+            slotTime: latest.slot_time,
+            days: latest.days_scheduled,
+          });
+
+          setConfirmedBooking(cur => {
+            if (!cur) return cur;
+            if (cur.pending) {
+              toast && toast(`${nurseName} accepted your home nursing request!`);
+              return {
+                pending: false,
+                name: cur.name || `${latest.days_scheduled} days of home nursing`,
+                doctor: { name: nurseName, spec: "Nurse", rating: 4.9 },
+                label: `Starts ${new Date(latest.start_date + "T00:00:00").toDateString()}${latest.slot_time ? ` at ${latest.slot_time.slice(0, 5)}` : ""} · Confirmed`,
+              };
+            }
+            return cur;
+          });
+        }
+      } catch (_err) {
+        // silent
+      }
+    };
+
+    syncNursing();
+    const poll = setInterval(syncNursing, 2500);
+    const channel = supabase
+      .channel(`patient_nursing_sync_${Math.random().toString(36).slice(2)}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "nursing_engagements" }, () => {
+        syncNursing();
+      })
+      .subscribe();
+
+    return () => {
+      cancelled = true;
+      clearInterval(poll);
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   // Normalised selected service (drives dispatch)
   const selectedService = useMemo(() => {
@@ -13838,18 +13937,39 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
             // Build the date from local parts; toISOString() would shift a
             // late-evening slot in IST back to the previous day.
             const iso = `${startAt.getFullYear()}-${String(startAt.getMonth() + 1).padStart(2, "0")}-${String(startAt.getDate()).padStart(2, "0")}`;
+            // Honour a nurse the patient actually picked, exactly as the doctor
+            // flow does. Only "Find anyone available" leaves this null and
+            // broadcasts.
+            const chosenNurse = spec.doctor?.userId || null;
             const { data: eng, error: engErr } = await supabase.rpc("create_nursing_engagement", {
               p_days: spec.days || 1,
               p_start_date: iso,
               p_slot_time: spec.scheduled.time,
               p_kind: spec.name || "General Duty Nurse",
-              p_address: (area || "") + ", Pune",
+              p_address: (area || "Koregaon Park") + ", Pune",
+              p_lat: 18.5362,
+              p_lng: 73.8930,
+              p_nurse_id: chosenNurse,
             });
             if (engErr) throw new Error(engErr.message.replace(/^NURSING_[A-Z_]+:\s*/, ""));
             const row = Array.isArray(eng) ? eng[0] : eng;
+            // Not "Booking Confirmed": the days are recorded and paid for, but
+            // no nurse has accepted yet. Saying confirmed here is the same class
+            // of lie as the old 3.2-second auto-accept.
+            // Always pending. Nothing is booked until a nurse accepts - naming
+            // one only means she is asked first, for ten minutes, before the
+            // request opens to everyone.
             setConfirmedBooking({
-              name: (spec.days > 1 ? spec.days + " days of home nursing" : "Home nursing visit"),
-              label: "Starts " + startAt.toDateString() + " · nurses are being notified",
+              pending: true,
+              engagementId: row?.id,
+              name: (spec.days > 1 ? spec.days + " days of home nursing"
+                                   : "Home nursing visit"),
+              doctor: chosenNurse ? spec.doctor : null,
+              label: "Starts " + startAt.toDateString() + " · "
+                + (chosenNurse
+                    ? (spec.doctor?.name || "Your nurse") + " has been asked first. "
+                      + "If she does not respond in 10 minutes we will ask every nurse nearby."
+                    : "waiting for a nurse to accept. We will notify you as soon as one does."),
             });
             setSelectedSpec(null);
             return;
@@ -14357,8 +14477,17 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
         <div className="mdx-scroll" ref={dashboardScrollRef}>
           <div hidden={bookingOpen}>
             <PatientDashboard tab={dashboardTab} onTabChange={changeDashboardTab} onAction={handleDashboardAction} name={patientName}
-              activeRequest={req && ["broadcasting", "assigned", "converging", "at_hub"].includes(req.status) ? { title: assigned?.name || "Finding your care provider", detail: req.spec?.name || "Care request in progress" } : null}
-              onTrack={() => setScreen("track")}
+              activeRequest={
+                req && ["broadcasting", "assigned", "converging", "at_hub"].includes(req.status)
+                  ? { title: assigned?.name || "Finding your care provider", detail: req.spec?.name || "Care request in progress" }
+                  : activeNursing
+                  ? { title: `${activeNursing.nurseName} accepted`, detail: `${activeNursing.kind} · Starts ${new Date(activeNursing.startDate + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" })}` }
+                  : null
+              }
+              onTrack={() => {
+                if (req) setScreen("track");
+                else setShowMyBookings(true);
+              }}
               mapContent={<LiveMap selectedHub={mapHub} onHubClick={h => setMapHub(h?.id === mapHub?.id ? null : h)} emergency={emergency} request={req} />}
               doctorsContent={<MyDoctorsCard
                 onBook={(d) => {
@@ -14611,8 +14740,8 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
       {confirmedBooking && (
         <div onClick={() => setConfirmedBooking(null)} style={{ position: "absolute", inset: 0, zIndex: 120, background: "rgba(15,23,42,.55)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
           <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 300, background: "#fff", borderRadius: 22, padding: "26px 22px", textAlign: "center", boxShadow: "0 24px 60px rgba(0,0,0,.3)" }}>
-            <div style={{ width: 64, height: 64, borderRadius: "50%", background: "linear-gradient(135deg,#0C9668,#059669)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px", boxShadow: "0 8px 22px -6px rgba(12,150,104,.6)" }}><Check size={34} color="#fff" strokeWidth={3} /></div>
-            <p style={{ margin: 0, fontWeight: 900, color: C.ink, fontSize: 19 }}>Booking Confirmed</p>
+            <div style={{ width: 64, height: 64, borderRadius: "50%", background: confirmedBooking.pending ? "linear-gradient(135deg,#F59E0B,#D97706)" : "linear-gradient(135deg,#0C9668,#059669)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px", boxShadow: confirmedBooking.pending ? "0 8px 22px -6px rgba(217,119,6,.6)" : "0 8px 22px -6px rgba(12,150,104,.6)" }}>{confirmedBooking.pending ? <Clock size={32} color="#fff" strokeWidth={2.6} /> : <Check size={34} color="#fff" strokeWidth={3} />}</div>
+            <p style={{ margin: 0, fontWeight: 900, color: C.ink, fontSize: 19 }}>{confirmedBooking.pending ? "Request sent" : "Booking Confirmed"}</p>
             <p style={{ margin: "6px 0 0", color: C.sub, fontSize: 13, fontWeight: 600 }}>{confirmedBooking.name}</p>
             {confirmedBooking.doctor && (
               <div style={{ margin: "12px 0 0", background: C.canvas, borderRadius: 14, padding: "12px 14px", textAlign: "left", display: "flex", alignItems: "center", gap: 10 }}>
@@ -14625,7 +14754,7 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
               </div>
             )}
             {confirmedBooking.label && <div style={{ margin: "12px 0 0", display: "inline-flex", alignItems: "center", gap: 7, background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 12, padding: "9px 14px" }}><span style={{ fontSize: 16 }}>📅</span><span style={{ color: "#1D4ED8", fontWeight: 800, fontSize: 13 }}>{confirmedBooking.label}</span></div>}
-            <p style={{ margin: "14px 0 0", color: C.faint, fontSize: 11.5, lineHeight: 1.4 }}>{confirmedBooking.doctor ? "Your appointment is booked with this doctor. You'll get a reminder ahead of your slot." : "Your appointment is booked. You'll get a reminder, and your medico will be assigned ahead of your slot."}</p>
+            <p style={{ margin: "14px 0 0", color: C.faint, fontSize: 11.5, lineHeight: 1.4 }}>{confirmedBooking.pending ? "Nothing is confirmed until a provider accepts. You will be notified the moment one does." : confirmedBooking.doctor ? "Your appointment is booked with this doctor. You'll get a reminder ahead of your slot." : "Your appointment is booked. You'll get a reminder, and your medico will be assigned ahead of your slot."}</p>
             <button onClick={() => setConfirmedBooking(null)} style={{ marginTop: 18, width: "100%", background: "linear-gradient(135deg,#0C9668,#059669)", color: "#fff", border: "none", borderRadius: 14, padding: "13px", fontWeight: 800, fontSize: 14.5, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Done</button>
           </div>
         </div>
