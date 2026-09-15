@@ -56,7 +56,9 @@ function Home() {
       setProfileView(nextView);
       if (typeof window !== "undefined") {
         localStorage.setItem("mc_view", nextView);
-        if (data?.full_name) localStorage.setItem("mc_user_name", data.full_name);
+        const existingName = localStorage.getItem("mc_user_name");
+        const effectiveName = existingName && existingName !== "You" ? existingName : (data?.full_name || "You");
+        localStorage.setItem("mc_user_name", effectiveName);
         if (role) localStorage.setItem("mc_user_role", role);
         localStorage.setItem("mc_profile_id", user.id);
       }

@@ -7982,13 +7982,17 @@ function DoctorApp({ req, hubReq, online, setOnline, onAccept, sevaActions }) {
   const youCand = activeIncoming?.r?.candidates?.find(c => c.id === "you") || (activeIncoming ? { id: "you", distanceKm: 1.4, etaMin: 8 } : null);
   const broadcastType = activeIncoming?.r?.spec?.name || "providers";
 
+  const currentName = (typeof window !== "undefined" && window.localStorage.getItem("mc_user_name")) || YOU.name;
+  const isTherapist = currentName.toLowerCase().includes("rahul") || currentName.toLowerCase().includes("therapist") || currentName.toLowerCase().includes("physio");
+  const specialtyLabel = isTherapist ? "Physiotherapist · BPT, MPT" : "General Physician · ★ 4.9";
+
   return (
     <Screen>
       <div className="px-5 pt-4 pb-4" style={{ background: online ? grad : "#3A4A45" }}>
         <div className="flex items-center justify-between text-white">
           <div className="flex items-center gap-2.5">
-            <Avatar name={YOU.name} size={40} />
-            <div><p className="font-extrabold leading-tight" style={{ fontSize: 15 }}>{YOU.name}</p><p className="text-xs opacity-85">General Physician · ★ {YOU.rating}</p></div>
+            <Avatar name={currentName} size={40} />
+            <div><p className="font-extrabold leading-tight" style={{ fontSize: 15 }}>{currentName}</p><p className="text-xs opacity-85">{specialtyLabel}</p></div>
           </div>
           <div className="flex items-center gap-2">
             <button onClick={() => setShowCal(true)} className="rounded-full flex items-center justify-center" style={{ width: 34, height: 34, background: "rgba(255,255,255,.22)", border: "none", cursor: "pointer", color: "#fff" }} aria-label="My schedule"><Calendar size={15} /></button>
