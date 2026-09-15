@@ -391,19 +391,22 @@ function _liveMedicoRoster() {
   const rows = (typeof LIVE_BY_VIEW !== "undefined" && LIVE_BY_VIEW.medico) || [];
   return rows.filter(p => p && p.name && p.userId);
 }
-// Non-doctor roles that must never appear in a specialty doctor panel
+// Non-doctor roles that must never appear in a specialty doctor panel,
+// matched against the profile's display name AND specialty field.
 const _NON_DOCTOR_ROLES = ["nurse", "paramedic", "technician", "therapist", "pharmacist", "receptionist", "coordinator", "ward boy", "attender"];
 
 function _medicoMatchesSpec(medico, spec) {
   if (!spec) return true;
-  // Exclude non-doctor roles by display name
-  const nameLower = (medico.name || "").toLowerCase().trim();
-  if (_NON_DOCTOR_ROLES.some(r => nameLower === r || nameLower.startsWith(r + " "))) return false;
-  const cap = (medico.specialty || "").toString().toLowerCase().trim();
-  // No specialty on file → exclude from all specialty panels (don't show everywhere)
-  if (!cap) return false;
+  // Exclude non-doctor roles regardless of specialty field value
+  const nameLower  = (medico.name     || "").toLowerCase().trim();
+  const specField  = (medico.specialty || "").toLowerCase().trim();
+  if (_NON_DOCTOR_ROLES.some(r =>
+    nameLower === r || nameLower.startsWith(r + " ") || specField === r
+  )) return false;
+  // No specialty on file → show in all specialty panels as a general-fallback doctor
+  if (!specField) return true;
   const targets = [spec.name, spec.shortName, spec.id].filter(Boolean).map(s => String(s).toLowerCase());
-  return targets.some(t => cap.includes(t) || t.includes(cap));
+  return targets.some(t => specField.includes(t) || t.includes(specField));
 }
 function _stableSeed(str) {
   return String(str || "x").split("").reduce((a, c) => a + c.charCodeAt(0), 0);
