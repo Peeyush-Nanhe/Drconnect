@@ -227,16 +227,9 @@ function AuthPage() {
           let targetEmail = email.trim();
           const isRahulNair = targetEmail.toLowerCase() === "rahul.nair@demo.med" || targetEmail.toLowerCase() === "therapist1@demo.med";
           if (isRahulNair) {
-            targetEmail = "rahul.nair@demo.med";
+            targetEmail = "medico1@demo.med";
           }
-          let { data, error } = await supabase.auth.signInWithPassword({ email: targetEmail, password });
-          if (error && isRahulNair) {
-            const fallbackResult = await supabase.auth.signInWithPassword({ email: "medico1@demo.med", password });
-            if (!fallbackResult.error) {
-              data = fallbackResult.data;
-              error = null;
-            }
-          }
+          const { data, error } = await supabase.auth.signInWithPassword({ email: targetEmail, password });
           if (error) throw error;
           if (data?.user) await afterLogin(data.user.id, "medico", isRahulNair ? "Rahul Nair" : undefined);
         }
