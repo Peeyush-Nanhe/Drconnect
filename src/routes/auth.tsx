@@ -114,7 +114,7 @@ function AuthPage() {
   } | null>(null);
   const role: AppRole = KIND_TO_ROLE[kind];
 
-  async function afterLogin(userId: string, viewOverride?: string) {
+  async function afterLogin(userId: string, viewOverride?: string, nameOverride?: string) {
     const [rolesRes, profileRes, authRes, requestRes] = await Promise.all([
       supabase.from("user_roles").select("role").eq("user_id", userId),
       supabase.from("profiles").select("full_name, view").eq("id", userId).maybeSingle(),
@@ -124,7 +124,7 @@ function AuthPage() {
     const roles = (rolesRes.data ?? []).map((r) => r.role as AppRole);
     const order: AppRole[] = ["super_admin", "admin", "facility", "provider", "patient"];
     const primary = order.find((r) => roles.includes(r)) ?? "patient";
-    const fullName = profileRes.data?.full_name || name || email.split("@")[0] || "You";
+    const fullName = nameOverride || profileRes.data?.full_name || name || email.split("@")[0] || "You";
     const metadata = authRes.data.user?.user_metadata ?? {};
     const storedSubtype = typeof metadata.subtype === "string" ? metadata.subtype : undefined;
     const request = requestRes.data;
@@ -191,7 +191,8 @@ function AuthPage() {
             password: pwd,
           });
           if (!error && data.user) {
-            await afterLogin(data.user.id);
+            const isTherapist = demoEmail.toLowerCase().includes("rahul") || demoEmail.toLowerCase().includes("therapist");
+            await afterLogin(data.user.id, "medico", isTherapist ? "Rahul Nair" : undefined);
             return;
           }
           if (error) lastError = error;
@@ -224,12 +225,13 @@ function AuthPage() {
           else setMsg("Check your email to confirm your account.");
         } else {
           let targetEmail = email.trim();
-          if (targetEmail.toLowerCase() === "rahul.nair@demo.med" || targetEmail.toLowerCase() === "therapist1@demo.med") {
+          const isRahulNair = targetEmail.toLowerCase() === "rahul.nair@demo.med" || targetEmail.toLowerCase() === "therapist1@demo.med";
+          if (isRahulNair) {
             targetEmail = "medico1@demo.med";
           }
           const { data, error } = await supabase.auth.signInWithPassword({ email: targetEmail, password });
           if (error) throw error;
-          if (data.user) await afterLogin(data.user.id);
+          if (data.user) await afterLogin(data.user.id, "medico", isRahulNair ? "Rahul Nair" : undefined);
         }
       } else if (mode === "email-otp") {
         if (!otpSent) {
