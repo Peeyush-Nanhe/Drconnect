@@ -7966,7 +7966,7 @@ function DoctorApp({ req, hubReq, online, setOnline, onAccept, sevaActions }) {
   } : null;
 
   // Determine which request to show as incoming (local mock takes precedence, then live)
-  const activeIncoming = (req?.status === "broadcasting" && req?.hub?.type === "medconnect") ? { r: req, src: "patient" }
+  const activeIncoming = (req?.status === "broadcasting") ? { r: req, src: "patient" }
     : (hubReq?.status === "broadcasting") ? { r: hubReq, src: "hub" }
       : liveIncoming;
 
@@ -15237,6 +15237,9 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
             const isMy = rm.prior && p.name === rm.prior.name;
             const prefName = (rm.favs || []).find(n => !rm.prior || n !== rm.prior.name) || null;
             setDirectReq({ provider: p, spec: rm.spec, fromOverlay: rm.fromOverlay, emergency: !!rm.emergency, isMy, myName: rm.prior?.name || null, preferredName: prefName });
+            if (actions && actions.directRequest) {
+              actions.directRequest({ provider: p, spec: rm.spec, emergency: !!rm.emergency, fare: rm.spec?.base || 700, area, dbId: null });
+            }
             (async () => {
               try {
                 const dbMy = myMedicos.get(rm.spec?.id || rm.spec?.name || "", "my") || myMedicos.get(rm.spec?.name || "", "my");
@@ -15256,6 +15259,9 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
                   preferred_id: isMy ? null : targetId
                 });
                 setDirectReq(cur => cur && cur.provider?.name === p.name ? { ...cur, dbId: row.id } : cur);
+                if (actions && actions.directRequest) {
+                  actions.directRequest({ provider: p, spec: rm.spec, emergency: !!rm.emergency, fare: rm.spec?.base || 700, area, dbId: row.id });
+                }
               } catch (err) {
                 console.warn("direct request insert failed", err?.message);
               }
@@ -15268,12 +15274,14 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
         <DirectRequestOverlay
           provider={directReq.provider} spec={directReq.spec} who="you"
           dbId={directReq.dbId}
+          reqStatus={req?.status}
           emergency={!!directReq.emergency}
           fallbackLabel={directReq.emergency ? (directReq.isMy ? (directReq.preferredName ? `Not accepting — try Preferred (${directReq.preferredName}) →` : "Not accepting — broadcast to any available →") : "Not accepting — broadcast to any available →") : undefined}
-          onConfirmed={() => { const dr = directReq; setDirectReq(null); setConfirmedBooking({ name: dr.provider.name + " · " + (dr.spec?.name || "Visit"), label: "Repeat visit · same provider" }); }}
+          onConfirmed={() => { const dr = directReq; setDirectReq(null); if (actions && actions.clearReq) actions.clearReq(); setConfirmedBooking({ name: dr.provider.name + " · " + (dr.spec?.name || "Visit"), label: "Repeat visit · same provider" }); }}
           onFallback={() => {
             const dr = directReq;
             setDirectReq(null);
+            if (actions && actions.clearReq) actions.clearReq();
             if (dr.dbId) {
               try { cancelCareRequest(dr.dbId); } catch (_) { }
             }
@@ -15286,6 +15294,7 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
           onClose={() => {
             const dr = directReq;
             setDirectReq(null);
+            if (actions && actions.clearReq) actions.clearReq();
             if (dr.dbId) {
               try { cancelCareRequest(dr.dbId); } catch (_) { }
             }
@@ -16221,10 +16230,17 @@ function EmergencyPreferredPromptModal({ myName, preferredName, spec, onTryPrefe
 }
 
 /* Direct request to one provider — they accept, else fall back to a full broadcast */
-function DirectRequestOverlay({ provider, spec, who, emergency, fallbackLabel, dbId, onConfirmed, onFallback, onClose }) {
+function DirectRequestOverlay({ provider, spec, who, emergency, fallbackLabel, dbId, reqStatus, onConfirmed, onFallback, onClose }) {
   const [phase, setPhase] = useState("contacting"); // contacting → accepted
   const [left, setLeft] = useState(emergency ? 60 : 600); // emergency = 1-minute window, else 10 minutes
   const fallbackCalledRef = useRef(false);
+
+  // Synchronize when the provider accepts in-memory:
+  useEffect(() => {
+    if (reqStatus === "assigned" || reqStatus === "accepted" || reqStatus === "completed") {
+      setPhase("accepted");
+    }
+  }, [reqStatus]);
 
   // Live Realtime subscription to care_requests row if dbId exists:
   useEffect(() => {
@@ -17771,6 +17787,35 @@ export default function MyDoxFull({ initialView } = {}) {
 
     cancel: (reason) => setReq(r => { if (r?.dbId) cancelCareRequest(r.dbId, reason || null).catch(() => { }); return null; }),
     reset: (reason) => setReq(r => { if (r?.dbId && r.status !== "completed") cancelCareRequest(r.dbId, reason || null).catch(() => { }); return null; }),
+    directRequest: ({ provider, spec, emergency, fare, dbId, area }) => {
+      const localId = Date.now();
+      const svc = { ...(spec || {}), name: spec?.name || "Physiotherapy", type: spec?.type || "therapist" };
+      const homeHub = { id: "home", name: "Your Home", type: "home", address: (area || "Koregaon Park") + ", Pune", patEtaMin: 0 };
+      const targetCandidate = { id: "you", name: provider?.name || "Rahul Nair", rating: provider?.rating || 4.7, distanceKm: 1.2, etaMin: 8, notified: true };
+      setReq({
+        id: localId,
+        dbId: dbId || null,
+        spec: svc,
+        emergency: !!emergency,
+        area: area || "Koregaon Park",
+        fare: typeof fare === "object" && fare?.total ? fare : { total: typeof fare === "number" ? fare : (svc.base || 700) },
+        hub: homeHub,
+        status: "broadcasting",
+        stage: "my_doctor",
+        elapsed: 0,
+        remaining: 600,
+        coverageKm: 4,
+        candidates: [targetCandidate],
+        assignedId: null,
+        doctorEtaHub: 0,
+        doctorInitEta: 0,
+        patientEtaHub: 0,
+        patInitEta: 0,
+        initiatedBy: "patient",
+        directProvider: provider,
+      });
+    },
+    clearReq: () => setReq(null),
   };
 
   // Home-visit consent interceptor: any actions.book call whose hub.type==="home"
