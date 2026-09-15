@@ -1533,7 +1533,7 @@ function SpecialtyPickerModern({
           onClick={() => {
             if (!selectedSpec) return;
             if (emergency) { onBook && onBook(selectedSpec); }
-            else { onBook && onBook({ ...selectedSpec, base: selectedDoctor ? selectedDoctor.fee : selectedSpec.base, doctor: selectedDoctor ? { userId: selectedDoctor.userId, name: selectedDoctor.name, professionalScore: selectedDoctor.professionalScore, patientRating: selectedDoctor.patientRating, hospitalRating: selectedDoctor.hospitalRating } : null, scheduled: { label: schedLabel, date: schedDates[schedDate]?.toDateString?.() || null, time: schedTimes[schedTime] ? fmtTime(schedTimes[schedTime]) : null } }); }
+            else { const _sd = schedDates[schedDate]; const _st = schedTimes[schedTime]; const _iso = (_sd && _st != null) ? (() => { const d = new Date(_sd); d.setHours(_st.h, _st.m, 0, 0); return d.toISOString(); })() : null; onBook && onBook({ ...selectedSpec, base: selectedDoctor ? selectedDoctor.fee : selectedSpec.base, doctor: selectedDoctor ? { userId: selectedDoctor.userId, name: selectedDoctor.name, professionalScore: selectedDoctor.professionalScore, patientRating: selectedDoctor.patientRating, hospitalRating: selectedDoctor.hospitalRating } : null, scheduled: { label: schedLabel, date: _sd?.toDateString?.() || null, time: _st ? fmtTime(_st) : null, iso: _iso } }); }
           }}
           disabled={!selectedSpec || (!emergency && (!docOk || !schedConfirmed))}
           style={{ width: "100%", padding: "13px", borderRadius: 13, border: "none", background: (selectedSpec && (emergency || (docOk && schedConfirmed))) ? `linear-gradient(135deg,${sc},${sc}cc)` : C.canvas, color: (selectedSpec && (emergency || (docOk && schedConfirmed))) ? "#fff" : C.faint, fontSize: 13.5, fontWeight: 800, cursor: (selectedSpec && (emergency || (docOk && schedConfirmed))) ? "pointer" : "not-allowed", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, fontFamily: "'Plus Jakarta Sans',sans-serif" }}
@@ -1726,7 +1726,7 @@ function SpecialtyPickerSimple({ providerType, selectedSpec, setSelectedSpec, em
           onClick={() => {
             if (!selectedSpec) return;
             if (emergency) onBook && onBook(selectedSpec);
-            else onBook && onBook({ ...selectedSpec, base: selectedDoctor ? selectedDoctor.fee : selectedSpec.base, doctor: selectedDoctor ? { userId: selectedDoctor.userId, name: selectedDoctor.name, qualification: selectedDoctor.qualification, professionalScore: selectedDoctor.professionalScore, patientRating: selectedDoctor.patientRating, hospitalRating: selectedDoctor.hospitalRating } : null, scheduled: { label: schedLabel, date: schedDates[schedDate]?.toDateString?.() || null, time: schedTimes[schedTime] ? fmtTime(schedTimes[schedTime]) : null } });
+            else { const _sd = schedDates[schedDate]; const _st = schedTimes[schedTime]; const _iso = (_sd && _st != null) ? (() => { const d = new Date(_sd); d.setHours(_st.h, _st.m, 0, 0); return d.toISOString(); })() : null; onBook && onBook({ ...selectedSpec, base: selectedDoctor ? selectedDoctor.fee : selectedSpec.base, doctor: selectedDoctor ? { userId: selectedDoctor.userId, name: selectedDoctor.name, qualification: selectedDoctor.qualification, professionalScore: selectedDoctor.professionalScore, patientRating: selectedDoctor.patientRating, hospitalRating: selectedDoctor.hospitalRating } : null, scheduled: { label: schedLabel, date: _sd?.toDateString?.() || null, time: _st ? fmtTime(_st) : null, iso: _iso } }); }
           }}
           disabled={!selectedSpec || (!emergency && (!docOk || !schedConfirmed))}
           style={{ width: "100%", padding: "17px", borderRadius: 16, border: "none", background: (selectedSpec && (emergency || (docOk && schedConfirmed))) ? `linear-gradient(135deg,${sc},${sc}cc)` : C.canvas, color: (selectedSpec && (emergency || (docOk && schedConfirmed))) ? "#fff" : C.faint, fontSize: 16, fontWeight: 800, cursor: (selectedSpec && (emergency || (docOk && schedConfirmed))) ? "pointer" : "not-allowed", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, fontFamily: "'Plus Jakarta Sans',sans-serif" }}
@@ -14511,12 +14511,19 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
           if (!spec.doctor?.userId) throw new Error("Invalid provider selected");
           if (visitMode === "home" || spec.visitMode === "home") throw new Error("Scheduled home visits for this service are unavailable. Please use its existing service booking option.");
 
-          // Convert UI selected label/date/time to ISO format
-          // spec.scheduled.date is e.g. "Thu Sep 10 2026"
-          // spec.scheduled.time is e.g. "09:30"
-          const start = new Date(`${spec.scheduled.date} ${spec.scheduled.time}`);
-          if (isNaN(start.getTime())) throw new Error("Invalid date selected");
-          const end = new Date(start.getTime() + 30 * 60000); // 30 min default duration
+          // Use the structured ISO string passed by the picker (reliable, no string parsing).
+          // Falls back to re-parsing the human-readable strings for legacy callers.
+          let start: Date;
+          if (spec.scheduled.iso) {
+            start = new Date(spec.scheduled.iso);
+          } else {
+            // Legacy path: parse "Mon Sep 15 2026" + "9:30 AM"
+            const raw = `${spec.scheduled.date} ${spec.scheduled.time}`;
+            start = new Date(raw);
+          }
+          if (isNaN(start.getTime())) throw new Error("Invalid date/time selected — please pick a slot again");
+          if (start <= new Date()) throw new Error("Please pick a future time slot");
+          const end = new Date(start.getTime() + 30 * 60000); // 30 min appointment
 
           const isVideo = visitMode === "online" || spec.visitMode === "online";
           let data;
