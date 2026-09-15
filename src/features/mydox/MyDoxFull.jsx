@@ -4,7 +4,7 @@ import { Link } from "@tanstack/react-router";
 import PatientDashboard, { PatientHeader, PatientBottomNav } from "@/features/mydox/PatientDashboard";
 import MyBookingsOverlay from "@/features/mydox/MyBookingsOverlay";
 import { HomeVisitBooking, HomeVisitEntry } from "@/features/mydox/home-visits/HomeVisitBooking";
-import { HomeVisitPanel, HomeVisitOperations } from "@/features/mydox/home-visits/HomeVisitPanel";
+import { HomeVisitOperations } from "@/features/mydox/home-visits/HomeVisitPanel";
 import DrugDeliveryOverlay from "@/features/mydox/DrugDeliveryOverlay";
 import CareProgramExpansionOverlay from "@/features/mydox/CareProgramExpansionOverlay";
 import MentalWellnessHub from "@/features/mydox/MentalWellnessHub";
@@ -391,10 +391,17 @@ function _liveMedicoRoster() {
   const rows = (typeof LIVE_BY_VIEW !== "undefined" && LIVE_BY_VIEW.medico) || [];
   return rows.filter(p => p && p.name && p.userId);
 }
+// Non-doctor roles that must never appear in a specialty doctor panel
+const _NON_DOCTOR_ROLES = ["nurse", "paramedic", "technician", "therapist", "pharmacist", "receptionist", "coordinator", "ward boy", "attender"];
+
 function _medicoMatchesSpec(medico, spec) {
   if (!spec) return true;
+  // Exclude non-doctor roles by display name
+  const nameLower = (medico.name || "").toLowerCase().trim();
+  if (_NON_DOCTOR_ROLES.some(r => nameLower === r || nameLower.startsWith(r + " "))) return false;
   const cap = (medico.specialty || "").toString().toLowerCase().trim();
-  if (!cap) return true; // unknown capability → show everywhere
+  // No specialty on file → exclude from all specialty panels (don't show everywhere)
+  if (!cap) return false;
   const targets = [spec.name, spec.shortName, spec.id].filter(Boolean).map(s => String(s).toLowerCase());
   return targets.some(t => cap.includes(t) || t.includes(cap));
 }
@@ -7993,7 +8000,6 @@ function DoctorApp({ req, hubReq, online, setOnline, onAccept, sevaActions }) {
         </div>
       </div>
       <div className="flex-1 overflow-y-auto px-5 py-4">
-        <HomeVisitPanel audience="doctor" />
         {/* Incoming alert — now at the top of the doctor view */}
         {online && activeIncoming && !acted && youCand && (
           <div className="rounded-2xl p-4 mb-4" style={{ background: C.surface, border: `1.5px solid ${activeIncoming.r.emergency ? C.emerg : activeIncoming.src === "hub" ? C.hub : C.primary}`, boxShadow: "0 8px 28px rgba(0,0,0,.12)", animation: "slidedown .35s cubic-bezier(.2,.8,.2,1)" }}>
