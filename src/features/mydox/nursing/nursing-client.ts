@@ -157,6 +157,20 @@ export function issueArrivalCode(visitId: string) {
   return call<string>("issue_nursing_arrival_code", { p_visit_id: visitId });
 }
 
+/** Finds today's open visit for an engagement to show the OTP. */
+export async function getTodayVisitForEngagement(engagementId: string): Promise<NursingVisit | null> {
+  const today = new Date().toISOString().slice(0, 10);
+  const { data, error } = await db
+    .from("nursing_visits")
+    .select("*")
+    .eq("engagement_id", engagementId)
+    .eq("visit_date", today)
+    .in("status", ["scheduled", "en_route"])
+    .maybeSingle();
+  if (error) throw error;
+  return data as NursingVisit | null;
+}
+
 // -------------------------------------------------------------------- nurse --
 
 export function acceptNursingEngagement(engagementId: string) {

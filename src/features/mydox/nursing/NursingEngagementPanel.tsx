@@ -35,7 +35,6 @@ export function NursingEngagementPanel({ engagement }: { engagement: NursingEnga
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const [code, setCode] = useState<{ visitId: string; value: string } | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -70,18 +69,6 @@ export function NursingEngagementPanel({ engagement }: { engagement: NursingEnga
     try {
       await cancelNursingDay(v.id, "Cancelled by family");
       await refresh();
-    } catch (e) {
-      setError(nursingErrorText(e));
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  async function onIssueCode(v: NursingVisit) {
-    setBusy(v.id);
-    try {
-      setCode({ visitId: v.id, value: await issueArrivalCode(v.id) });
-      setError(null);
     } catch (e) {
       setError(nursingErrorText(e));
     } finally {
@@ -143,13 +130,7 @@ export function NursingEngagementPanel({ engagement }: { engagement: NursingEnga
                 </div>
               </div>
 
-              {isToday && open && v.assigned_nurse_id && (
-                <button type="button" disabled={busy === v.id} onClick={() => onIssueCode(v)}
-                  style={{ background: TEAL, color: "#fff", border: "none", borderRadius: 999,
-                           padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
-                  {busy === v.id ? "…" : "Arrival code"}
-                </button>
-              )}
+              {/* Code removed here: arrival code handled by unified modal in MyBookingsOverlay */}
               {open && !isToday && (
                 <button type="button" disabled={busy === v.id} onClick={() => onCancelDay(v)}
                   style={{ background: "#F1F5F9", color: "#475569", border: "none",
@@ -162,22 +143,6 @@ export function NursingEngagementPanel({ engagement }: { engagement: NursingEnga
           );
         })}
       </ul>
-
-      {code && (
-        <div style={{ marginTop: 10, background: "#ECFDF5", border: "1px solid #A7F3D0",
-                      borderRadius: 12, padding: "12px 14px", textAlign: "center" }}>
-          <p style={{ margin: 0, fontSize: 12, color: "#065F46", fontWeight: 600 }}>
-            Read this out to the nurse when she reaches you
-          </p>
-          <p style={{ margin: "6px 0 0", fontSize: 30, fontWeight: 800, letterSpacing: 6,
-                      color: "#065F46" }}>
-            {code.value}
-          </p>
-          <p style={{ margin: "6px 0 0", fontSize: 11, color: "#047857" }}>
-            Valid for one hour. Do not share it before she arrives.
-          </p>
-        </div>
-      )}
     </div>
   );
 }

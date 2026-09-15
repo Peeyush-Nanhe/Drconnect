@@ -8,6 +8,7 @@ import {
   ensureConsultationPasscode,
   type ChatMessage
 } from "@/features/mydox/backend";
+import { getTodayVisitForEngagement, issueArrivalCode } from "./nursing/nursing-client";
 import { SlotPickerCalendarStandalone } from "./SlotPickerCalendar";
 import { TwoWayChatModal } from "@/features/mydox/TwoWayChatModal";
 import type { ChatReference } from "@/features/mydox/post-consultation-chat/types";
@@ -442,7 +443,7 @@ export default function MyBookingsOverlay({
                       const docName = it.doctorName || (/nurse/i.test(it.title) ? "Nurse Specialist" : /physio/i.test(it.title) ? "Dr. Rajesh K (PT)" : "Dr. Anita Rao");
                       const userRating = reviewsMap[it.id] ?? (readReview(it.id, docName)?.stars ?? null);
                       const isConsultationOver = ["completed", "delivered", "closed", "finished"].includes((it.status || "").toLowerCase());
-                      const showOtpOption = tab !== "previous" && !isConsultationOver && (it.id.startsWith("da:") || it.id.startsWith("cr:"));
+                      const showOtpOption = tab !== "previous" && !isConsultationOver && (it.id.startsWith("da:") || it.id.startsWith("cr:") || it.id.startsWith("ne:"));
 
                       return (
                         <li
@@ -1334,6 +1335,15 @@ function PatientReviewModal({
             rating_provider_at: new Date().toISOString(),
           } as any)
           .eq("id", cleanId);
+      } else if (item.id.startsWith("ne:")) {
+        const cleanId = item.id.replace("ne:", "");
+        await supabase
+          .from("nursing_engagements")
+          .update({
+            rating_family: rating,
+            rating_family_at: new Date().toISOString(),
+          } as any)
+          .eq("id", cleanId);
       }
       saveReview(item.id, doctorName, rating, comment);
       onSaved(rating);
@@ -1565,6 +1575,11 @@ function PatientReviewModal({
 
 /* Consultation Completion OTP Generator & Supabase Sync */
 async function getOrGenerateBookingOtp(item: Item): Promise<string> {
+  if (item.id.startsWith("ne:")) {
+    const todayVisit = await getTodayVisitForEngagement(item.id.replace("ne:", ""));
+    if (!todayVisit) throw new Error("No active nursing visit for today.");
+    return await issueArrivalCode(todayVisit.id);
+  }
   if (item.otp && /^\d{4}$/.test(item.otp)) {
     return item.otp;
   }
@@ -1584,9 +1599,11 @@ function BookingOtpModal({
   onClose: () => void;
   onOpenChat: (doctorName: string) => void;
 }) {
-  const [otp, setOtp] = useState<string>(target.item.otp ? target.item.otp.slice(0, 4) : "");
-  const [loading, setLoading] = useState<boolean>(!target.item.otp);
+  const isNursing = target.item.id.startsWith("ne:");
+  const [otp, setOtp] = useState<string>("");
+  const [loading, setLoading] = useState<boolean>(true);
   const [status, setStatus] = useState<string>(target.item.status || "");
+  const [error, setError] = useState<string | null>(null);
   const [shareFeedback, setShareFeedback] = useState<string | null>(null);
 
   const isConsultationOver = ["completed", "delivered", "closed", "finished"].includes((status || "").toLowerCase());
@@ -1594,10 +1611,17 @@ function BookingOtpModal({
   useEffect(() => {
     let mounted = true;
     (async () => {
-      const code = await getOrGenerateBookingOtp(target.item);
-      if (mounted) {
-        setOtp(code);
-        setLoading(false);
+      try {
+        const code = await getOrGenerateBookingOtp(target.item);
+        if (mounted) {
+          setOtp(code);
+          setLoading(false);
+        }
+      } catch (err: any) {
+        if (mounted) {
+          setError(err.message || "Failed to generate code.");
+          setLoading(false);
+        }
       }
     })();
     return () => {
@@ -1609,7 +1633,11 @@ function BookingOtpModal({
   useEffect(() => {
     const [prefix, rawId] = target.item.id.split(":");
     if (!rawId) return;
-    const table = prefix === "cr" ? "care_requests" : prefix === "da" ? "doctor_appointments" : null;
+
+    // For nursing, we might need to poll today's visit status or engagement status.
+    // The engagement status usually stays 'active' until all visits are done.
+    // For simplicity, we'll poll the specific table.
+    const table = prefix === "cr" ? "care_requests" : prefix === "da" ? "doctor_appointments" : prefix === "ne" ? "nursing_engagements" : null;
     if (!table) return;
 
     let active = true;
@@ -1649,16 +1677,18 @@ function BookingOtpModal({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const digits = (otp || "----").slice(0, 4).split("");
-  const displayDocName = target.doctorName.startsWith("Dr.") ? target.doctorName : `Dr. ${target.doctorName}`;
+  const expectedLength = isNursing ? 6 : 4;
+  const digits = (otp || "-".repeat(expectedLength)).slice(0, expectedLength).split("");
+  const displayDocName = target.doctorName.startsWith("Dr.") ? target.doctorName : (isNursing ? target.doctorName : `Dr. ${target.doctorName}`);
+  const titleText = isNursing ? "Nursing Arrival Code" : "Consultation Passcode";
 
   const handleShare = async () => {
     if (!otp) return;
-    const shareText = `MyDox 4-Digit Consultation Passcode: ${otp} (for ${displayDocName})`;
-    if (typeof navigator !== "undefined" && navigator.share && navigator.canShare && navigator.canShare({ title: "Consultation Passcode", text: shareText })) {
+    const shareText = `MyDox ${expectedLength}-Digit ${titleText}: ${otp} (for ${displayDocName})`;
+    if (typeof navigator !== "undefined" && navigator.share && navigator.canShare && navigator.canShare({ title: titleText, text: shareText })) {
       try {
         await navigator.share({
-          title: "MyDox Consultation Passcode",
+          title: `MyDox ${titleText}`,
           text: shareText,
         });
         setShareFeedback("Shared successfully!");
@@ -1683,7 +1713,7 @@ function BookingOtpModal({
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="Consultation Verification OTP"
+      aria-label={titleText}
       style={{
         position: "fixed",
         inset: 0,
@@ -1729,12 +1759,12 @@ function BookingOtpModal({
                 fontSize: 20,
               }}
             >
-              🔒
+              {isNursing ? "🏥" : "🔒"}
             </div>
             <div>
-              <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: "#0F172A" }}>Consultation Passcode</h2>
+              <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: "#0F172A" }}>{titleText}</h2>
               <p style={{ margin: 0, fontSize: 12, color: "#64748B", fontWeight: 500 }}>
-                Verification code generated from Supabase
+                Verification code generated securely
               </p>
             </div>
           </div>
@@ -1775,7 +1805,7 @@ function BookingOtpModal({
             <StatusChip status={status} />
           </div>
           <div style={{ fontSize: 12, color: "#475569", marginTop: 4, display: "flex", alignItems: "center", gap: 6 }}>
-            <span>Attending Doctor:</span>
+            <span>{isNursing ? "Assigned Nurse:" : "Attending Doctor:"}</span>
             <span style={{ fontWeight: 700, color: "#0D9488" }}>{displayDocName}</span>
           </div>
           {target.item.subtitle && (
@@ -1797,30 +1827,35 @@ function BookingOtpModal({
           }}
         >
           <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, color: "#0F766E", textTransform: "uppercase" }}>
-            4-Digit Consultation Passcode
+            {expectedLength}-Digit {isNursing ? "Arrival" : "Consultation"} Passcode
           </span>
 
           {loading ? (
             <div style={{ padding: "18px 0", fontSize: 13, color: "#0F766E", fontWeight: 600 }}>
-              Generating secure OTP from Supabase…
+              Generating secure code…
+            </div>
+          ) : error ? (
+            <div style={{ padding: "18px 0", fontSize: 13, color: "#B91C1C", fontWeight: 600 }}>
+              {error}
             </div>
           ) : (
             <>
               <div
                 style={{
                   display: "flex",
-                  gap: 12,
+                  gap: isNursing ? 8 : 12,
                   justifyContent: "center",
                   marginTop: 14,
                   marginBottom: 6,
+                  flexWrap: "wrap"
                 }}
               >
                 {digits.map((d, i) => (
                   <div
                     key={i}
                     style={{
-                      width: 52,
-                      height: 60,
+                      width: isNursing ? 44 : 52,
+                      height: isNursing ? 54 : 60,
                       background: "#FFFFFF",
                       borderRadius: 12,
                       border: "2px solid #99F6E4",
@@ -1828,7 +1863,7 @@ function BookingOtpModal({
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
-                      fontSize: 28,
+                      fontSize: isNursing ? 24 : 28,
                       fontWeight: 800,
                       color: "#0F172A",
                       fontFamily: "monospace",
@@ -1860,7 +1895,7 @@ function BookingOtpModal({
                   transition: "all 0.15s ease",
                 }}
               >
-                <span>{shareFeedback ? `✓ ${shareFeedback}` : "📤 Share Passcode with Doctor"}</span>
+                <span>{shareFeedback ? `✓ ${shareFeedback}` : `📤 Share Passcode with ${isNursing ? "Nurse" : "Doctor"}`}</span>
               </button>
             </>
           )}
@@ -1883,10 +1918,10 @@ function BookingOtpModal({
             <span style={{ fontSize: 22 }}>✅</span>
             <div>
               <div style={{ fontWeight: 800, fontSize: 13.5, color: "#065F46" }}>
-                Consultation Verified & Completed!
+                {isNursing ? "Nursing Package Completed!" : "Consultation Verified & Completed!"}
               </div>
               <div style={{ fontSize: 11.5, color: "#047857", marginTop: 2 }}>
-                Your doctor has verified the OTP. Chat option is now enabled!
+                The OTP has been verified. Chat option is now enabled!
               </div>
             </div>
           </div>
@@ -1904,13 +1939,13 @@ function BookingOtpModal({
               gap: 10,
             }}
           >
-            <span style={{ fontSize: 18, lineHeight: 1 }}>🩺</span>
+            <span style={{ fontSize: 18, lineHeight: 1 }}>{isNursing ? "👩‍⚕️" : "🩺"}</span>
             <div>
               <div style={{ fontWeight: 800, fontSize: 13, color: "#92400E", lineHeight: 1.35 }}>
-                Share this OTP with {displayDocName} once your consultation is over
+                Share this code with {displayDocName} when they arrive
               </div>
               <div style={{ fontSize: 11.5, color: "#78350F", marginTop: 4, lineHeight: 1.45 }}>
-                Please do not share this passcode beforehand. Your doctor inserts this 4-digit code in Patient Verification Code to verify and complete the session.
+                Please do not share this passcode beforehand. Your {isNursing ? "nurse" : "doctor"} enters this {expectedLength}-digit code to verify their arrival and start the session.
               </div>
             </div>
           </div>
@@ -1945,7 +1980,7 @@ function BookingOtpModal({
             }}
           >
             <span>💬</span>
-            {isConsultationOver ? "Chat with Doctor" : "Chat (after visit)"}
+            {isConsultationOver ? "Chat with Staff" : "Chat (after visit)"}
           </button>
           <button
             type="button"
@@ -1968,7 +2003,7 @@ function BookingOtpModal({
         </div>
         {!isConsultationOver && (
           <div style={{ fontSize: 11, color: "#94A3B8", textAlign: "center", marginTop: 8 }}>
-            🔒 Chat unlocks once your doctor completes the consultation.
+            🔒 Chat unlocks once the session is marked as completed.
           </div>
         )}
       </div>
