@@ -72,6 +72,7 @@ const DEMO_BUTTONS: DemoAccountItem[] = [
   { label: "Patient 2", email: "patient2@demo.med", defaultPass: "demo123456" },
   { label: "Medico 1", email: "medico1@demo.med", defaultPass: "demo123456" },
   { label: "Medico 2", email: "medico2@demo.med", defaultPass: "demo123456" },
+  { label: "Therapist (Rahul Nair)", email: "therapist1@demo.med", defaultPass: "demo123456", fallbackEmail: "medico1@demo.med" },
   { label: "Hub 1", email: "hub1@demo.med", defaultPass: "demo123456" },
   { label: "Hub 2", email: "hub2@demo.med", defaultPass: "demo123456" },
   { label: "Scan 1", email: "scan1@demo.med", defaultPass: "demo123456" },
