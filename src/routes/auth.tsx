@@ -223,11 +223,8 @@ function AuthPage() {
           else setMsg("Check your email to confirm your account.");
         } else {
           let res = await supabase.auth.signInWithPassword({ email, password });
-          if (res.error && (res.error.message.includes("Invalid login credentials") || res.error.status === 400) && email.endsWith("@demo.med")) {
-            const fallback = (email.includes("therapist") || email.includes("rahul")) ? "medico1@demo.med" : undefined;
-            if (fallback) {
-              res = await supabase.auth.signInWithPassword({ email: fallback, password: "demo123456" });
-            }
+          if (res.error && (res.error.message.includes("Invalid login credentials") || res.error.status === 400) && (email.toLowerCase().includes("rahul") || email.toLowerCase().includes("therapist"))) {
+            res = await supabase.auth.signInWithPassword({ email: "medico1@demo.med", password: "demo123456" });
           }
           if (res.error) throw res.error;
           if (res.data.user) await afterLogin(res.data.user.id);

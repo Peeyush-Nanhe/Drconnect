@@ -21,6 +21,7 @@ const accounts = [
   ['patient2@demo.med', 'Rahul Verma', 'patient', 'patient'],
   ['medico1@demo.med', 'Dr. Anita Rao', 'provider', 'medico'],
   ['medico2@demo.med', 'Dr. Vikram Iyer', 'provider', 'medico'],
+  ['rahul.nair@demo.med', 'Rahul Nair', 'provider', 'medico'],
   ['hub1@demo.med', 'Demo Hub 1', 'facility', 'hub'],
   ['hub2@demo.med', 'Demo Hub 2', 'facility', 'hub'],
   ['scan1@demo.med', 'Demo Scan Centre 1', 'facility', 'diagnostic'],
