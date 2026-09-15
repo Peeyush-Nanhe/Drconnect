@@ -44,17 +44,17 @@ const KIND_TO_ROLE: Record<SignupKind, AppRole> = {
 // "view" is what we store in localStorage.mc_view and drives the dashboard shown.
 const SUBTYPES: Record<"provider" | "facility", { view: string; label: string; desc: string }[]> = {
   provider: [
-    { view: "ambulance", label: "Ambulance",   desc: "Emergency transport crew" },
-    { view: "seva",      label: "Seva", desc: "Charitable and community care" },
+    { view: "ambulance", label: "Ambulance", desc: "Emergency transport crew" },
+    { view: "seva", label: "Seva", desc: "Charitable and community care" },
     { view: "coordinator", label: "Health Coordinator", desc: "Patient cases, referrals and care navigation" },
     { view: "care_physician", label: "Care Physician / RMO", desc: "Hospital shifts, locum and full-time roles" },
-    { view: "medico",    label: "Other medico staff", desc: "Nurse, technician, allied" },
+    { view: "medico", label: "Other medico staff", desc: "Nurse, technician, allied" },
   ],
   facility: [
-    { view: "hub",        label: "Hospital / Hub",  desc: "Beds, admissions, ER" },
+    { view: "hub", label: "Hospital / Hub", desc: "Beds, admissions, ER" },
     { view: "diagnostic", label: "Diagnostic centre", desc: "Imaging & scans" },
-    { view: "pharmacy",   label: "Pharmacy",        desc: "Medicines & fulfilment" },
-    { view: "labs",       label: "Lab",             desc: "Pathology & samples" },
+    { view: "pharmacy", label: "Pharmacy", desc: "Medicines & fulfilment" },
+    { view: "labs", label: "Lab", desc: "Pathology & samples" },
   ],
 };
 
@@ -72,7 +72,7 @@ const DEMO_BUTTONS: DemoAccountItem[] = [
   { label: "Patient 2", email: "patient2@demo.med", defaultPass: "demo123456" },
   { label: "Medico 1", email: "medico1@demo.med", defaultPass: "demo123456" },
   { label: "Medico 2", email: "medico2@demo.med", defaultPass: "demo123456" },
-  { label: "Therapist (Rahul Nair)", email: "rahul.nair@demo.med", defaultPass: "demo123456", fallbackEmail: "medico1@demo.med" },
+  { label: "Therapist (Rahul Nair)", email: "rahul.nair@demo.med", defaultPass: "demo123456" },
   { label: "Hub 1", email: "hub1@demo.med", defaultPass: "demo123456" },
   { label: "Hub 2", email: "hub2@demo.med", defaultPass: "demo123456" },
   { label: "Scan 1", email: "scan1@demo.med", defaultPass: "demo123456" },
@@ -227,7 +227,7 @@ function AuthPage() {
           let targetEmail = email.trim();
           const isRahulNair = targetEmail.toLowerCase() === "rahul.nair@demo.med" || targetEmail.toLowerCase() === "therapist1@demo.med";
           if (isRahulNair) {
-            targetEmail = "medico1@demo.med";
+            targetEmail = "rahul.nair@demo.med";
           }
           const { data, error } = await supabase.auth.signInWithPassword({ email: targetEmail, password });
           if (error) throw error;
@@ -303,9 +303,8 @@ function AuthPage() {
         setOtpSent(false);
         setMsg(null);
       }}
-      className={`flex-1 rounded-full px-3 py-2 text-xs font-bold transition ${
-        mode === k ? "bg-slate-900 text-white" : "text-slate-600"
-      }`}
+      className={`flex-1 rounded-full px-3 py-2 text-xs font-bold transition ${mode === k ? "bg-slate-900 text-white" : "text-slate-600"
+        }`}
     >
       {label}
     </button>
@@ -437,9 +436,8 @@ function AuthPage() {
                       key={k}
                       type="button"
                       onClick={() => setKind(k)}
-                      className={`rounded-full px-1 py-1.5 text-[10px] font-bold capitalize transition ${
-                        kind === k ? "bg-teal-600 text-white" : "text-slate-600"
-                      }`}
+                      className={`rounded-full px-1 py-1.5 text-[10px] font-bold capitalize transition ${kind === k ? "bg-teal-600 text-white" : "text-slate-600"
+                        }`}
                     >
                       {k}
                     </button>
