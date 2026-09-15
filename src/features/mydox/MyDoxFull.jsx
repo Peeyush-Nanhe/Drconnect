@@ -185,7 +185,7 @@ const DOCTORS_EXT = [
 ];
 
 const THERAPISTS = [
-  { id: "physio", name: "Physiotherapist", Icon: Activity, desc: "Movement & rehabilitation", avail: 9, base: 700, color: "#0C9668" },
+  { id: "physio", name: "Rahul Nair — Physiotherapist", shortName: "Rahul Nair", Icon: Activity, desc: "Movement & rehabilitation • BPT, MPT (Neuro & Ortho)", avail: 9, base: 700, color: "#0EA5E9", rating: 4.9 },
   { id: "speech", name: "Speech Therapist", Icon: MessageCircle, desc: "Language & swallowing", avail: 4, base: 1200, color: "#8B5CF6" },
   { id: "psycho", name: "Psychotherapist", Icon: Brain, desc: "Mental wellness & CBT", avail: 6, base: 1500, color: "#6366F1" },
   { id: "occup", name: "Occupational Therapist", Icon: Clipboard, desc: "Daily function & skills", avail: 3, base: 1000, color: "#F59E0B" },
