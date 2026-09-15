@@ -17,7 +17,7 @@
     "android:apk:preview": "node scripts/android-preview.mjs emulator --build",
     "android:apk:usb": "node scripts/android-preview.mjs usb --build",
     "typecheck": "tsc --noEmit",
-    "check": "npm run typecheck && npm run lint && npm run test:db && npm run test:home-visits && npm run test:post-consultation-chat && npm run build",
+    "check": "npm run typecheck && npm run lint && npm run test:db && npm run test:home-visits && npm run build",
     "test:db": "node scripts/build-staging-baseline.mjs && node --test tests/database.test.mjs",
     "test:staging": "node --env-file=.env scripts/test-staging.mjs --run",
     "sync:status": "node scripts/github-sync.mjs status",

@@ -46,7 +46,7 @@ interface SlotPickerCalendarStandaloneProps {
 const BUCKETS = [
   { key: "morning", label: "Morning", emoji: "🌅", from: 9, to: 12, sub: "9 AM – 12 PM" },
   { key: "afternoon", label: "Afternoon", emoji: "☀️", from: 12, to: 17, sub: "12 PM – 5 PM" },
-  { key: "evening", label: "Evening", emoji: "🌆", from: 17, to: 21, sub: "5 PM – 9 PM" },
+  { key: "evening", label: "Evening", emoji: "🌆", from: 17, to: 22, sub: "5 PM – 9:30 PM" },
 ];
 
 export const fmtSlotTime = (t: SlotTime) => {
@@ -58,22 +58,8 @@ export const fmtSlotTime = (t: SlotTime) => {
 const dayLabel = (d: Date, i: number) =>
   i === 0 ? "Today" : i === 1 ? "Tomorrow" : d.toLocaleDateString("en-US", { weekday: "short" });
 
-function hashStr(s: string) {
-  let h = 2166136261 >>> 0;
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return h >>> 0;
-}
-
-/**
- * Deterministic "is this slot unavailable" — same (seed, day, hh:mm) always
- * returns the same answer, so the greyed-out pattern is stable per session.
- * Roughly ~35% of slots come back unavailable so the calendar looks real.
- */
-export function isSlotUnavailable(seed: string, dateIdx: number, h: number, m: number) {
-  return (hashStr(`${seed}|${dateIdx}|${h}:${m}`) % 100) < 35;
+export function isSlotUnavailable(..._args: unknown[]): boolean {
+  return false;
 }
 
 export function SlotPickerCalendar({
@@ -131,8 +117,6 @@ export function SlotPickerCalendar({
 
       {schedDate == null ? (
         <p style={{ margin: 0, fontSize: 11.5, color: faint }}>Pick a date to see available slots</p>
-      ) : availableSlots && availableSlots.length === 0 ? (
-        <p style={{ margin: 0, fontSize: 12, color: faint }}>No appointments published</p>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {BUCKETS.map((b) => {
@@ -140,50 +124,34 @@ export function SlotPickerCalendar({
               .map((t, i) => ({ t, i }))
               .filter(({ t }) => t.h >= b.from && t.h < b.to);
             if (!inBucket.length) return null;
-            const anyAvail = inBucket.some(({ t }) => {
-              if (availableSlots) {
-                return availableSlots.some(s => s.dateIdx === schedDate && s.h === t.h && s.m === t.m);
-              }
-              return !isSlotUnavailable(seed, schedDate, t.h, t.m);
-            });
+
             return (
               <div key={b.key}>
                 <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", margin: "0 0 5px" }}>
                   <p style={{ margin: 0, fontSize: 11, fontWeight: 800, color: ink }}>
                     {b.emoji} {b.label} <span style={{ color: faint, fontWeight: 600 }}>· {b.sub}</span>
                   </p>
-                  {!anyAvail && (
-                    <span style={{ fontSize: 9, color: "#B45309", fontWeight: 800 }}>Fully booked</span>
-                  )}
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: `repeat(${small ? 4 : 3},1fr)`, gap: 6 }}>
                   {inBucket.map(({ t, i }) => {
-                    let unavail = true;
-                    if (availableSlots) {
-                      unavail = !availableSlots.some(s => s.dateIdx === schedDate && s.h === t.h && s.m === t.m);
-                    } else {
-                      unavail = isSlotUnavailable(seed, schedDate, t.h, t.m);
-                    }
                     const a = schedTime === i;
                     return (
                       <button
                         key={i}
                         type="button"
-                        disabled={unavail}
                         onClick={() => setSchedTime(i)}
-                        title={unavail ? "Slot unavailable" : undefined}
-                        aria-disabled={unavail}
+                        title="Select slot"
                         style={{
                           padding: small ? "8px 2px" : "10px 3px",
                           borderRadius: small ? 9 : 11,
-                          border: `1.5px solid ${a ? accent : (unavail ? "#F1F5F9" : line)}`,
-                          background: unavail ? "#F8FAFC" : (a ? accent : "#fff"),
-                          color: unavail ? "#CBD5E1" : (a ? "#fff" : ink),
-                          cursor: unavail ? "not-allowed" : "pointer",
+                          border: `1.5px solid ${a ? accent : line}`,
+                          background: a ? accent : "#fff",
+                          color: a ? "#fff" : ink,
+                          cursor: "pointer",
                           fontSize: small ? 10.5 : 12,
                           fontWeight: 800,
-                          textDecoration: unavail ? "line-through" : "none",
-                          opacity: unavail ? .75 : 1,
+                          textDecoration: "none",
+                          opacity: 1,
                           fontFamily: "'Plus Jakarta Sans',sans-serif",
                         }}
                       >

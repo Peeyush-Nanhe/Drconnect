@@ -6,7 +6,7 @@ import { Link } from "@tanstack/react-router";
 import PatientDashboard, { PatientHeader, PatientBottomNav } from "@/features/mydox/PatientDashboard";
 import MyBookingsOverlay from "@/features/mydox/MyBookingsOverlay";
 import { HomeVisitBooking, HomeVisitEntry } from "@/features/mydox/home-visits/HomeVisitBooking";
-import { HomeVisitPanel, HomeVisitOperations } from "@/features/mydox/home-visits/HomeVisitPanel";
+import { HomeVisitOperations } from "@/features/mydox/home-visits/HomeVisitPanel";
 import DrugDeliveryOverlay from "@/features/mydox/DrugDeliveryOverlay";
 import CareProgramExpansionOverlay from "@/features/mydox/CareProgramExpansionOverlay";
 import MentalWellnessHub from "@/features/mydox/MentalWellnessHub";
@@ -19,7 +19,7 @@ import { askTriage } from "@/lib/ask-ai.functions";
 import { analyzeReport } from "@/lib/report-analyzer.functions";
 import { transcribeAudio } from "@/lib/transcribe.functions";
 import { saveAiHistory, listAiHistory, getAiHistoryItem, toggleShareAiHistory, deleteAiHistory } from "@/lib/ai-history.functions";
-import { createCareRequest, cancelCareRequest, acceptCareRequest, completeCareRequest, failCareRequest, useLiveCareRequests, useRecentChatCounterparts, useMyMedicos, logRequestEvent, setRequestStage, useRequestAuditLog, useAdminAuditFeed, payAndGenerateOtp, verifyOtpAndStart, confirmOtpExchanged, TEST_DEFAULT_OTP, rateCareRequest, createCareProgramBooking, createCommunityRequest, useServiceReferrals, createServiceReferral, updateServiceReferralStatus, useRecentPatientsForDoctor, useSession, useLiveDoctorAppointments } from "@/features/mydox/backend";
+import { createCareRequest, cancelCareRequest, acceptCareRequest, completeCareRequest, failCareRequest, useLiveCareRequests, useRecentChatCounterparts, useMyMedicos, logRequestEvent, setRequestStage, useRequestAuditLog, useAdminAuditFeed, payAndGenerateOtp, verifyOtpAndStart, confirmOtpExchanged, TEST_DEFAULT_OTP, rateCareRequest, createCareProgramBooking, createCommunityRequest, useServiceReferrals, createServiceReferral, updateServiceReferralStatus, useRecentPatientsForDoctor, useSession, useLiveDoctorAppointments, useRealtimeChat, verifyAndCompleteConsultation } from "@/features/mydox/backend";
 import { SURGERY_ROLE_LABELS } from "@/features/mydox/surgery";
 import { SlotPickerCalendar } from "@/features/mydox/SlotPickerCalendar";
 import CancellationDialog from "@/features/mydox/CancellationDialog";
@@ -28,6 +28,16 @@ import { HOME_VISIT_CONSENT } from "@/features/mydox/consent-texts";
 import { TwoWayChatModal } from "@/features/mydox/TwoWayChatModal";
 import { usePostConsultationInbox } from "@/features/mydox/post-consultation-chat/usePostConsultationChat";
 import { recordHomeVisitConsent } from "@/lib/consents.functions";
+import {
+  parseChatAttachment,
+  formatMessageSnippet,
+  processImageFile,
+  processPdfFile,
+  AttachmentMenu,
+  AttachmentPreviewBar,
+  ChatAttachmentBubbleContent,
+  ImageLightboxModal
+} from "@/features/mydox/chatAttachmentUtils";
 
 /* ── Local form capture ───────────────────────────────────────────
    Completed forms stay inside this app's configured Supabase project.
@@ -383,12 +393,22 @@ function _liveMedicoRoster() {
   const rows = (typeof LIVE_BY_VIEW !== "undefined" && LIVE_BY_VIEW.medico) || [];
   return rows.filter(p => p && p.name && p.userId);
 }
+// Non-doctor roles that must never appear in a specialty doctor panel,
+// matched against the profile's display name AND specialty field.
+const _NON_DOCTOR_ROLES = ["nurse", "paramedic", "technician", "therapist", "pharmacist", "receptionist", "coordinator", "ward boy", "attender"];
+
 function _medicoMatchesSpec(medico, spec) {
   if (!spec) return true;
-  const cap = (medico.specialty || "").toString().toLowerCase().trim();
-  if (!cap) return true; // unknown capability → show everywhere
+  // Exclude non-doctor roles regardless of specialty field value
+  const nameLower  = (medico.name     || "").toLowerCase().trim();
+  const specField  = (medico.specialty || "").toLowerCase().trim();
+  if (_NON_DOCTOR_ROLES.some(r =>
+    nameLower === r || nameLower.startsWith(r + " ") || specField === r
+  )) return false;
+  // No specialty on file → show in all specialty panels as a general-fallback doctor
+  if (!specField) return true;
   const targets = [spec.name, spec.shortName, spec.id].filter(Boolean).map(s => String(s).toLowerCase());
-  return targets.some(t => cap.includes(t) || t.includes(cap));
+  return targets.some(t => specField.includes(t) || t.includes(specField));
 }
 function _stableSeed(str) {
   return String(str || "x").split("").reduce((a, c) => a + c.charCodeAt(0), 0);
@@ -516,8 +536,14 @@ async function refreshLiveProviders() {
 function liveOnlineByView(view) {
   return (LIVE_BY_VIEW[view] || []).filter(p => p.online);
 }
-// prime once at module load
+// prime once at module load (may return nothing if user is not yet authed)
 refreshLiveProviders();
+// Re-fetch as soon as a session is established — the RLS policy on profiles
+// requires auth, so the module-load fetch above returns [] for unauthenticated
+// visitors. We need to refresh again after login so the doctor panel is populated.
+supabase.auth.onAuthStateChange((event) => {
+  if (event === "SIGNED_IN") refreshLiveProviders();
+});
 
 // Heartbeat: while any patient/medico session is open, mark the current
 // account as online so other users' broadcasts include them. Fire-and-forget.
@@ -1332,6 +1358,26 @@ function SpecialtyPickerModern({
   const [selectedDoctor, setSelectedDoctor] = React.useState(null); // chosen panel doctor
   const [availableSlots, setAvailableSlots] = React.useState(null);
 
+  const schedDates = React.useMemo(() => {
+    const out = [];
+    const now = new Date();
+    for (let i = 0; i < 14; i++) {
+      const d = new Date(now);
+      d.setDate(now.getDate() + i);
+      out.push(d);
+    }
+    return out;
+  }, []);
+  const schedTimes = React.useMemo(() => {
+    const out = [];
+    for (let h = 9; h <= 21; h++) {
+      for (const m of [0, 30]) {
+        out.push({ h, m });
+      }
+    }
+    return out;
+  }, []); // 9:00 AM → 9:30 PM, every 30 minutes
+
   React.useEffect(() => {
     if (!selectedDoctor?.userId) {
       setAvailableSlots(null);
@@ -1347,24 +1393,25 @@ function SpecialtyPickerModern({
         p_duration_minutes: 30
       });
       if (!error && data) {
-        const now = new Date();
-        now.setHours(0, 0, 0, 0);
         const mapped = data.filter(d => d.is_available).map(d => {
           const dt = new Date(d.start_time);
-          const day0 = new Date(dt); day0.setHours(0, 0, 0, 0);
-          const diffTime = Math.abs(day0 - now);
-          const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
-          return { dateIdx: diffDays, h: dt.getHours(), m: dt.getMinutes() };
-        });
+          const dateIdx = schedDates.findIndex(sd => sd.toDateString() === dt.toDateString());
+          return { dateIdx, h: dt.getHours(), m: dt.getMinutes() };
+        }).filter(s => s.dateIdx >= 0);
         setAvailableSlots(mapped);
+
+        const firstAvail = Array.from({ length: 14 }, (_, i) => i).find(dIdx => mapped.some(s => s.dateIdx === dIdx));
+        setSchedDate(prev => {
+          if (prev === null) return firstAvail !== undefined ? firstAvail : 0;
+          if (!mapped.some(s => s.dateIdx === prev) && firstAvail !== undefined) return firstAvail;
+          return prev;
+        });
       } else {
         setAvailableSlots(null);
       }
     };
     fetchSlots();
-  }, [selectedDoctor]);
-  const schedDates = React.useMemo(() => { const out = []; const now = new Date(); for (let i = 0; i < 14; i++) { const d = new Date(now); d.setDate(now.getDate() + i); out.push(d); } return out; }, []);
-  const schedTimes = React.useMemo(() => { const out = []; for (let h = 9; h <= 20; h++) { for (const m of [0, 30]) { if (h === 20 && m === 30) continue; out.push({ h, m }); } } return out; }, []); // 9:00 AM → 8:00 PM
+  }, [selectedDoctor, schedDates]);
   const dayLabel = (d, i) => i === 0 ? "Today" : i === 1 ? "Tomorrow" : d.toLocaleDateString("en-US", { weekday: "short" });
   const fmtTime = t => { const ap = t.h < 12 ? "AM" : "PM"; const hh = t.h % 12 === 0 ? 12 : t.h % 12; return `${hh}:${t.m === 0 ? "00" : "30"} ${ap}`; };
   const schedConfirmed = schedDate != null && schedTime != null;
@@ -1488,7 +1535,7 @@ function SpecialtyPickerModern({
           onClick={() => {
             if (!selectedSpec) return;
             if (emergency) { onBook && onBook(selectedSpec); }
-            else { onBook && onBook({ ...selectedSpec, base: selectedDoctor ? selectedDoctor.fee : selectedSpec.base, doctor: selectedDoctor ? { userId: selectedDoctor.userId, name: selectedDoctor.name, professionalScore: selectedDoctor.professionalScore, patientRating: selectedDoctor.patientRating, hospitalRating: selectedDoctor.hospitalRating } : null, scheduled: { label: schedLabel, date: schedDates[schedDate]?.toDateString?.() || null, time: schedTimes[schedTime] ? fmtTime(schedTimes[schedTime]) : null } }); }
+            else { const _sd = schedDates[schedDate]; const _st = schedTimes[schedTime]; const _iso = (_sd && _st != null) ? (() => { const d = new Date(_sd); d.setHours(_st.h, _st.m, 0, 0); return d.toISOString(); })() : null; onBook && onBook({ ...selectedSpec, base: selectedDoctor ? selectedDoctor.fee : selectedSpec.base, doctor: selectedDoctor ? { userId: selectedDoctor.userId, name: selectedDoctor.name, professionalScore: selectedDoctor.professionalScore, patientRating: selectedDoctor.patientRating, hospitalRating: selectedDoctor.hospitalRating } : null, scheduled: { label: schedLabel, date: _sd?.toDateString?.() || null, time: _st ? fmtTime(_st) : null, iso: _iso } }); }
           }}
           disabled={!selectedSpec || (!emergency && (!docOk || !schedConfirmed))}
           style={{ width: "100%", padding: "13px", borderRadius: 13, border: "none", background: (selectedSpec && (emergency || (docOk && schedConfirmed))) ? `linear-gradient(135deg,${sc},${sc}cc)` : C.canvas, color: (selectedSpec && (emergency || (docOk && schedConfirmed))) ? "#fff" : C.faint, fontSize: 13.5, fontWeight: 800, cursor: (selectedSpec && (emergency || (docOk && schedConfirmed))) ? "pointer" : "not-allowed", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, fontFamily: "'Plus Jakarta Sans',sans-serif" }}
@@ -1515,6 +1562,26 @@ function SpecialtyPickerSimple({ providerType, selectedSpec, setSelectedSpec, em
   const [selectedDoctor, setSelectedDoctor] = React.useState(null);
   const [availableSlots, setAvailableSlots] = React.useState(null);
 
+  const schedDates = React.useMemo(() => {
+    const out = [];
+    const now = new Date();
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(now);
+      d.setDate(now.getDate() + i);
+      out.push(d);
+    }
+    return out;
+  }, []);
+  const schedTimes = React.useMemo(() => {
+    const out = [];
+    for (let h = 9; h <= 21; h++) {
+      for (const m of [0, 30]) {
+        out.push({ h, m });
+      }
+    }
+    return out;
+  }, []); // 9:00 AM → 9:30 PM, every 30 minutes
+
   React.useEffect(() => {
     if (!selectedDoctor?.userId) {
       setAvailableSlots(null);
@@ -1530,34 +1597,27 @@ function SpecialtyPickerSimple({ providerType, selectedSpec, setSelectedSpec, em
         p_duration_minutes: 30
       });
       if (!error && data) {
-        const now = new Date();
-        now.setHours(0, 0, 0, 0);
         const mapped = data.filter(d => d.is_available).map(d => {
           const dt = new Date(d.start_time);
-          const day0 = new Date(dt); day0.setHours(0, 0, 0, 0);
-          const diffTime = Math.abs(day0 - now);
-          const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
-          return { dateIdx: diffDays, h: dt.getHours(), m: dt.getMinutes() };
-        });
+          const dateIdx = schedDates.findIndex(sd => sd.toDateString() === dt.toDateString());
+          return { dateIdx, h: dt.getHours(), m: dt.getMinutes() };
+        }).filter(s => s.dateIdx >= 0);
         setAvailableSlots(mapped);
+
+        // Auto-select first date that has available slots if none selected or if current selection has no slots
+        const firstAvail = [0, 1, 2, 3, 4, 5, 6].find(dIdx => mapped.some(s => s.dateIdx === dIdx));
+        setSchedDate(prev => {
+          if (prev === null) return firstAvail !== undefined ? firstAvail : 0;
+          if (!mapped.some(s => s.dateIdx === prev) && firstAvail !== undefined) return firstAvail;
+          return prev;
+        });
       } else {
         setAvailableSlots(null);
       }
     };
     fetchSlots();
-  }, [selectedDoctor]);
+  }, [selectedDoctor, schedDates]);
   const [profileDoctor, setProfileDoctor] = React.useState(null);
-  const schedDates = React.useMemo(() => { const out = []; const now = new Date(); for (let i = 0; i < 7; i++) { const d = new Date(now); d.setDate(now.getDate() + i); out.push(d); } return out; }, []);
-  const schedTimes = React.useMemo(() => {
-    const out = [];
-    for (let h = 9; h <= 21; h++) {
-      for (const m of [0, 20, 40]) {
-        if (h === 21 && m > 0) continue; // last slot is 9:00 PM
-        out.push({ h, m });
-      }
-    }
-    return out;
-  }, []); // 9:00 AM → 9:00 PM, every 20 minutes
   const fmtTime = t => { const ap = t.h < 12 ? "AM" : "PM"; const hh = t.h % 12 === 0 ? 12 : t.h % 12; return `${hh}:${t.m === 0 ? "00" : String(t.m)} ${ap}`; };
   const dayLabel = (d, i) => i === 0 ? "Today" : i === 1 ? "Tomorrow" : d.toLocaleDateString("en-US", { weekday: "short" });
   const schedConfirmed = schedDate != null && schedTime != null;
@@ -1565,6 +1625,12 @@ function SpecialtyPickerSimple({ providerType, selectedSpec, setSelectedSpec, em
   const panelDoctors = React.useMemo(() => panelDoctorsForSpec(selectedSpec), [selectedSpec?.id]);
   const needsDoctor = providerType === "doctor"; // only doctors get the professional-score panel; therapist/nurse/scan etc. stay on the simpler model
   const docOk = !needsDoctor || !!selectedDoctor;
+
+  React.useEffect(() => {
+    if (!selectedDoctor && panelDoctors && panelDoctors.length > 0) {
+      setSelectedDoctor(panelDoctors[0]);
+    }
+  }, [panelDoctors, selectedDoctor]);
 
   React.useEffect(() => { setShowAll(false); setSchedDate(null); setSchedTime(null); setSelectedDoctor(null); setProfileDoctor(null); }, [providerType]);
   React.useEffect(() => { setSchedDate(null); setSchedTime(null); setSelectedDoctor(null); setProfileDoctor(null); }, [selectedSpec?.id]);
@@ -1662,7 +1728,7 @@ function SpecialtyPickerSimple({ providerType, selectedSpec, setSelectedSpec, em
           onClick={() => {
             if (!selectedSpec) return;
             if (emergency) onBook && onBook(selectedSpec);
-            else onBook && onBook({ ...selectedSpec, base: selectedDoctor ? selectedDoctor.fee : selectedSpec.base, doctor: selectedDoctor ? { userId: selectedDoctor.userId, name: selectedDoctor.name, qualification: selectedDoctor.qualification, professionalScore: selectedDoctor.professionalScore, patientRating: selectedDoctor.patientRating, hospitalRating: selectedDoctor.hospitalRating } : null, scheduled: { label: schedLabel, date: schedDates[schedDate]?.toDateString?.() || null, time: schedTimes[schedTime] ? fmtTime(schedTimes[schedTime]) : null } });
+            else { const _sd = schedDates[schedDate]; const _st = schedTimes[schedTime]; const _iso = (_sd && _st != null) ? (() => { const d = new Date(_sd); d.setHours(_st.h, _st.m, 0, 0); return d.toISOString(); })() : null; onBook && onBook({ ...selectedSpec, base: selectedDoctor ? selectedDoctor.fee : selectedSpec.base, doctor: selectedDoctor ? { userId: selectedDoctor.userId, name: selectedDoctor.name, qualification: selectedDoctor.qualification, professionalScore: selectedDoctor.professionalScore, patientRating: selectedDoctor.patientRating, hospitalRating: selectedDoctor.hospitalRating } : null, scheduled: { label: schedLabel, date: _sd?.toDateString?.() || null, time: _st ? fmtTime(_st) : null, iso: _iso } }); }
           }}
           disabled={!selectedSpec || (!emergency && (!docOk || !schedConfirmed))}
           style={{ width: "100%", padding: "17px", borderRadius: 16, border: "none", background: (selectedSpec && (emergency || (docOk && schedConfirmed))) ? `linear-gradient(135deg,${sc},${sc}cc)` : C.canvas, color: (selectedSpec && (emergency || (docOk && schedConfirmed))) ? "#fff" : C.faint, fontSize: 16, fontWeight: 800, cursor: (selectedSpec && (emergency || (docOk && schedConfirmed))) ? "pointer" : "not-allowed", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, fontFamily: "'Plus Jakarta Sans',sans-serif" }}
@@ -2152,11 +2218,764 @@ function calBk(days, h, m, title, sub, status, color) {
   const d = new Date(); d.setDate(d.getDate() + days); d.setHours(h, m, 0, 0);
   return { date: d, title, sub, status, color };
 }
+/* ═══ Bottom Sheet: Consultation Over Dialog ═══════════════════════════ */
+function ConsultationOverDialog({ item, onClose, onConfirm }) {
+  const [notes, setNotes] = useState("");
+  const [otp, setOtp] = useState("");
+  const [errorMsg, setErrorMsg] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  if (!item) return null;
+  const itemStatusLower = (item.status || "").toLowerCase();
+  const itemRawStatusLower = (item.rawStatus || "").toLowerCase();
+  if (itemStatusLower === "cancelled" || itemStatusLower === "canceled" || itemRawStatusLower === "cancelled" || itemRawStatusLower === "canceled") {
+    return null;
+  }
+
+  const handleOtpChange = (e) => {
+    const val = e.target.value.replace(/\D/g, "").slice(0, 4);
+    setOtp(val);
+    if (errorMsg) setErrorMsg("");
+  };
+
+  const handleVerify = async () => {
+    if (otp.length !== 4 || busy) return;
+    setBusy(true);
+    setErrorMsg("");
+    try {
+      const slotId = item.careRequestId || item.appointmentId || item.id;
+      const res = await verifyAndCompleteConsultation(slotId, otp, notes);
+      if (res.success) {
+        onConfirm(item, notes);
+      } else {
+        setErrorMsg(res.error || "Incorrect OTP. Ask the patient to read the code shown in their app.");
+      }
+    } catch (e) {
+      setErrorMsg(e?.message || "Failed to verify consultation OTP.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 70,
+        background: "rgba(15,23,42,0.55)",
+        display: "flex",
+        alignItems: "flex-end",
+        justifyContent: "center",
+        fontFamily: "'Plus Jakarta Sans', sans-serif"
+      }}
+      onClick={onClose}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Consultation over"
+        style={{
+          background: "#ffffff",
+          width: "100%",
+          maxWidth: 540,
+          borderRadius: "24px 24px 0 0",
+          padding: "20px 20px calc(24px + env(safe-area-inset-bottom))",
+          boxShadow: "0 -10px 30px rgba(0,0,0,0.15)",
+          display: "flex",
+          flexDirection: "column",
+          gap: 16
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div>
+            <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: "#0F172A" }}>
+              Consultation over
+            </h3>
+            <p style={{ margin: "2px 0 0", fontSize: 13, color: "#64748B" }}>
+              Patient: <strong style={{ color: "#0F172A" }}>{item.title}</strong>
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            style={{
+              background: "#F1F5F9",
+              border: "none",
+              borderRadius: "50%",
+              width: 32,
+              height: 32,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "#475569",
+              fontSize: 16,
+              fontWeight: 700
+            }}
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Section A: Notes */}
+        <div>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+            <label style={{ fontSize: 12.5, fontWeight: 700, color: "#334155" }}>
+              Doctor's Instructions & Notes
+            </label>
+            <span style={{ fontSize: 11, color: "#94A3B8" }}>{notes.length}/1000</span>
+          </div>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value.slice(0, 1000))}
+            maxLength={1000}
+            rows={4}
+            placeholder="Advice, prescription notes, follow-up…"
+            style={{
+              width: "100%",
+              boxSizing: "border-box",
+              padding: "12px 14px",
+              borderRadius: 14,
+              border: "1.5px solid #E2E8F0",
+              fontSize: 13.5,
+              fontFamily: "inherit",
+              resize: "none",
+              outline: "none",
+              color: "#0F172A",
+              background: "#F8FAFC"
+            }}
+          />
+        </div>
+
+        {/* Section B: 4-digit OTP */}
+        <div>
+          <label style={{ display: "block", fontSize: 12.5, fontWeight: 700, color: "#334155", marginBottom: 6 }}>
+            Patient Verification Code
+          </label>
+          <input
+            type="text"
+            inputMode="numeric"
+            value={otp}
+            onChange={handleOtpChange}
+            placeholder="• • • •"
+            maxLength={4}
+            style={{
+              width: "100%",
+              boxSizing: "border-box",
+              padding: "12px 16px",
+              borderRadius: 14,
+              border: errorMsg ? "1.5px solid #EF4444" : "1.5px solid #E2E8F0",
+              fontSize: 24,
+              fontWeight: 800,
+              letterSpacing: "12px",
+              textAlign: "center",
+              fontFamily: "monospace",
+              outline: "none",
+              color: "#0F172A",
+              background: "#F8FAFC"
+            }}
+          />
+          <p style={{ margin: "6px 0 0", fontSize: 11.5, color: "#64748B", textAlign: "center" }}>
+            Ask the patient to read the 4-digit code shown in their app
+          </p>
+          {errorMsg && (
+            <p style={{ margin: "6px 0 0", fontSize: 12, color: "#DC2626", fontWeight: 600, textAlign: "center" }}>
+              {errorMsg}
+            </p>
+          )}
+        </div>
+
+        {/* Action Button */}
+        <button
+          onClick={handleVerify}
+          disabled={otp.length !== 4 || busy}
+          style={{
+            width: "100%",
+            padding: "14px",
+            borderRadius: 14,
+            border: "none",
+            background: otp.length === 4 && !busy ? "#0D9488" : "#CBD5E1",
+            color: "#ffffff",
+            fontSize: 14.5,
+            fontWeight: 800,
+            cursor: otp.length === 4 && !busy ? "pointer" : "not-allowed",
+            transition: "all 0.15s",
+            boxShadow: otp.length === 4 && !busy ? "0 4px 12px rgba(13,148,136,0.3)" : "none"
+          }}
+        >
+          {busy ? "Verifying with backend…" : "Verify OTP & close"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ═══ Full Screen: Consultation Chat (matching design spec) ═════════════════════════ */
+function CalendarChat({ patientName, onClose, specialty, subtitle }) {
+  const { messages, send, meId, ready, live } = useRealtimeChat(patientName);
+  const [text, setText] = useState("");
+  const [localSentMessages, setLocalSentMessages] = useState([]);
+  const [pendingAttachment, setPendingAttachment] = useState(null);
+  const [showAttachMenu, setShowAttachMenu] = useState(false);
+  const [selectedImageModal, setSelectedImageModal] = useState(null);
+  const endRef = useRef(null);
+  const photoInputRef = useRef(null);
+  const pdfInputRef = useRef(null);
+
+  const BASE_LIMIT = 25;
+
+  // Combine real-time Supabase messages and local synthetic messages
+  const allMessages = useMemo(() => {
+    const existingIds = new Set(messages.map((m) => m.id));
+    const uniqueLocal = localSentMessages.filter((m) => !existingIds.has(m.id));
+    return [...messages, ...uniqueLocal];
+  }, [messages, localSentMessages]);
+
+  // In doctor chat, count patient messages to display patient quota allowance
+  const patientSentCount = useMemo(() => {
+    return allMessages.filter(
+      (m) => meId && m.sender_id !== meId
+    ).length;
+  }, [allMessages, meId]);
+
+  const messagesRemaining = Math.max(0, BASE_LIMIT - patientSentCount);
+
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
+  }, [allMessages.length, pendingAttachment]);
+
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const handlePhotoSelect = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const processed = await processImageFile(file);
+      setPendingAttachment(processed);
+    } catch (err) {
+      toast(err?.message || "Failed to load photo");
+    } finally {
+      e.target.value = "";
+    }
+  };
+
+  const handlePdfSelect = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const processed = await processPdfFile(file);
+      setPendingAttachment(processed);
+    } catch (err) {
+      toast(err?.message || "Failed to load PDF");
+    } finally {
+      e.target.value = "";
+    }
+  };
+
+  const submit = async () => {
+    const t = text.trim();
+    if (!t && !pendingAttachment) return;
+    let bodyToSend = t;
+    if (pendingAttachment) {
+      bodyToSend = JSON.stringify({
+        _type: "attachment",
+        fileType: pendingAttachment.type,
+        name: pendingAttachment.name,
+        size: pendingAttachment.size,
+        dataUrl: pendingAttachment.dataUrl,
+        caption: t
+      });
+    }
+    setText("");
+    setPendingAttachment(null);
+    setShowAttachMenu(false);
+    const ok = await send(bodyToSend);
+    if (!ok) {
+      const fallbackMsg = {
+        id: "local_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6),
+        sender_id: meId || "sender",
+        recipient_id: "recipient",
+        body: bodyToSend,
+        created_at: new Date().toISOString(),
+        thread_key: "thread"
+      };
+      setLocalSentMessages((prev) => [...prev, fallbackMsg]);
+    }
+  };
+
+  const fmtTime = (iso) => {
+    try {
+      return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    } catch {
+      return "";
+    }
+  };
+
+  const getInitials = (n) => {
+    if (!n) return "VI";
+    const clean = n.replace(/^Dr\.?\s+/i, "").trim();
+    const parts = clean.split(/\s+/);
+    if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+    if (parts[0]) return parts[0].slice(0, 2).toUpperCase();
+    return "VI";
+  };
+
+  const displayName = patientName || "Dr. Vikram Iyer";
+  const initials = getInitials(displayName);
+  const sub = subtitle || specialty || "Women's Health / Gynecologist";
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Chat with ${displayName}`}
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 1100,
+        background: "#061A14",
+        display: "flex",
+        flexDirection: "column",
+        fontFamily: "'Plus Jakarta Sans', sans-serif",
+        color: "#fff"
+      }}
+    >
+      {/* Hidden File Pickers */}
+      <input
+        ref={photoInputRef}
+        type="file"
+        accept="image/*"
+        style={{ display: "none" }}
+        onChange={handlePhotoSelect}
+      />
+      <input
+        ref={pdfInputRef}
+        type="file"
+        accept="application/pdf,.pdf"
+        style={{ display: "none" }}
+        onChange={handlePdfSelect}
+      />
+
+      {/* Top Header */}
+      <header
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "12px 16px",
+          background: "#061A14",
+          borderBottom: "1px solid #0E2E23",
+          flexShrink: 0
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <button
+            onClick={onClose}
+            aria-label="Back to appointments"
+            style={{
+              background: "transparent",
+              border: "none",
+              color: "#fff",
+              cursor: "pointer",
+              padding: 4,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center"
+            }}
+          >
+            <ChevronLeft size={24} />
+          </button>
+
+          <div
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: "50%",
+              background: "#123328",
+              border: "1.5px solid #10B981",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontWeight: 800,
+              fontSize: 14,
+              color: "#10B981"
+            }}
+          >
+            {initials}
+          </div>
+
+          <div>
+            <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800, color: "#fff", lineHeight: 1.2 }}>
+              {displayName}
+            </h3>
+            <p style={{ margin: "2px 0 0", fontSize: 11, color: "#8EE0C4" }}>
+              {live ? "Online" : "Active"} · {sub}
+            </p>
+          </div>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <button
+            onClick={() => toast("Consultation History")}
+            aria-label="View history"
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: "50%",
+              background: "transparent",
+              border: "none",
+              color: "#C5D1B8",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center"
+            }}
+          >
+            <Eye size={19} />
+          </button>
+          <button
+            onClick={() => toast(`Calling ${displayName}…`)}
+            aria-label={`Call ${displayName}`}
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: "50%",
+              background: "transparent",
+              border: "none",
+              color: "#C5D1B8",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center"
+            }}
+          >
+            <Phone size={19} />
+          </button>
+        </div>
+      </header>
+
+      {/* Top 3 Metric Cards */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr 1fr",
+          gap: 10,
+          padding: "10px 14px",
+          background: "#04120E",
+          borderBottom: "1px solid #0E2E23",
+          flexShrink: 0
+        }}
+      >
+        <div
+          style={{
+            background: "#081E17",
+            borderRadius: 14,
+            padding: "10px 8px",
+            textAlign: "center",
+            border: "1px solid #123328"
+          }}
+        >
+          <div style={{ color: messagesRemaining > 5 ? "#10B981" : messagesRemaining > 0 ? "#F59E0B" : "#EF4444", fontWeight: 800, fontSize: 17 }}>
+            {messagesRemaining}/{BASE_LIMIT}
+          </div>
+          <div style={{ color: "#7B9E93", fontSize: 11, fontWeight: 600, marginTop: 2 }}>Messages Left</div>
+        </div>
+
+        <div
+          style={{
+            background: "#081E17",
+            borderRadius: 14,
+            padding: "10px 8px",
+            textAlign: "center",
+            border: "1px solid #123328"
+          }}
+        >
+          <div style={{ color: "#F59E0B", fontWeight: 800, fontSize: 17 }}>10:00</div>
+          <div style={{ color: "#7B9E93", fontSize: 11, fontWeight: 600, marginTop: 2 }}>Audio Left</div>
+        </div>
+
+        <div
+          style={{
+            background: "#081E17",
+            borderRadius: 14,
+            padding: "10px 8px",
+            textAlign: "center",
+            border: "1px solid #123328"
+          }}
+        >
+          <div style={{ color: "#38BDF8", fontWeight: 800, fontSize: 17 }}>2/2</div>
+          <div style={{ color: "#7B9E93", fontSize: 11, fontWeight: 600, marginTop: 2 }}>Calls Left</div>
+        </div>
+      </div>
+
+      {/* Main Chat Stream */}
+      <main
+        style={{
+          flex: 1,
+          overflowY: "auto",
+          padding: "12px 14px",
+          display: "flex",
+          flexDirection: "column",
+          gap: 12,
+          background: "#061A14",
+          position: "relative"
+        }}
+      >
+        {/* End-to-End Encryption Notice */}
+        <div
+          style={{
+            margin: "4px auto 12px",
+            maxWidth: "88%",
+            background: "#1E2A18",
+            border: "1px solid rgba(245, 158, 11, 0.18)",
+            borderRadius: 12,
+            padding: "10px 14px",
+            textAlign: "center",
+            color: "#C5D1B8",
+            fontSize: 11.5,
+            lineHeight: 1.45
+          }}
+        >
+          <ShieldCheck size={14} style={{ display: "inline", verticalAlign: "-2px", marginRight: 5, color: "#F59E0B" }} />
+          Messages and calls are end-to-end encrypted. No one outside this chat, not even MedConnect, can read or listen to them.
+        </div>
+
+        {ready && allMessages.length === 0 && (
+          <p style={{ margin: "auto", fontSize: 13, color: "#64748B", textAlign: "center" }}>
+            {live
+              ? "No messages yet. Send follow-up advice or questions below."
+              : "Connecting to the chat thread…"}
+          </p>
+        )}
+
+        {allMessages.map((m) => {
+          const mine = (meId && m.sender_id === meId) || m.id?.startsWith("local_");
+          const att = parseChatAttachment(m.body);
+          return (
+            <div
+              key={m.id}
+              style={{
+                alignSelf: mine ? "flex-end" : "flex-start",
+                maxWidth: "78%",
+                background: mine ? "#1A5644" : "#0F2B23",
+                color: "#FFFFFF",
+                border: mine ? "1px solid #25745C" : "1px solid #184437",
+                borderRadius: mine ? "16px 16px 4px 16px" : "16px 16px 16px 4px",
+                padding: "10px 14px",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.25)"
+              }}
+            >
+              {att ? (
+                <ChatAttachmentBubbleContent
+                  attachment={att}
+                  mine={mine}
+                  onViewImage={(img) => setSelectedImageModal(img)}
+                />
+              ) : (
+                <p style={{ margin: 0, fontSize: 14, lineHeight: 1.45 }}>{m.body}</p>
+              )}
+              <p
+                style={{
+                  margin: "4px 0 0",
+                  fontSize: 10,
+                  color: mine ? "#8EE0C4" : "#7B9E93",
+                  textAlign: "right",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "flex-end",
+                  gap: 3
+                }}
+              >
+                <span>{fmtTime(m.created_at)}</span>
+                {mine && <span style={{ fontSize: 11 }}>✓</span>}
+              </p>
+            </div>
+          );
+        })}
+        <div ref={endRef} />
+
+        {/* Floating Tool Buttons on Right */}
+        <div style={{ position: "fixed", right: 16, bottom: "calc(74px + env(safe-area-inset-bottom))", display: "flex", flexDirection: "column", gap: 10, zIndex: 10 }}>
+          <button
+            onClick={() => toast("Prescriptions & Notes")}
+            aria-label="Prescriptions tool"
+            style={{
+              width: 42,
+              height: 42,
+              borderRadius: "50%",
+              background: "#fff",
+              border: "none",
+              boxShadow: "0 4px 14px rgba(0,0,0,0.4)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer"
+            }}
+          >
+            <Scissors size={18} color="#061A14" />
+          </button>
+
+          <button
+            onClick={() => toast("MedConnect AI Assistant")}
+            aria-label="AI assistant"
+            style={{
+              width: 42,
+              height: 42,
+              borderRadius: "50%",
+              background: "#fff",
+              border: "none",
+              boxShadow: "0 4px 14px rgba(0,0,0,0.4)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer"
+            }}
+          >
+            <div
+              style={{
+                width: 24,
+                height: 24,
+                borderRadius: "50%",
+                background: "linear-gradient(135deg,#0284C7,#2563EB)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center"
+              }}
+            >
+              <MessageSquare size={13} color="#fff" />
+            </div>
+          </button>
+        </div>
+      </main>
+
+      {/* Attachment Staging Preview Bar */}
+      {pendingAttachment && (
+        <AttachmentPreviewBar
+          attachment={pendingAttachment}
+          onRemove={() => setPendingAttachment(null)}
+        />
+      )}
+
+      {/* Input Row */}
+      <div
+        style={{
+          position: "relative",
+          padding: "10px 14px calc(10px + env(safe-area-inset-bottom))",
+          background: "#061A14",
+          borderTop: "1px solid #0E2E23",
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          flexShrink: 0
+        }}
+      >
+        {/* Attachment Options Menu */}
+        {showAttachMenu && (
+          <AttachmentMenu
+            onSelectPhoto={() => photoInputRef.current?.click()}
+            onSelectPdf={() => pdfInputRef.current?.click()}
+            onClose={() => setShowAttachMenu(false)}
+          />
+        )}
+
+        <button
+          onClick={() => setShowAttachMenu((prev) => !prev)}
+          aria-label="Add attachment: photo or PDF"
+          title="Attach photo or PDF file"
+          style={{
+            width: 42,
+            height: 42,
+            borderRadius: "50%",
+            background: showAttachMenu ? "#10B981" : "#123328",
+            border: "1px solid #1C4D3E",
+            color: "#fff",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            flexShrink: 0,
+            transition: "background 0.2s"
+          }}
+        >
+          <Plus
+            size={22}
+            color="#fff"
+            style={{
+              transform: showAttachMenu ? "rotate(45deg)" : "none",
+              transition: "transform 0.2s"
+            }}
+          />
+        </button>
+
+        <input
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") submit();
+          }}
+          placeholder={pendingAttachment ? "Add a caption (optional)" : "Type a message"}
+          style={{
+            flex: 1,
+            background: "#0A241D",
+            border: "1px solid #144436",
+            borderRadius: 9999,
+            padding: "11px 18px",
+            color: "#fff",
+            fontSize: 14,
+            fontFamily: "'Plus Jakarta Sans', sans-serif",
+            outline: "none"
+          }}
+        />
+
+        <button
+          onClick={submit}
+          disabled={!text.trim() && !pendingAttachment}
+          aria-label="Send message"
+          style={{
+            width: 42,
+            height: 42,
+            borderRadius: "50%",
+            background: "#10B981",
+            border: "none",
+            color: "#fff",
+            cursor: text.trim() || pendingAttachment ? "pointer" : "default",
+            opacity: text.trim() || pendingAttachment ? 1 : 0.4,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            flexShrink: 0,
+            transition: "opacity 0.2s"
+          }}
+        >
+          <Send size={18} color="#fff" style={{ transform: "translate(1px, -1px)" }} />
+        </button>
+      </div>
+
+      {/* Image Lightbox Modal */}
+      <ImageLightboxModal
+        image={selectedImageModal}
+        onClose={() => setSelectedImageModal(null)}
+      />
+    </div>
+  );
+}
+
 function BookingCalendar({ title = "My Schedule", subtitle = "Your patient appointments", accent = "#0D9488", bookings, onClose }) {
   const today = new Date();
   const [vy, setVy] = useState(today.getFullYear());
   const [vm, setVm] = useState(today.getMonth());
   const [sel, setSel] = useState(today.toDateString());
+  const [doneMap, setDoneMap] = useState({});
+  const [overDialogItem, setOverDialogItem] = useState(null);
+  const [chatPatient, setChatPatient] = useState(null);
+
   const keyOf = (d) => d.toDateString();
   const byDay = {};
   (bookings || []).forEach(b => { const k = keyOf(b.date); (byDay[k] = byDay[k] || []).push(b); });
@@ -2172,7 +2991,13 @@ function BookingCalendar({ title = "My Schedule", subtitle = "Your patient appoi
   const selList = byDay[sel] || [];
   const fmtTime = (d) => d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
   const arrowBtn = { width: 34, height: 34, borderRadius: "50%", background: "#fff", border: "1px solid #E2E8F0", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "#0F172A", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" };
-  
+
+  const handleConsultationOver = (item, notes) => {
+    const rowKey = item.id || `${item.title}_${item.date.getTime()}`;
+    setDoneMap(prev => ({ ...prev, [rowKey]: { status: "Consultation over", notes } }));
+    setOverDialogItem(null);
+  };
+
   return (
     <div style={{ position: "absolute", inset: 0, zIndex: 60, background: "#EEF4F1", display: "flex", flexDirection: "column", fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
       {/* Top Header Bar */}
@@ -2252,35 +3077,116 @@ function BookingCalendar({ title = "My Schedule", subtitle = "Your patient appoi
               const modeLower = (b.mode || "").toLowerCase();
               const isHomeVisit = modeLower === "home_visit" || modeLower === "home" || subLower.includes("home");
               const isEmerg = b.color === C.emerg || modeLower === "emergency" || subLower.includes("emergency");
-              const badgeBg = isEmerg ? "#FEE2E2" : isHomeVisit ? "#DBEAFE" : "#E4F6EE";
-              const badgeFg = isEmerg ? "#DC2626" : isHomeVisit ? "#2563EB" : "#0C9668";
-              const timeFg = isEmerg ? "#DC2626" : isHomeVisit ? "#2563EB" : "#0C9668";
-              const barBg = isEmerg ? "#DC2626" : isHomeVisit ? "#2563EB" : "#0C9668";
+              const rowKey = b.id || `${b.title}_${b.date.getTime()}`;
+              const doneInfo = doneMap[rowKey];
+              const statusLower = (b.status || "").toLowerCase();
+              const rawStatusLower = (b.rawStatus || "").toLowerCase();
+              const isCancelled = statusLower === "cancelled" || statusLower === "canceled" || rawStatusLower === "cancelled" || rawStatusLower === "canceled";
+              const isDone = !isCancelled && (!!doneInfo || b.status === "Consultation over" || statusLower === "completed");
+              const isPatientView = (title || "").toLowerCase().includes("patient") || (title || "").toLowerCase().includes("my bookings");
+              const displayStatus = isCancelled ? "Cancelled" : isDone ? "Consultation over" : b.status;
+              const badgeBg = isCancelled ? "#FEE2E2" : isDone ? "#D1FAE5" : isEmerg ? "#FEE2E2" : isHomeVisit ? "#DBEAFE" : "#E4F6EE";
+              const badgeFg = isCancelled ? "#DC2626" : isDone ? "#065F46" : isEmerg ? "#DC2626" : isHomeVisit ? "#2563EB" : "#0C9668";
+              const timeFg = isCancelled ? "#DC2626" : isEmerg ? "#DC2626" : isHomeVisit ? "#2563EB" : "#0C9668";
+              const barBg = isCancelled ? "#DC2626" : isEmerg ? "#DC2626" : isHomeVisit ? "#2563EB" : "#0C9668";
 
               return (
-                <div key={i} style={{ background: "#ffffff", borderRadius: 20, padding: "14px 16px", display: "flex", alignItems: "center", gap: 14, boxShadow: "0 4px 14px rgba(15,23,42,0.04)", border: "1px solid #E2E8F0" }}>
-                  {/* Left Column: Time */}
-                  <div style={{ width: 50, flexShrink: 0, textAlign: "center" }}>
-                    <p style={{ margin: 0, fontWeight: 800, color: timeFg, fontSize: 15, lineHeight: 1.1 }}>{timeParts[0]}</p>
-                    <p style={{ margin: "2px 0 0", fontSize: 10, color: "#64748B", fontWeight: 800, letterSpacing: 0.5 }}>{timeParts[1]}</p>
+                <div key={i} style={{ background: "#ffffff", borderRadius: 20, padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10, boxShadow: "0 4px 14px rgba(15,23,42,0.04)", border: "1px solid #E2E8F0" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                    {/* Left Column: Time */}
+                    <div style={{ width: 50, flexShrink: 0, textAlign: "center" }}>
+                      <p style={{ margin: 0, fontWeight: 800, color: timeFg, fontSize: 15, lineHeight: 1.1 }}>{timeParts[0]}</p>
+                      <p style={{ margin: "2px 0 0", fontSize: 10, color: "#64748B", fontWeight: 800, letterSpacing: 0.5 }}>{timeParts[1]}</p>
+                    </div>
+                    {/* Vertical Accent Line */}
+                    <div style={{ width: 3.5, height: 34, borderRadius: 2, background: barBg, flexShrink: 0 }} />
+                    {/* Middle Column: Details */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ margin: 0, fontWeight: 800, color: "#0F172A", fontSize: 14.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{b.title}</p>
+                      <p style={{ margin: "2px 0 0", fontSize: 12, color: "#64748B", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{b.sub}</p>
+                    </div>
+                    {/* Right Column: Status Badge */}
+                    <span style={{ flexShrink: 0, fontSize: 11.5, fontWeight: 700, color: badgeFg, background: badgeBg, borderRadius: 999, padding: "5px 13px" }}>
+                      {displayStatus}
+                    </span>
                   </div>
-                  {/* Vertical Accent Line */}
-                  <div style={{ width: 3.5, height: 34, borderRadius: 2, background: barBg, flexShrink: 0 }} />
-                  {/* Middle Column: Details */}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ margin: 0, fontWeight: 800, color: "#0F172A", fontSize: 14.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{b.title}</p>
-                    <p style={{ margin: "2px 0 0", fontSize: 12, color: "#64748B", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{b.sub}</p>
-                  </div>
-                  {/* Right Column: Status Badge */}
-                  <span style={{ flexShrink: 0, fontSize: 11.5, fontWeight: 700, color: badgeFg, background: badgeBg, borderRadius: 999, padding: "5px 13px" }}>
-                    {b.status}
-                  </span>
+
+                  {/* Action Buttons: Consultation over OR Chat (hidden for cancelled appointments) */}
+                  {!isCancelled && (
+                    <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 8 }}>
+                      {isDone ? (
+                        <button
+                          onClick={() => setChatPatient(b.title)}
+                          aria-label={`Chat with ${b.title}`}
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 6,
+                            background: "#0D9488",
+                            color: "#ffffff",
+                            border: "none",
+                            borderRadius: 999,
+                            padding: "6px 14px",
+                            fontSize: 12,
+                            fontWeight: 700,
+                            cursor: "pointer",
+                            boxShadow: "0 1px 3px rgba(13,148,136,0.3)"
+                          }}
+                        >
+                          <MessageSquare size={14} /> Chat
+                        </button>
+                      ) : !isPatientView ? (
+                        <button
+                          onClick={() => setOverDialogItem(b)}
+                          style={{
+                            border: "1.5px solid #0D9488",
+                            background: "#ffffff",
+                            color: "#0D9488",
+                            borderRadius: 999,
+                            padding: "6px 16px",
+                            fontSize: 12,
+                            fontWeight: 700,
+                            cursor: "pointer",
+                            transition: "all 0.15s",
+                            whiteSpace: "nowrap"
+                          }}
+                        >
+                          Consultation over
+                        </button>
+                      ) : null}
+                    </div>
+                  )}
+
+                  {/* Notes beneath row when consultation is marked over */}
+                  {!isCancelled && doneInfo?.notes && (
+                    <div style={{ padding: "8px 12px", background: "#F8FAFC", borderRadius: 10, border: "1px solid #E2E8F0", fontSize: 12.5, color: "#334155" }}>
+                      <p style={{ margin: 0, fontWeight: 700, fontSize: 11, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5 }}>Doctor's Notes</p>
+                      <p style={{ margin: "4px 0 0", whiteSpace: "pre-wrap" }}>{doneInfo.notes}</p>
+                    </div>
+                  )}
                 </div>
               );
             })}
           </div>
         )}
       </div>
+
+      {/* Bottom sheet dialog: Consultation Over */}
+      {overDialogItem && (
+        <ConsultationOverDialog
+          item={overDialogItem}
+          onClose={() => setOverDialogItem(null)}
+          onConfirm={handleConsultationOver}
+        />
+      )}
+
+      {/* Full screen dialog: Post-consultation Chat */}
+      {chatPatient && (
+        <CalendarChat
+          patientName={chatPatient}
+          onClose={() => setChatPatient(null)}
+        />
+      )}
     </div>
   );
 }
@@ -6638,247 +7544,26 @@ function HistoryCompletedActions({ requestId, providerName, specialty }) {
   );
 }
 
-/* ── Patient-side previous consultations ─────────────────────────
-   Lists this patient's care_requests grouped by outcome (paid, unpaid,
-   pending OTP, in progress, cancelled, failed, completed). Each row
-   carries a short "next step" advice hint. */
 function PatientHistoryOverlay({ onClose, onRebook }) {
-  const [uid, setUid] = useState(null);
-  const [rows, setRows] = useState([]);
-  const [names, setNames] = useState({});
-  const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState("all");
-
-  useEffect(() => {
-    let m = true;
-    (async () => {
-      const { data: sess } = await supabase.auth.getSession();
-      const u = sess.session?.user?.id || null;
-      if (!m) return;
-      setUid(u);
-      if (!u) { setLoading(false); return; }
-      const { data } = await supabase.from("care_requests")
-        .select("id, patient_id, specialty, emergency, accepted_by, accepted_at, status, paid_at, amount, otp, otp_verified_at, arrival_deadline, completed_at, created_at, updated_at")
-        .eq("patient_id", u)
-        .order("created_at", { ascending: false })
-        .limit(200);
-      if (!m) return;
-      const list = data || [];
-      setRows(list);
-      const provIds = Array.from(new Set(list.map(r => r.accepted_by).filter(Boolean)));
-      if (provIds.length) {
-        const { data: profs } = await supabase.from("profiles").select("id, full_name").in("id", provIds);
-        if (!m) return;
-        const nm = {}; (profs || []).forEach(p => { nm[p.id] = p.full_name || "Provider"; });
-        setNames(nm);
-      }
-      setLoading(false);
-    })();
-    return () => { m = false; };
-  }, []);
-
-  function classify(r) {
-    if (r.status === "completed") return { key: "completed", label: "Consultation over", color: "#065F46", bg: "#D1FAE5", advice: "Rate the doctor and book a follow-up if needed." };
-    if (r.status === "cancelled") return { key: "cancelled", label: "Cancelled", color: "#4B5563", bg: "#F3F4F6", advice: "You can book again anytime — nothing was charged." };
-    if (r.status === "failed") return { key: "failed", label: "Failed / expired", color: "#B91C1C", bg: "#FEE2E2", advice: "Payment window expired. Rebook if you still need care." };
-    if (r.status === "open") return { key: "pending", label: "Finding medico", color: "#92400E", bg: "#FEF3C7", advice: "Still searching. You can wait or cancel and try a nearby hub." };
-    if (r.status === "accepted") {
-      if (!r.paid_at) return { key: "unpaid", label: "Unpaid — awaiting payment", color: "#B45309", bg: "#FEF3C7", advice: "Complete the payment so your medico can be dispatched." };
-      if (!r.otp_verified_at) return { key: "paid_pending", label: "Paid — OTP pending", color: "#92400E", bg: "#FEF3C7", advice: "Meet the doctor in person and share your 4-digit OTP." };
-      return { key: "in_progress", label: "Consultation in progress", color: "#1E40AF", bg: "#DBEAFE", advice: "Tap 'Consultation over' once the doctor is done." };
-    }
-    return { key: "other", label: r.status || "—", color: "#4B5563", bg: "#F3F4F6", advice: "" };
-  }
-
-  const enriched = useMemo(() => rows.map(r => ({ r, cat: classify(r) })), [rows]);
-  const counts = useMemo(() => {
-    const c = { all: enriched.length, unpaid: 0, paid_pending: 0, in_progress: 0, pending: 0, completed: 0, cancelled: 0, failed: 0 };
-    enriched.forEach(({ cat }) => { if (c[cat.key] !== undefined) c[cat.key]++; });
-    return c;
-  }, [enriched]);
-  const visible = filter === "all" ? enriched : enriched.filter(x => x.cat.key === filter);
-  const chips = [
-    ["all", "All"], ["unpaid", "Unpaid"], ["paid_pending", "OTP pending"], ["in_progress", "In progress"],
-    ["pending", "Finding"], ["completed", "Over"], ["cancelled", "Cancelled"], ["failed", "Failed"],
-  ];
-
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.55)", zIndex: 70, display: "flex", justifyContent: "center", alignItems: "flex-end" }}>
-      <div style={{ width: "100%", maxWidth: 420, background: "#fff", borderTopLeftRadius: 22, borderTopRightRadius: 22, maxHeight: "88vh", display: "flex", flexDirection: "column", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
-        <div style={{ padding: "14px 16px", borderBottom: `1px solid ${C.line}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div>
-            <p style={{ margin: 0, fontWeight: 800, color: C.ink, fontSize: 15 }}>Previous consultations</p>
-            <p style={{ margin: "2px 0 0", fontSize: 11, color: C.sub, fontWeight: 600 }}>Status, amount and next-step advice</p>
-          </div>
-          <button onClick={onClose} style={{ background: "transparent", border: "none", fontSize: 22, color: C.sub, cursor: "pointer", lineHeight: 1 }}>×</button>
-        </div>
-        <div style={{ padding: "10px 12px", display: "flex", gap: 6, overflowX: "auto", borderBottom: `1px solid ${C.line}` }}>
-          {chips.map(([k, l]) => (
-            <button key={k} onClick={() => setFilter(k)} style={{ flexShrink: 0, background: filter === k ? C.primary : C.canvas, color: filter === k ? "#fff" : C.ink, border: "none", borderRadius: 99, padding: "6px 11px", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
-              {l}{counts[k] ? ` · ${counts[k]}` : ""}
-            </button>
-          ))}
-        </div>
-        <div style={{ flex: 1, overflowY: "auto", padding: "10px 14px 20px" }}>
-          {["all", "completed"].includes(filter) && <HomeVisitPanel audience="patient" completedOnly />}
-          {loading && <p style={{ color: C.sub, fontSize: 12 }}>Loading…</p>}
-          {!loading && visible.length === 0 && <p style={{ color: C.sub, fontSize: 12, marginTop: 14 }}>No consultations in this category yet.</p>}
-          {visible.map(({ r, cat }) => {
-            const providerName = r.accepted_by ? (names[r.accepted_by] || "Provider") : "—";
-            const when = new Date(r.created_at).toLocaleString([], { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
-            return (
-              <div key={r.id} style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 14, padding: "11px 12px", marginTop: 8 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ margin: 0, fontWeight: 800, color: C.ink, fontSize: 13 }}>{r.emergency ? "🚨 " : ""}{r.specialty || "Consultation"}</p>
-                    <p style={{ margin: "2px 0 0", fontSize: 10.5, color: C.sub, fontWeight: 600 }}>{providerName} · {when}</p>
-                  </div>
-                  {cat.key === "completed" && <HistoryCompletedActions requestId={r.id} providerName={providerName} specialty={r.specialty} />}
-                  <span style={{ background: cat.bg, color: cat.color, fontSize: 10, fontWeight: 800, borderRadius: 99, padding: "3px 8px", flexShrink: 0, whiteSpace: "nowrap" }}>{cat.label}</span>
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
-                  {r.amount != null && <span style={{ fontSize: 10.5, fontWeight: 800, color: r.paid_at ? "#065F46" : C.sub, background: r.paid_at ? "#D1FAE5" : C.canvas, borderRadius: 99, padding: "2px 8px" }}>{r.paid_at ? "Paid" : "Unpaid"} · {inr(r.amount)}</span>}
-                  {r.otp_verified_at && <span style={{ fontSize: 10.5, fontWeight: 800, color: "#1E40AF", background: "#DBEAFE", borderRadius: 99, padding: "2px 8px" }}>OTP verified</span>}
-                  {r.completed_at && <span style={{ fontSize: 10.5, fontWeight: 700, color: C.sub }}>Completed {new Date(r.completed_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>}
-                </div>
-                {cat.advice && (
-                  <p style={{ margin: "8px 0 0", fontSize: 11, color: cat.color, fontWeight: 700, lineHeight: 1.4, background: cat.bg, borderRadius: 10, padding: "7px 9px" }}>
-                    💡 {cat.advice}
-                  </p>
-                )}
-                {(cat.key === "cancelled" || cat.key === "failed" || cat.key === "completed") && onRebook && (
-                  <div style={{ marginTop: 8, display: "flex", justifyContent: "flex-end" }}>
-                    <button onClick={() => { onRebook(r); onClose(); }} style={{ background: C.primarySoft, color: C.primaryDeep, border: "none", borderRadius: 10, padding: "7px 12px", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
-                      Book again
-                    </button>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </div>
+    <MyBookingsOverlay
+      initialTab="previous"
+      title="Consultation History"
+      onClose={onClose}
+      onRebook={onRebook}
+    />
   );
 }
 
-// Full-page (in-app) variant of PatientHistoryOverlay — same data & filters,
-// styled as a page (no dim backdrop, full viewport, back button in header).
+// Full-page (in-app) variant of PatientHistoryOverlay — same unified bookings listview.
 function PatientHistoryPage({ onClose, onRebook }) {
-  const [uid, setUid] = useState(null);
-  const [rows, setRows] = useState([]);
-  const [names, setNames] = useState({});
-  const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState("all");
-
-  useEffect(() => {
-    let m = true;
-    (async () => {
-      const { data: sess } = await supabase.auth.getSession();
-      const u = sess.session?.user?.id || null;
-      if (!m) return;
-      setUid(u);
-      if (!u) { setLoading(false); return; }
-      const { data } = await supabase.from("care_requests")
-        .select("id, patient_id, specialty, emergency, accepted_by, accepted_at, status, paid_at, amount, otp, otp_verified_at, arrival_deadline, completed_at, created_at, updated_at")
-        .eq("patient_id", u)
-        .order("created_at", { ascending: false })
-        .limit(200);
-      if (!m) return;
-      const list = data || [];
-      setRows(list);
-      const provIds = Array.from(new Set(list.map(r => r.accepted_by).filter(Boolean)));
-      if (provIds.length) {
-        const { data: profs } = await supabase.from("profiles").select("id, full_name").in("id", provIds);
-        if (!m) return;
-        const nm = {}; (profs || []).forEach(p => { nm[p.id] = p.full_name || "Provider"; });
-        setNames(nm);
-      }
-      setLoading(false);
-    })();
-    return () => { m = false; };
-  }, []);
-
-  function classify(r) {
-    if (r.status === "completed") return { key: "completed", label: "Consultation over", color: "#065F46", bg: "#D1FAE5", advice: "Rate the doctor and book a follow-up if needed." };
-    if (r.status === "cancelled") return { key: "cancelled", label: "Cancelled", color: "#4B5563", bg: "#F3F4F6", advice: "You can book again anytime — nothing was charged." };
-    if (r.status === "failed") return { key: "failed", label: "Failed / expired", color: "#B91C1C", bg: "#FEE2E2", advice: "Payment window expired. Rebook if you still need care." };
-    if (r.status === "open") return { key: "pending", label: "Finding medico", color: "#92400E", bg: "#FEF3C7", advice: "Still searching. You can wait or cancel and try a nearby hub." };
-    if (r.status === "accepted") {
-      if (!r.paid_at) return { key: "unpaid", label: "Unpaid — awaiting payment", color: "#B45309", bg: "#FEF3C7", advice: "Complete the payment so your medico can be dispatched." };
-      if (!r.otp_verified_at) return { key: "paid_pending", label: "Paid — OTP pending", color: "#92400E", bg: "#FEF3C7", advice: "Meet the doctor in person and share your 4-digit OTP." };
-      return { key: "in_progress", label: "Consultation in progress", color: "#1E40AF", bg: "#DBEAFE", advice: "Tap 'Consultation over' once the doctor is done." };
-    }
-    return { key: "other", label: r.status || "—", color: "#4B5563", bg: "#F3F4F6", advice: "" };
-  }
-
-  const enriched = useMemo(() => rows.map(r => ({ r, cat: classify(r) })), [rows]);
-  const counts = useMemo(() => {
-    const c = { all: enriched.length, unpaid: 0, paid_pending: 0, in_progress: 0, pending: 0, completed: 0, cancelled: 0, failed: 0 };
-    enriched.forEach(({ cat }) => { if (c[cat.key] !== undefined) c[cat.key]++; });
-    return c;
-  }, [enriched]);
-  const visible = filter === "all" ? enriched : enriched.filter(x => x.cat.key === filter);
-  const chips = [
-    ["all", "All"], ["unpaid", "Unpaid"], ["paid_pending", "OTP pending"], ["in_progress", "In progress"],
-    ["pending", "Finding"], ["completed", "Over"], ["cancelled", "Cancelled"], ["failed", "Failed"],
-  ];
-
   return (
-    <div style={{ position: "fixed", inset: 0, background: "#fff", zIndex: 80, display: "flex", flexDirection: "column", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
-      <div style={{ padding: "14px 16px", background: "linear-gradient(135deg,#0F172A,#1E293B)", display: "flex", alignItems: "center", gap: 12, color: "#fff" }}>
-        <button onClick={onClose} aria-label="Back" style={{ background: "rgba(255,255,255,.14)", border: "none", width: 34, height: 34, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#fff", fontSize: 20, lineHeight: 1 }}>‹</button>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <p style={{ margin: 0, fontWeight: 800, fontSize: 16 }}>Consultation History</p>
-          <p style={{ margin: "2px 0 0", fontSize: 11, color: "rgba(255,255,255,.8)", fontWeight: 600 }}>Status, amount and next-step advice</p>
-        </div>
-      </div>
-      <div style={{ padding: "10px 12px", display: "flex", gap: 6, overflowX: "auto", borderBottom: `1px solid ${C.line}`, background: "#fff" }}>
-        {chips.map(([k, l]) => (
-          <button key={k} onClick={() => setFilter(k)} style={{ flexShrink: 0, background: filter === k ? C.primary : C.canvas, color: filter === k ? "#fff" : C.ink, border: "none", borderRadius: 99, padding: "6px 11px", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
-            {l}{counts[k] ? ` · ${counts[k]}` : ""}
-          </button>
-        ))}
-      </div>
-      <div style={{ flex: 1, overflowY: "auto", padding: "10px 14px 24px", background: C.canvas }}>
-        {["all", "completed"].includes(filter) && <HomeVisitPanel audience="patient" completedOnly />}
-          {loading && <p style={{ color: C.sub, fontSize: 12 }}>Loading…</p>}
-        {!loading && visible.length === 0 && <p style={{ color: C.sub, fontSize: 12, marginTop: 14 }}>No consultations in this category yet.</p>}
-        {visible.map(({ r, cat }) => {
-          const providerName = r.accepted_by ? (names[r.accepted_by] || "Provider") : "—";
-          const when = new Date(r.created_at).toLocaleString([], { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
-          return (
-            <div key={r.id} style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 14, padding: "11px 12px", marginTop: 8 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ margin: 0, fontWeight: 800, color: C.ink, fontSize: 13 }}>{r.emergency ? "🚨 " : ""}{r.specialty || "Consultation"}</p>
-                  <p style={{ margin: "2px 0 0", fontSize: 10.5, color: C.sub, fontWeight: 600 }}>{providerName} · {when}</p>
-                </div>
-                {cat.key === "completed" && <HistoryCompletedActions requestId={r.id} providerName={providerName} specialty={r.specialty} />}
-                <span style={{ background: cat.bg, color: cat.color, fontSize: 10, fontWeight: 800, borderRadius: 99, padding: "3px 8px", flexShrink: 0, whiteSpace: "nowrap" }}>{cat.label}</span>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
-                {r.amount != null && <span style={{ fontSize: 10.5, fontWeight: 800, color: r.paid_at ? "#065F46" : C.sub, background: r.paid_at ? "#D1FAE5" : "#fff", border: `1px solid ${C.line}`, borderRadius: 99, padding: "2px 8px" }}>{r.paid_at ? "Paid" : "Unpaid"} · {inr(r.amount)}</span>}
-                {r.otp_verified_at && <span style={{ fontSize: 10.5, fontWeight: 800, color: "#1E40AF", background: "#DBEAFE", borderRadius: 99, padding: "2px 8px" }}>OTP verified</span>}
-                {r.completed_at && <span style={{ fontSize: 10.5, fontWeight: 700, color: C.sub }}>Completed {new Date(r.completed_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>}
-              </div>
-              {cat.advice && (
-                <p style={{ margin: "8px 0 0", fontSize: 11, color: cat.color, fontWeight: 700, lineHeight: 1.4, background: cat.bg, borderRadius: 10, padding: "7px 9px" }}>
-                  💡 {cat.advice}
-                </p>
-              )}
-              {(cat.key === "cancelled" || cat.key === "failed" || cat.key === "completed") && onRebook && (
-                <div style={{ marginTop: 8, display: "flex", justifyContent: "flex-end" }}>
-                  <button onClick={() => { onRebook(r); onClose(); }} style={{ background: C.primarySoft, color: C.primaryDeep, border: "none", borderRadius: 10, padding: "7px 12px", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
-                    Book again
-                  </button>
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
+    <MyBookingsOverlay
+      initialTab="previous"
+      title="Consultation History"
+      onClose={onClose}
+      onRebook={onRebook}
+    />
   );
 }
 
@@ -7241,13 +7926,19 @@ function DoctorApp({ req, hubReq, online, setOnline, onAccept, sevaActions }) {
   const realBookings = (liveApps || []).map(app => {
     const st = new Date(app.start_time);
     const modeLabel = app.mode === 'home_visit' || app.mode === 'home' ? 'Home visit' : app.mode || 'Consultation';
+    const isCompleted = (app.status || "").toLowerCase() === 'completed';
     return {
       id: app.id,
+      appointmentId: app.id,
+      patientId: app.patient_id,
+      otp: app.arrival_otp || undefined,
+      notes: app.clinical_notes?.summary,
       date: st,
       title: patientNames[app.patient_id] || `Patient ID: ${app.patient_id.slice(0, 6)}`,
       sub: `${app.service} • ${modeLabel}`,
-      status: app.status === 'confirmed' || app.status === 'rescheduled' ? 'Confirmed' : app.status === 'cancelled' ? 'Cancelled' : app.status,
-      color: app.status === 'cancelled' ? C.emerg : C.primary,
+      status: isCompleted ? 'Consultation over' : (app.status === 'confirmed' || app.status === 'rescheduled' ? 'Confirmed' : app.status === 'cancelled' ? 'Cancelled' : app.status),
+      color: app.status === 'cancelled' ? C.emerg : isCompleted ? C.faint : C.primary,
+      rawStatus: app.status,
     };
   });
 
@@ -7255,6 +7946,7 @@ function DoctorApp({ req, hubReq, online, setOnline, onAccept, sevaActions }) {
     ...realBookings,
     calBk(0, 9, 0, "Priya Sharma", "Follow-up • MyDox Hub Koregaon Park", "Confirmed", C.primary),
     calBk(0, 11, 30, "Rahul Verma", "New consult • Video", "Confirmed", C.primary),
+    calBk(0, 16, 0, "Meena Tiwari", "Home visit • Bavdhan", "Confirmed", C.primary),
     calBk(1, 10, 0, "Arjun Rao", "Diabetes review • MyDox Hub", "Scheduled", C.primary),
     calBk(1, 14, 0, "Sneha Patil", "Fever & cold • Walk-in", "Scheduled", C.clinic),
     calBk(-1, 15, 0, "Kavya Reddy", "General consult • Video", "Completed", C.faint),
@@ -7337,7 +8029,6 @@ function DoctorApp({ req, hubReq, online, setOnline, onAccept, sevaActions }) {
         </div>
       </div>
       <div className="flex-1 overflow-y-auto px-5 py-4">
-        <HomeVisitPanel audience="doctor" />
         {/* Incoming alert — now at the top of the doctor view */}
         {online && activeIncoming && !acted && youCand && (
           <div className="rounded-2xl p-4 mb-4" style={{ background: C.surface, border: `1.5px solid ${activeIncoming.r.emergency ? C.emerg : activeIncoming.src === "hub" ? C.hub : C.primary}`, boxShadow: "0 8px 28px rgba(0,0,0,.12)", animation: "slidedown .35s cubic-bezier(.2,.8,.2,1)" }}>
@@ -8368,10 +9059,8 @@ function DoctorCareGroups({ onOpen }) {
 
 function MedChatOverlay({ doctor, onClose }) {
   return (
-    <TwoWayChatModal
-      reference={doctor?.reference}
-      doctorName={doctor?.name}
-      specialty={doctor?.spec}
+    <CalendarChat
+      patientName={doctor?.name || "Consultation Chat"}
       onClose={onClose}
     />
   );
@@ -9099,7 +9788,7 @@ function ConsultationInboxRows({ inbox, onOpen }) {
           <div style={{ flex: 1, minWidth: 0 }}>
             <p style={{ fontWeight: 700, color: C.ink, fontSize: 13, margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.counterpartName}</p>
             <p style={{ color: C.sub, fontSize: 10, margin: "2px 0" }}>{item.consultationLabel}</p>
-            <p style={{ color: C.sub, fontSize: 11.5, margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.lastMessage || "No messages yet"}</p>
+            <p style={{ color: C.sub, fontSize: 11.5, margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{formatMessageSnippet(item.lastMessage) || "No messages yet"}</p>
           </div>
           <div style={{ flexShrink: 0, textAlign: "right" }}>
             {item.lastMessageAt && <p style={{ color: C.faint, fontSize: 10, margin: 0 }}>{new Date(item.lastMessageAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</p>}
@@ -13439,6 +14128,8 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
   const [showClinicSkin, setShowClinicSkin] = useState(false); // white-label clinic skin demo
   const [showNotifs, setShowNotifs] = useState(false); // notifications center
   const [showMyBookings, setShowMyBookings] = useState(false); // unified bookings overlay
+  const [bookingsInitialTab, setBookingsInitialTab] = useState("upcoming");
+  const [bookingsTitle, setBookingsTitle] = useState("My Bookings");
   const [showSeva, setShowSeva] = useState(false); // free-care (Seva) enrolment
   const [showSocietyShield, setShowSocietyShield] = useState(false); // society shield enrolment
   const [showInsurance, setShowInsurance] = useState(false); // B2B insurance member portal
@@ -13978,12 +14669,19 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
           if (!spec.doctor?.userId) throw new Error("Invalid provider selected");
           if (visitMode === "home" || spec.visitMode === "home") throw new Error("Scheduled home visits for this service are unavailable. Please use its existing service booking option.");
 
-          // Convert UI selected label/date/time to ISO format
-          // spec.scheduled.date is e.g. "Thu Sep 10 2026"
-          // spec.scheduled.time is e.g. "09:30"
-          const start = new Date(`${spec.scheduled.date} ${spec.scheduled.time}`);
-          if (isNaN(start.getTime())) throw new Error("Invalid date selected");
-          const end = new Date(start.getTime() + 30 * 60000); // 30 min default duration
+          // Use the structured ISO string passed by the picker (reliable, no string parsing).
+          // Falls back to re-parsing the human-readable strings for legacy callers.
+          let start;
+          if (spec.scheduled.iso) {
+            start = new Date(spec.scheduled.iso);
+          } else {
+            // Legacy path: parse "Mon Sep 15 2026" + "9:30 AM"
+            const raw = `${spec.scheduled.date} ${spec.scheduled.time}`;
+            start = new Date(raw);
+          }
+          if (isNaN(start.getTime())) throw new Error("Invalid date/time selected — please pick a slot again");
+          if (start <= new Date()) throw new Error("Please pick a future time slot");
+          const end = new Date(start.getTime() + 30 * 60000); // 30 min appointment
 
           const isVideo = visitMode === "online" || spec.visitMode === "online";
           let data;
@@ -14267,7 +14965,9 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
     const handlers = {
       search: () => setSearchFocused(true), ai: () => askAIWith(), companion: () => setShowCompanion(true),
       aiHistory: () => setShowAIHistory(true), emergency: () => setShowEmergency(true), sos: () => setShowSOS(true),
-      bookings: () => setShowMyBookings(true), history: () => setShowHistoryPage(true), records: () => setShowRecords(true),
+      bookings: () => { setBookingsInitialTab("upcoming"); setBookingsTitle("My Bookings"); setShowMyBookings(true); },
+      history: () => { setBookingsInitialTab("previous"); setBookingsTitle("Consultation History"); setShowMyBookings(true); },
+      records: () => setShowRecords(true),
       calendar: () => setShowCal(true), preferred: () => setShowPrefMgr(true), profile: () => setShowProfile(true),
       rewards: () => setShowRewards(true), notifications: () => setShowNotifs(true), signout: handleSignOut,
       prosthetics: () => setShowProsthetics(true), secondOpinion: () => setShowSecondOp(true),
@@ -14945,7 +15645,7 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
       {showProfile && <HealthProfileOverlay allergyDone={allergyDone} onClose={() => setShowProfile(false)} onOpenRecords={() => { setShowProfile(false); setShowRecords(true); }} />}
       {showRecords && <HealthRecordsOverlay onClose={() => setShowRecords(false)} onBookDoctor={(sugg) => { setShowRecords(false); setActiveTab("doctor"); setSelectedSpec(null); setQuery(""); toast("Pick a " + (sugg ? sugg.split(" / ")[0] : "doctor") + " below"); setBookingOpen(true); setTimeout(() => { try { pickerRef.current && pickerRef.current.scrollIntoView({ behavior: "smooth", block: "start" }); } catch (e) { } }, 80); }} />}
       {showCal && <BookingCalendar title="My Bookings" subtitle="Appointments, labs & scans" accent={C.primary} bookings={PATIENT_BOOKINGS} onClose={() => setShowCal(false)} />}
-      {showMyBookings && <MyBookingsOverlay onClose={() => setShowMyBookings(false)} onRebook={(it) => {
+      {showMyBookings && <MyBookingsOverlay initialTab={bookingsInitialTab} title={bookingsTitle} onClose={() => setShowMyBookings(false)} onRebook={(it) => {
         setShowMyBookings(false);
         const m = it.module;
         if (m === "Doctor / Nurse") { setBookingOpen(true); const tab = /nurse/i.test(it.title) ? "nurse" : "doctor"; setActiveTab(tab); setSelectedSpec(null); setQuery(it.title || ""); toast(`Rebook: ${it.title} — pick a provider below`); }
@@ -14961,8 +15661,8 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
         else if (m === "Blood Bank") { setShowBloodBank(true); }
         else if (m === "Surgery") { setShowSurgery(true); }
       }} />}
-      {showPrevConsults && <PatientHistoryOverlay onClose={() => setShowPrevConsults(false)} onRebook={(r) => { setBookingOpen(true); setActiveTab("doctor"); toast(`Rebook a ${r.specialty || "consultation"} — pick a doctor below`); }} />}
-      {showHistoryPage && <PatientHistoryPage onClose={() => setShowHistoryPage(false)} onRebook={(r) => { setShowHistoryPage(false); setBookingOpen(true); setActiveTab("doctor"); toast(`Rebook a ${r.specialty || "consultation"} — pick a doctor below`); }} />}
+      {showPrevConsults && <PatientHistoryOverlay onClose={() => setShowPrevConsults(false)} onRebook={(r) => { setBookingOpen(true); setActiveTab("doctor"); toast(`Rebook a ${r?.specialty || r?.title || "consultation"} — pick a doctor below`); }} />}
+      {showHistoryPage && <PatientHistoryPage onClose={() => setShowHistoryPage(false)} onRebook={(r) => { setShowHistoryPage(false); setBookingOpen(true); setActiveTab("doctor"); toast(`Rebook a ${r?.specialty || r?.title || "consultation"} — pick a doctor below`); }} />}
       {showRewards && <RewardsOverlay onClose={() => setShowRewards(false)} />}
       {showHomeCare && <HomeCarePackageOverlay area={area} onClose={() => setShowHomeCare(false)} onChatDoctor={(doc) => { setShowHomeCare(false); setChatDoctor({ name: doc.name, spec: doc.spec }); }} onBook={(pkg) => toast(`${pkg.days}-day home care package requested \u2014 coordinator will call to confirm`)} />}
       {showDrugDelivery && <DrugDeliveryOverlay area={area} onClose={() => setShowDrugDelivery(false)} onOrdered={(o) => { mcCapture("medicine_delivery", o); toast(`Medicine order placed with ${o.pharmacy_name}`); }} />}

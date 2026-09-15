@@ -1,7 +1,6 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { Session, User } from "@supabase/supabase-js";
-import { usePostConsultationInbox } from "./post-consultation-chat/usePostConsultationChat";
 
 export type AppRole = "patient" | "provider" | "facility" | "admin" | "super_admin";
 
@@ -36,27 +35,21 @@ export function useSession(): SessionState {
 
   useEffect(() => {
     let mounted = true;
-    let generation = 0;
-    let receivedAuthEvent = false;
 
-    const hydrate = async (session: Session | null, currentGeneration: number) => {
+    const hydrate = async (session: Session | null) => {
       if (!session?.user) {
-        if (mounted && currentGeneration === generation) setState({ session: null, user: null, role: null, loading: false });
+        if (mounted) setState({ session: null, user: null, role: null, loading: false });
         return;
       }
       const role = await fetchRole(session.user.id);
-      if (mounted && currentGeneration === generation) setState({ session, user: session.user, role, loading: false });
+      if (mounted) setState({ session, user: session.user, role, loading: false });
     };
 
-    supabase.auth.getSession().then(({ data }) => {
-      if (!receivedAuthEvent) void hydrate(data.session, ++generation);
-    });
+    supabase.auth.getSession().then(({ data }) => hydrate(data.session));
 
     const { data: sub } = supabase.auth.onAuthStateChange((_evt, session) => {
-      receivedAuthEvent = true;
-      const currentGeneration = ++generation;
       // defer async to avoid deadlock in callback
-      setTimeout(() => { void hydrate(session, currentGeneration); }, 0);
+      setTimeout(() => hydrate(session), 0);
     });
 
     return () => {
@@ -90,7 +83,6 @@ export type CareRequest = {
   otp_verified_at?: string | null;
   arrival_deadline?: string | null;
   completed_at?: string | null;
-  scheduled_at?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -193,7 +185,6 @@ export async function createCareRequest(input: {
   my_doctor_id?: string | null;
   preferred_id?: string | null;
   notification_stage?: "my_doctor" | "preferred" | "broadcast" | null;
-  scheduled_at?: string | null;
 }) {
   const { data: sess } = await supabase.auth.getSession();
   const uid = sess.session?.user?.id;
@@ -218,66 +209,6 @@ export async function createCareRequest(input: {
     .single();
   if (error) throw error;
   return data as CareRequest;
-}
-
-// ------------------------------------------------------------------
-// DOCTOR APPOINTMENTS
-// ------------------------------------------------------------------
-export async function cancelDoctorAppointment(id: string) {
-  const { data, error } = await supabase.rpc("cancel_appointment", { p_appointment_id: id });
-  if (error) throw error;
-  return data;
-}
-
-export async function rescheduleDoctorAppointment(id: string, start: string, end: string) {
-  const { data, error } = await supabase.rpc("reschedule_appointment", {
-    p_appointment_id: id,
-    p_new_start: start,
-    p_new_end: end
-  });
-  if (error) throw error;
-  return data;
-}
-
-// Home visits use their permission-scoped RPC panel; this hook remains for other appointments.
-export function useLiveDoctorAppointments(uid?: string) {
-  const [rows, setRows] = useState<any[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    setRows([]);
-    if (!uid) return;
-    let mounted = true;
-    let request = 0;
-    const refresh = async () => {
-      const sequence = ++request;
-      const { data, error: failure } = await supabase.from("doctor_appointments")
-        .select("id, patient_id, provider_id, service, mode, status, start_time, end_time, fee, currency, created_at, updated_at, arrival_otp, clinical_notes, completed_at")
-        .or(`patient_id.eq.${uid},provider_id.eq.${uid}`)
-        .or("mode.is.null,mode.not.in.(home,home_visit)")
-        .order("start_time", { ascending: true });
-      if (!mounted || sequence !== request) return;
-      if (failure) { setError("Appointments could not be refreshed. Please retry."); return; }
-      setRows(data ?? []);
-      setError(null);
-    };
-    void refresh();
-    const poll = window.setInterval(() => { if (!document.hidden) void refresh(); }, 15000);
-    const onResume = () => { if (!document.hidden) void refresh(); };
-    window.addEventListener("focus", onResume);
-    window.addEventListener("online", onResume);
-    document.addEventListener("visibilitychange", onResume);
-    const sub = supabase.channel(`live_doctor_appointments_${uid}`).on("postgres_changes",
-      { event: "*", schema: "public", table: "doctor_appointments" }, () => { void refresh(); }).subscribe();
-    return () => {
-      mounted = false; request++;
-      clearInterval(poll);
-      window.removeEventListener("focus", onResume);
-      window.removeEventListener("online", onResume);
-      document.removeEventListener("visibilitychange", onResume);
-      void supabase.removeChannel(sub);
-    };
-  }, [uid]);
-  return { rows, error };
 }
 
 // Atomic first-accept-wins. RLS + WHERE status='open' guarantee single winner.
@@ -708,30 +639,335 @@ export async function fetchProviderLocations() {
 
 // ══════════════ Real-time patient <-> doctor chat ══════════════════
 
-export type { ChatMessage } from "@/features/medconnect/backend";
-export { threadKeyOf, useRealtimeChat } from "@/features/medconnect/backend";
+export type ChatMessage = {
+  id: string;
+  thread_key: string;
+  sender_id: string;
+  recipient_id: string | null;
+  body: string;
+  created_at: string;
+};
 
-export function useChatInbox() {
-  const inbox = usePostConsultationInbox();
-  return { ...inbox, threads: inbox.items.map(item => ({
-    thread_key: item.conversationId, conversation_id: item.conversationId,
-    episode_id: item.episodeId, other_id: item.counterpartId, other_name: item.counterpartName,
-    last_body: item.lastMessage ?? "", last_at: item.lastMessageAt ?? "",
-    unread: item.unreadCount, context_label: item.consultationLabel,
-  })) };
+export function threadKeyOf(a: string, b: string) {
+  return [a, b].sort().join(":");
 }
 
-export type RecentCounterpart = { id: string; name: string; specialty: string | null; last_at: string };
+const DEMO_USERS: Record<string, string> = {
+  "priya sharma": "098ad3c8-3a77-4702-8494-ec007855e219",
+  "rahul verma": "26fe34e0-1757-400b-9ffd-5325aa1b32b6",
+  "meena tiwari": "098ad3c8-3a77-4702-8494-ec007855e219",
+  "dr. anita rao": "490a20be-87cd-4340-b462-3429472e9d02",
+  "anita rao": "490a20be-87cd-4340-b462-3429472e9d02",
+  "dr. vikram iyer": "5f27622d-117e-4772-ad6d-f45ce90898fe",
+  "vikram iyer": "5f27622d-117e-4772-ad6d-f45ce90898fe",
+};
+
+async function lookupUserIdByName(name: string): Promise<string | null> {
+  if (!name) return null;
+  const clean = name.trim();
+  // Try exact, then case-insensitive
+  const { data } = await supabase
+    .from("profiles")
+    .select("id, full_name")
+    .ilike("full_name", clean)
+    .limit(1);
+  if (data && data.length) return (data[0] as { id: string }).id;
+  // Fallback: strip "Dr." and match
+  const bare = clean.replace(/^Dr\.?\s+/i, "");
+  const { data: d2 } = await supabase
+    .from("profiles")
+    .select("id, full_name")
+    .ilike("full_name", `%${bare}%`)
+    .limit(1);
+  if (d2 && d2.length) return (d2[0] as { id: string }).id;
+  // Fallback: known demo accounts (valid auth.users UUIDs)
+  const norm = clean.toLowerCase();
+  if (DEMO_USERS[norm]) return DEMO_USERS[norm];
+  const bareNorm = bare.toLowerCase();
+  if (DEMO_USERS[bareNorm]) return DEMO_USERS[bareNorm];
+  return null;
+}
+
+export function useRealtimeChat(counterpartName: string | null | undefined) {
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [meId, setMeId] = useState<string | null>(null);
+  const [otherId, setOtherId] = useState<string | null>(null);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    setReady(false);
+    setMessages([]);
+    (async () => {
+      const { data: sess } = await supabase.auth.getSession();
+      const uid = sess.session?.user?.id ?? null;
+      if (!mounted) return;
+      setMeId(uid);
+      if (!uid || !counterpartName) {
+        setReady(true);
+        return;
+      }
+      const other = await lookupUserIdByName(counterpartName);
+      if (!mounted) return;
+      setOtherId(other);
+      if (!other) {
+        setReady(true);
+        return;
+      }
+      const tk = threadKeyOf(uid, other);
+      const { data } = await (supabase as any)
+        .from("chat_messages")
+        .select("*")
+        .eq("thread_key", tk)
+        .order("created_at", { ascending: true })
+        .limit(200);
+      if (!mounted) return;
+      setMessages((data as ChatMessage[]) ?? []);
+      setReady(true);
+
+      const ch = supabase
+        .channel(`chat_${tk}`)
+        .on(
+          "postgres_changes",
+          { event: "INSERT", schema: "public", table: "chat_messages", filter: `thread_key=eq.${tk}` },
+          (payload) => {
+            setMessages((prev) => {
+              const m = payload.new as ChatMessage;
+              if (prev.some((x) => x.id === m.id)) return prev;
+              return [...prev, m];
+            });
+          },
+        )
+        .subscribe();
+      return () => {
+        supabase.removeChannel(ch);
+      };
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [counterpartName]);
+
+  const send = useCallback(
+    async (body: string) => {
+      const text = body.trim();
+      if (!text || !meId || !otherId) return false;
+      const tk = threadKeyOf(meId, otherId);
+      const { error } = await (supabase as any).from("chat_messages").insert({
+        thread_key: tk,
+        sender_id: meId,
+        recipient_id: otherId,
+        body: text,
+      });
+      return !error;
+    },
+    [meId, otherId],
+  );
+
+  return { messages, send, meId, otherId, ready, live: !!(meId && otherId) };
+}
+
+// Doctor-side inbox: distinct latest messages per thread where I'm a participant
+export type InboxThread = {
+  thread_key: string;
+  other_id: string;
+  other_name: string;
+  last_body: string;
+  last_at: string;
+  unread: number;
+  /** Optional context label (e.g. "🩺 C-section · Anaesthetist") for non-1:1 threads. */
+  context_label?: string | null;
+};
+
+export function useChatInbox() {
+  const [threads, setThreads] = useState<InboxThread[]>([]);
+  const [meId, setMeId] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    const { data: sess } = await supabase.auth.getSession();
+    const uid = sess.session?.user?.id ?? null;
+    setMeId(uid);
+    if (!uid) {
+      setThreads([]);
+      return;
+    }
+
+    const { data } = await (supabase as any)
+      .from("chat_messages")
+
+      .select("*")
+      .or(`sender_id.eq.${uid},recipient_id.eq.${uid}`)
+      .order("created_at", { ascending: false })
+      .limit(200);
+    const rows = (data as ChatMessage[]) ?? [];
+    const byThread = new Map<string, ChatMessage>();
+    for (const m of rows) if (!byThread.has(m.thread_key)) byThread.set(m.thread_key, m);
+    const otherIds = Array.from(
+      new Set(
+        Array.from(byThread.values()).map((m) => (m.sender_id === uid ? m.recipient_id : m.sender_id)),
+      ),
+    ).filter(Boolean) as string[];
+    const names: Record<string, string> = {};
+    if (otherIds.length) {
+      const { data: profs } = await supabase
+        .from("profiles")
+        .select("id, full_name")
+        .in("id", otherIds);
+      (profs ?? []).forEach((p: { id: string; full_name: string | null }) => {
+        names[p.id] = p.full_name ?? "Unknown";
+      });
+    }
+    // Resolve surgery:<roleId> threads → hub↔provider labels
+    const surgeryKeys = Array.from(byThread.keys()).filter((k) => k.startsWith("surgery:"));
+    const roleLabels: Record<string, { label: string; hub: string; provider: string; hubId: string | null; providerId: string | null }> = {};
+    if (surgeryKeys.length) {
+      const roleIds = surgeryKeys.map((k) => k.slice("surgery:".length));
+      const { data: rs } = await supabase
+        .from("surgery_booking_roles")
+        .select("id, role, assigned_to, booking_id")
+        .in("id", roleIds);
+      const roleRows = (rs as Array<{ id: string; role: string; assigned_to: string | null; booking_id: string }>) ?? [];
+      const bookingIds = Array.from(new Set(roleRows.map((r) => r.booking_id)));
+      const { data: bs } = bookingIds.length
+        ? await supabase.from("surgery_bookings").select("id, procedure, facility_id").in("id", bookingIds)
+        : { data: [] as Array<{ id: string; procedure: string; facility_id: string }> };
+      const bookingById = new Map((bs as Array<{ id: string; procedure: string; facility_id: string }> ?? []).map((b) => [b.id, b]));
+      const nameIds = Array.from(new Set(
+        roleRows.flatMap((r) => [r.assigned_to, bookingById.get(r.booking_id)?.facility_id]).filter(Boolean) as string[],
+      ));
+      const { data: nProfs } = nameIds.length
+        ? await supabase.from("profiles").select("id, full_name").in("id", nameIds)
+        : { data: [] as Array<{ id: string; full_name: string | null }> };
+      const nameMap = new Map((nProfs ?? []).map((p) => [p.id, p.full_name ?? "Unknown"]));
+      for (const r of roleRows) {
+        const b = bookingById.get(r.booking_id);
+        const hubId = b?.facility_id ?? null;
+        const providerId = r.assigned_to ?? null;
+        roleLabels[`surgery:${r.id}`] = {
+          label: `🩺 ${b?.procedure ?? "Surgery"} · ${r.role}`,
+          hub: hubId ? (nameMap.get(hubId) ?? "Hub") : "Hub",
+          provider: providerId ? (nameMap.get(providerId) ?? "Provider") : "Provider",
+          hubId,
+          providerId,
+        };
+      }
+    }
+
+    const list: InboxThread[] = Array.from(byThread.values()).map((m) => {
+      const other = m.sender_id === uid ? (m.recipient_id ?? "") : m.sender_id;
+      const surgeryInfo = roleLabels[m.thread_key];
+      let other_name = names[other] ?? "Unknown";
+      let context_label: string | null = null;
+      if (surgeryInfo) {
+        context_label = surgeryInfo.label;
+        // Prefer counterpart from surgery mapping if profile lookup missed
+        if (other === surgeryInfo.hubId) other_name = surgeryInfo.hub;
+        else if (other === surgeryInfo.providerId) other_name = surgeryInfo.provider;
+      }
+      return {
+        thread_key: m.thread_key,
+        other_id: other,
+        other_name,
+        last_body: m.body,
+        last_at: m.created_at,
+        unread: 0,
+        context_label,
+      };
+    });
+    setThreads(list);
+  }, []);
+
+  useEffect(() => {
+    refresh();
+    const ch = supabase
+      .channel(`inbox_${Math.random().toString(36).slice(2)}`)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "chat_messages" },
+        () => refresh(),
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(ch);
+    };
+  }, [refresh]);
+
+  return { threads, meId, refresh };
+}
+
+// Patient-side: most recent providers I've actually chatted with (real history).
+// Used to seed the "previously attended" prior in the repeat-provider modal so
+// it reflects reality (e.g. Dr. Anita Rao) instead of a hashed placeholder.
+export type RecentCounterpart = {
+  id: string;
+  name: string;
+  specialty: string | null;
+  last_at: string;
+};
+
 export function useRecentChatCounterparts() {
-  const inbox = usePostConsultationInbox();
-  const seen = new Set<string>();
-  const items: RecentCounterpart[] = [];
-  for (const item of inbox.items) {
-    if (item.counterpartRole !== "doctor" || seen.has(item.counterpartId)) continue;
-    seen.add(item.counterpartId);
-    items.push({ id: item.counterpartId, name: item.counterpartName, specialty: null, last_at: item.lastMessageAt ?? "" });
-  }
-  return { ...inbox, items };
+  const [items, setItems] = useState<RecentCounterpart[]>([]);
+
+  const refresh = useCallback(async () => {
+    const { data: sess } = await supabase.auth.getSession();
+    const uid = sess.session?.user?.id ?? null;
+    if (!uid) {
+      setItems([]);
+      return;
+    }
+    const { data } = await (supabase as any)
+      .from("chat_messages")
+      .select("sender_id, recipient_id, created_at")
+      .or(`sender_id.eq.${uid},recipient_id.eq.${uid}`)
+      .order("created_at", { ascending: false })
+      .limit(200);
+    const rows = (data as Array<{ sender_id: string; recipient_id: string | null; created_at: string }>) ?? [];
+    const latest = new Map<string, string>(); // otherId -> created_at
+    for (const m of rows) {
+      const other = m.sender_id === uid ? m.recipient_id : m.sender_id;
+      if (!other) continue;
+      if (!latest.has(other)) latest.set(other, m.created_at);
+    }
+    const ids = Array.from(latest.keys());
+    if (!ids.length) {
+      setItems([]);
+      return;
+    }
+    const { data: profs } = await supabase
+      .from("profiles")
+      .select("id, full_name, specialty")
+      .in("id", ids);
+    const byId = new Map((profs ?? []).map((p: any) => [p.id, p]));
+    const out: RecentCounterpart[] = ids
+      .map((id) => {
+        const p: any = byId.get(id);
+        return {
+          id,
+          name: p?.full_name ?? "Unknown",
+          specialty: p?.specialty ?? null,
+          last_at: latest.get(id) ?? "",
+        };
+      })
+      .sort((a, b) => (a.last_at < b.last_at ? 1 : -1));
+    setItems(out);
+  }, []);
+
+  useEffect(() => {
+    refresh();
+    const ch = supabase
+      .channel(`recent_cp_${Math.random().toString(36).slice(2)}`)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "chat_messages" },
+        () => refresh(),
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(ch);
+    };
+  }, [refresh]);
+
+  return { items, refresh };
 }
 
 
@@ -1061,14 +1297,11 @@ async function fetchProfileNames(ids: string[]): Promise<Record<string, string>>
 export function useServiceReferrals() {
   const [rows, setRows] = useState<ServiceReferral[]>([]);
   const [names, setNames] = useState<Record<string, string>>({});
-  const namesRef = useRef<Record<string, string>>({});
   const [meId, setMeId] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
     let mounted = true;
-    // Keep cleanup in the effect itself, not the async initializer's return value.
-    let channel: ReturnType<typeof supabase.channel> | undefined;
     (async () => {
       const { data: sess } = await supabase.auth.getSession();
       const uid = sess.session?.user?.id ?? null;
@@ -1091,16 +1324,14 @@ export function useServiceReferrals() {
       ]);
       if (!mounted) return;
       setNames(nameMap);
-      namesRef.current = nameMap;
       setReady(true);
 
-      channel = supabase
-        .channel(`service_referrals_${uid}_${Math.random().toString(36).slice(2)}`)
+      const ch = supabase
+        .channel(`service_referrals_${uid}`)
         .on(
           "postgres_changes",
           { event: "*", schema: "public", table: "service_referrals" },
           async (payload) => {
-            if (!mounted) return;
             const rec = (payload.new || payload.old) as ServiceReferral;
             if (!rec) return;
             setRows((prev) => {
@@ -1114,23 +1345,20 @@ export function useServiceReferrals() {
             });
             if (payload.eventType !== "DELETE") {
               const n = payload.new as ServiceReferral;
-              if (!namesRef.current[n.doctor_id] || !namesRef.current[n.patient_id]) {
+              if (!names[n.doctor_id] || !names[n.patient_id]) {
                 const map = await fetchProfileNames([n.doctor_id, n.patient_id]);
-                if (!mounted) return;
-                setNames((prev) => {
-                  const next = { ...prev, ...map };
-                  namesRef.current = next;
-                  return next;
-                });
+                setNames((prev) => ({ ...prev, ...map }));
               }
             }
           },
         )
         .subscribe();
+      return () => {
+        supabase.removeChannel(ch);
+      };
     })();
     return () => {
       mounted = false;
-      if (channel) void supabase.removeChannel(channel);
     };
   }, []);
 
@@ -1177,9 +1405,38 @@ export async function createServiceReferral(input: {
     return null;
   }
 
-  // The existing recommendation cards read the authorised referral record.
-  // Home-visit conversation linkage needs a schema-backed referral reference;
-  // never manufacture a clinical message from a text envelope or display name.
+  // Also post a bot-styled chat message in the doctor↔patient thread
+  try {
+    const tk = threadKeyOf(uid, input.patientId);
+    const envelope = {
+      v: 1,
+      kind: "referral",
+      id: (data as ServiceReferral).id,
+      key: input.serviceKey,
+      label: input.serviceLabel,
+      tab: input.serviceTab,
+      emoji: input.emoji,
+      note: input.note ?? null,
+      providerName: input.providerName ?? null,
+      alternates: input.alternates ?? [],
+    };
+    const providerLine = input.providerName ? `\nSuggested provider: ${input.providerName}` : "";
+    const body =
+      `🤖 Your doctor recommends: ${input.emoji} ${input.serviceLabel}` +
+      providerLine +
+      (input.note ? `\n\n"${input.note}"` : "") +
+      `\n\nTap Book now below to schedule — no need to leave this chat.` +
+      `\n<<REF::${JSON.stringify(envelope)}>>`;
+    await (supabase as unknown as {
+      from: (t: string) => {
+        insert: (v: Record<string, unknown>) => Promise<{ error: unknown }>;
+      };
+    })
+      .from("chat_messages")
+      .insert({ thread_key: tk, sender_id: uid, recipient_id: input.patientId, body });
+  } catch (e) {
+    console.warn("[createServiceReferral] chat bot message failed", e);
+  }
 
   return data as ServiceReferral;
 }

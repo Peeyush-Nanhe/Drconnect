@@ -1,22 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import {
-  useSession,
-  cancelDoctorAppointment,
-  rescheduleDoctorAppointment,
-  useRealtimeChat,
-  ensureConsultationPasscode,
-  type ChatMessage
-} from "@/features/mydox/backend";
-import { SlotPickerCalendarStandalone } from "./SlotPickerCalendar";
-import { TwoWayChatModal } from "@/features/mydox/TwoWayChatModal";
-import type { ChatReference } from "@/features/mydox/post-consultation-chat/types";
-import { HomeVisitPanel } from "./home-visits/HomeVisitPanel";
-import { NursingEngagementPanel } from "./nursing/NursingEngagementPanel";
-import {
-  NURSING_ENGAGEMENT_LABEL, NURSING_UPCOMING, nursingSubtitle, listMyNursingEngagements,
-  type NursingEngagement,
-} from "./nursing/nursing-client";
+import { useSession, useRealtimeChat, ensureConsultationPasscode, type ChatMessage } from "@/features/medconnect/backend";
 import { ChevronLeft, Eye, Phone, ShieldCheck, Plus, Send, Scissors, MessageSquare } from "lucide-react";
 import {
   parseChatAttachment,
@@ -28,7 +12,7 @@ import {
   ImageLightboxModal,
   type ChatAttachment,
   type StagedAttachment
-} from "@/features/mydox/chatAttachmentUtils";
+} from "@/features/medconnect/chatAttachmentUtils";
 
 function toast(msg: string) {
   let el = document.getElementById("mc-toast");
@@ -49,7 +33,6 @@ type Module =
   | "Doctor / Nurse"
   | "Lab / Scan"
   | "Home Care"
-  | "Home Nursing"
   | "Medicines"
   | "Care Program"
   | "Dialysis"
@@ -68,7 +51,6 @@ type Item = {
   createdAt: string;
   doctorName?: string;
   otp?: string;
-  raw?: any;
 };
 
 const TEAL = "#0D9488";
@@ -88,20 +70,13 @@ const STATUS_COLORS: Record<string, { bg: string; fg: string }> = {
   placed: { bg: "#D1FAE5", fg: "#065F46" },
   out_for_delivery: { bg: "#DBEAFE", fg: "#1E3A8A" },
   delivered: { bg: "#E5E7EB", fg: "#374151" },
-  // Nursing engagement states.
-  seeking_nurse: { bg: "#FEF3C7", fg: "#92400E" },
-  assigned: { bg: "#D1FAE5", fg: "#065F46" },
-  unfilled: { bg: "#FEE2E2", fg: "#991B1B" },
-  en_route: { bg: "#E0F2FE", fg: "#0369A1" },
-  requested: { bg: "#FEF3C7", fg: "#92400E" },
 };
 
 function StatusChip({ status }: { status: string }) {
   const s = STATUS_COLORS[status] ?? { bg: "#E5E7EB", fg: "#374151" };
-  const label = (NURSING_ENGAGEMENT_LABEL as Record<string, string>)[status] ?? status.replace(/_/g, " ");
   return (
     <span style={{ background: s.bg, color: s.fg, padding: "2px 10px", borderRadius: 999, fontSize: 11, fontWeight: 600, textTransform: "capitalize", whiteSpace: "nowrap" }}>
-      {label}
+      {status.replace(/_/g, " ")}
     </span>
   );
 }
@@ -110,7 +85,6 @@ const MODULE_ICON: Record<Module, string> = {
   "Doctor / Nurse": "🩺",
   "Lab / Scan": "🧪",
   "Home Care": "🏠",
-  "Home Nursing": "👩‍⚕️",
   Medicines: "💊",
   "Care Program": "💚",
   Dialysis: "💧",
@@ -176,9 +150,6 @@ export default function MyBookingsOverlay({
   const [reviewTarget, setReviewTarget] = useState<{ item: Item; doctorName: string } | null>(null);
   const [otpTarget, setOtpTarget] = useState<{ item: Item; doctorName: string } | null>(null);
   const [reviewsMap, setReviewsMap] = useState<Record<string, number>>({});
-  const [rescheduling, setRescheduling] = useState<Item | null>(null);
-  const [busyId, setBusyId] = useState<string | null>(null);
-  const [trigger, setTrigger] = useState(0);
 
   useEffect(() => {
     setTab(initialTab);
@@ -196,7 +167,7 @@ export default function MyBookingsOverlay({
     let mounted = true;
     (async () => {
       setLoading(true);
-      const [cr, cp, pr, sn, bb, sb, mo, da, ne, pv, sc, comm] = await Promise.all([
+      const [cr, cp, pr, sn, bb, sb, mo, da, pv, sc, comm] = await Promise.all([
         supabase.from("care_requests").select("id, specialty, status, notes, created_at, visit_type, accepted_by, rating_provider, otp").eq("patient_id", uid).order("created_at", { ascending: false }).limit(200),
         supabase.from("care_program_bookings").select("id, program, tier, summary, status, created_at").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
         supabase.from("prosthetics_bookings").select("id, category, subtype, provider_name, status, created_at").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
@@ -205,7 +176,6 @@ export default function MyBookingsOverlay({
         supabase.from("surgery_bookings").select("id, procedure, patient_name, mode, status, created_at").eq("facility_id", uid).order("created_at", { ascending: false }).limit(100),
         supabase.from("medicine_orders").select("id, pharmacy_name, delivery_speed, items, prescription_attached, total, status, created_at").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
         supabase.from("doctor_appointments").select("id, service, mode, status, start_time, end_time, created_at, provider_id, arrival_otp").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
-        listMyNursingEngagements(uid).catch(() => [] as NursingEngagement[]),
         supabase.from("physio_visits").select("id, therapy_type, area, city, session_number, status, created_at, therapist_id").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
         supabase.from("specialty_care_bookings").select("id, specialty_label, concern, mode, provider_name, status, created_at").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
         supabase.from("community_requests").select("id, type, notes, status, created_at").eq("requester_id", uid).order("created_at", { ascending: false }).limit(100),
@@ -213,17 +183,16 @@ export default function MyBookingsOverlay({
 
       const rows: Item[] = [];
       const localReviews: Record<string, number> = {};
-      const crRows = (cr.data as any[]) ?? [];
-      const daRows = (da.data as any[]) ?? [];
-      const pvRows = (pv.data as any[]) ?? [];
-      const scRows = (sc.data as any[]) ?? [];
-      const commRows = (comm.data as any[]) ?? [];
+      const crRows = (cr.data as { id: string; specialty: string; status: string; notes: string | null; created_at: string; visit_type: string; accepted_by: string | null; rating_provider: number | null; otp: string | null }[] | null) ?? [];
+      const daRows = (da.data as { id: string; service: string | null; mode: string | null; status: string; start_time: string; end_time: string; created_at: string; provider_id: string | null; arrival_otp: string | null }[] | null) ?? [];
+      const pvRows = (pv.data as { id: string; therapy_type: string; area: string; city: string; session_number: number; status: string; created_at: string; therapist_id: string | null }[] | null) ?? [];
+      const scRows = (sc.data as { id: string; specialty_label: string; concern: string; mode: string; provider_name: string; status: string; created_at: string }[] | null) ?? [];
+      const commRows = (comm.data as { id: string; type: string; notes: string | null; status: string; created_at: string }[] | null) ?? [];
 
       const doctorIds = Array.from(new Set([
         ...crRows.map((r) => r.accepted_by),
         ...daRows.map((r) => r.provider_id),
         ...pvRows.map((r) => r.therapist_id),
-        ...(ne || []).map(r => r.primary_nurse_id),
       ].filter(Boolean) as string[]));
 
       const doctorNames = new Map<string, string>();
@@ -273,20 +242,6 @@ export default function MyBookingsOverlay({
           createdAt: r.created_at,
           doctorName: docName,
           otp: r.arrival_otp || undefined,
-          raw: r,
-        });
-      }
-
-      for (const r of ne ?? []) {
-        const assignedName = r.primary_nurse_id ? (doctorNames.get(r.primary_nurse_id) || "Pooja (Nurse)") : null;
-        rows.push({
-          id: `ne:${r.id}`,
-          module: "Home Nursing",
-          title: r.kind,
-          subtitle: (assignedName ? `Nurse: ${assignedName} · ` : "") + nursingSubtitle(r),
-          status: r.status === "active" ? r.assignment_state : r.status,
-          createdAt: r.created_at,
-          raw: r,
         });
       }
 
@@ -332,22 +287,22 @@ export default function MyBookingsOverlay({
         });
       }
 
-      for (const r of (cp.data as any[]) ?? []) {
+      for (const r of (cp.data as { id: string; program: string; tier: string | null; summary: string | null; status: string; created_at: string }[] | null) ?? []) {
         rows.push({ id: `cp:${r.id}`, module: r.program === "dialysis" ? "Dialysis" : r.program === "medical_tourism" ? "Medical Tourism" : "Care Program", title: r.program.replace(/_/g, " "), subtitle: [r.tier, r.summary].filter(Boolean).join(" · ") || undefined, status: r.status, createdAt: r.created_at });
       }
-      for (const r of (pr.data as any[]) ?? []) {
+      for (const r of (pr.data as { id: string; category: string; subtype: string; provider_name: string; status: string; created_at: string }[] | null) ?? []) {
         rows.push({ id: `pr:${r.id}`, module: "Prosthetics", title: `${r.category} — ${r.subtype}`, subtitle: r.provider_name, status: r.status, createdAt: r.created_at });
       }
-      for (const r of (sn.data as any[]) ?? []) {
+      for (const r of (sn.data as { id: string; category: string; subtype: string; provider_name: string; status: string; created_at: string }[] | null) ?? []) {
         rows.push({ id: `sn:${r.id}`, module: "Special Needs", title: `${r.category} — ${r.subtype}`, subtitle: r.provider_name, status: r.status, createdAt: r.created_at });
       }
-      for (const r of (bb.data as any[]) ?? []) {
+      for (const r of (bb.data as { id: string; activity_type: string; blood_group: string | null; units: number | null; hospital: string | null; status: string; created_at: string }[] | null) ?? []) {
         rows.push({ id: `bb:${r.id}`, module: "Blood Bank", title: `${r.activity_type}${r.blood_group ? ` · ${r.blood_group}` : ""}${r.units ? ` · ${r.units}u` : ""}`, subtitle: r.hospital ?? undefined, status: r.status, createdAt: r.created_at });
       }
-      for (const r of (sb.data as any[]) ?? []) {
+      for (const r of (sb.data as { id: string; procedure: string; patient_name: string; mode: string; status: string; created_at: string }[] | null) ?? []) {
         rows.push({ id: `sb:${r.id}`, module: "Surgery", title: r.procedure, subtitle: `${r.patient_name} · ${r.mode}`, status: r.status, createdAt: r.created_at });
       }
-      for (const r of (mo.data as any[]) ?? []) {
+      for (const r of (mo.data as { id: string; pharmacy_name: string; delivery_speed: string; items: unknown; prescription_attached: boolean | null; total: number | null; status: string; created_at: string }[] | null) ?? []) {
         rows.push({ id: `mo:${r.id}`, module: "Medicines", title: `Medicine delivery${Array.isArray(r.items) && r.items.length ? ` · ${r.items.length} item${r.items.length !== 1 ? "s" : ""}` : r.prescription_attached ? " · prescription" : ""}`, subtitle: `${r.pharmacy_name} · ${r.delivery_speed}${r.total ? ` · ₹${Math.round(Number(r.total)).toLocaleString("en-IN")}` : ""}`, status: r.status, createdAt: r.created_at });
       }
 
@@ -359,15 +314,14 @@ export default function MyBookingsOverlay({
       }
     })();
     return () => { mounted = false; };
-  }, [uid, ready, trigger]);
+  }, [uid, ready]);
 
   const modules: (Module | "All")[] = useMemo(() => {
     const set = new Set<Module>();
     items.forEach((i) => set.add(i.module));
     return ["All", ...Array.from(set)];
   }, [items]);
-
-  const UPCOMING = new Set(["open", "pending", "broadcasting", "accepted", "confirmed", "in_progress", "booked", "placed", "out_for_delivery", "requested", "assigned", "en_route", "arrived", "in_consultation", ...NURSING_UPCOMING]);
+  const UPCOMING = new Set(["open", "pending", "broadcasting", "accepted", "confirmed", "in_progress", "booked", "placed", "out_for_delivery", "requested", "assigned", "en_route"]);
   const byTab = items.filter((i) => (tab === "upcoming" ? UPCOMING.has(i.status) : !UPCOMING.has(i.status)));
   const visible = filter === "All" ? byTab : byTab.filter((i) => i.module === filter);
   const upcomingCount = items.filter((i) => UPCOMING.has(i.status)).length;
@@ -442,134 +396,158 @@ export default function MyBookingsOverlay({
                       const docName = it.doctorName || (/nurse/i.test(it.title) ? "Nurse Specialist" : /physio/i.test(it.title) ? "Dr. Rajesh K (PT)" : "Dr. Anita Rao");
                       const userRating = reviewsMap[it.id] ?? (readReview(it.id, docName)?.stars ?? null);
                       const isConsultationOver = ["completed", "delivered", "closed", "finished"].includes((it.status || "").toLowerCase());
-                      const showOtpOption = tab !== "previous" && !isConsultationOver && (it.id.startsWith("da:") || it.id.startsWith("cr:"));
-
+                      const showOtpOption = tab !== "previous" && !isConsultationOver;
                       return (
                         <li
                           key={it.id}
+                          onClick={() => {
+                            if (showOtpOption) setOtpTarget({ item: it, doctorName: docName });
+                          }}
+                          role={showOtpOption ? "button" : undefined}
+                          tabIndex={showOtpOption ? 0 : undefined}
+                          onKeyDown={(e) => {
+                            if ((e.key === "Enter" || e.key === " ") && showOtpOption) {
+                              e.preventDefault();
+                              setOtpTarget({ item: it, doctorName: docName });
+                            }
+                          }}
                           style={{
                             background: "#fff",
                             borderRadius: 14,
                             padding: "12px 14px",
                             boxShadow: "0 1px 3px rgba(15,23,42,0.06)",
                             display: "flex",
-                            flexDirection: "column",
+                            alignItems: "flex-start",
                             gap: 12,
+                            flexWrap: "wrap",
+                            cursor: showOtpOption ? "pointer" : "default",
+                            transition: "box-shadow 0.15s ease",
                           }}
                         >
-                          <div style={{ display: "flex", alignItems: "flex-start", gap: 12, width: "100%" }}>
-                            <div style={{ fontSize: 22, lineHeight: 1, marginTop: 2 }}>{MODULE_ICON[it.module]}</div>
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                                <span style={{ fontWeight: 700, fontSize: 14, textTransform: "capitalize", color: "#0F172A" }}>{it.title}</span>
-                                <StatusChip status={it.status} />
-                              </div>
-                              {it.subtitle && <div style={{ color: "#475569", fontSize: 12, marginTop: 2 }}>{it.subtitle}</div>}
-                              <div style={{ color: "#94A3B8", fontSize: 11, marginTop: 4 }}>{it.module} · {new Date(it.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
-
-                              {showOtpOption && (
-                                <div style={{ marginTop: 6 }}>
-                                  <button
-                                    type="button"
-                                    onClick={() => setOtpTarget({ item: it, doctorName: docName })}
-                                    style={{
-                                      display: "inline-flex",
-                                      alignItems: "center",
-                                      gap: 4,
-                                      background: "#ECFDF5",
-                                      color: "#065F46",
-                                      border: "1px solid #A7F3D0",
-                                      borderRadius: 999,
-                                      padding: "3px 9px",
-                                      fontSize: 11,
-                                      fontWeight: 700,
-                                      cursor: "pointer",
-                                    }}
-                                  >
-                                    🔑 Consultation OTP (tap to view)
-                                  </button>
-                                </div>
-                              )}
+                          <div style={{ fontSize: 22, lineHeight: 1, marginTop: 2 }}>{MODULE_ICON[it.module]}</div>
+                          <div style={{ flex: "1 1 200px", minWidth: 0 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                              <span style={{ fontWeight: 700, fontSize: 14, textTransform: "capitalize", color: "#0F172A" }}>{it.title}</span>
+                              <StatusChip status={it.status} />
                             </div>
-
-                            <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" }}>
-                              {it.id.startsWith("da:") && ["confirmed", "rescheduled", "pending"].includes(it.status) && (
-                                <>
-                                  <button onClick={() => setRescheduling(it)} disabled={busyId === it.id} style={{ background: "#F1F5F9", color: INK, border: "none", borderRadius: 999, padding: "8px 12px", fontSize: 12, fontWeight: 700, cursor: busyId === it.id ? "wait" : "pointer" }}>
-                                    Reschedule
-                                  </button>
-                                  <button onClick={async () => {
-                                    if (!confirm("Are you sure you want to cancel this appointment?")) return;
-                                    setBusyId(it.id);
-                                    try { await cancelDoctorAppointment(it.raw.id); setTrigger(t => t + 1); }
-                                    catch (e: any) { alert(e.message); }
-                                    setBusyId(null);
-                                  }} disabled={busyId === it.id} style={{ background: "#FEE2E2", color: "#991B1B", border: "none", borderRadius: 999, padding: "8px 12px", fontSize: 12, fontWeight: 700, cursor: busyId === it.id ? "wait" : "pointer" }}>
-                                    Cancel
-                                  </button>
-                                </>
-                              )}
-
-                              {tab === "previous" && (
-                                <div style={{ display: "flex", gap: 6 }}>
-                                  <button
-                                    type="button"
-                                    onClick={() => setReviewTarget({ item: it, doctorName: docName })}
-                                    style={{
-                                      display: "inline-flex",
-                                      alignItems: "center",
-                                      gap: 5,
-                                      background: userRating ? "#FEF3C7" : "#FFFBEB",
-                                      color: "#92400E",
-                                      border: "1px solid #FDE68A",
-                                      borderRadius: 999,
-                                      padding: "6px 10px",
-                                      fontSize: 11,
-                                      fontWeight: 700,
-                                      cursor: "pointer",
-                                    }}
-                                  >
-                                    ★ {userRating ? `${userRating}★` : "Rate"}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    disabled={!isConsultationOver}
-                                    onClick={() => setChatDoctor(docName)}
-                                    style={{
-                                      display: "inline-flex",
-                                      alignItems: "center",
-                                      gap: 5,
-                                      background: isConsultationOver ? "#F0FDFA" : "#F8FAFC",
-                                      color: isConsultationOver ? "#0F766E" : "#94A3B8",
-                                      border: isConsultationOver ? "1px solid #99F6E4" : "1px solid #E2E8F0",
-                                      borderRadius: 999,
-                                      padding: "6px 10px",
-                                      fontSize: 11,
-                                      fontWeight: 700,
-                                      cursor: isConsultationOver ? "pointer" : "not-allowed",
-                                      opacity: isConsultationOver ? 1 : 0.65,
-                                    }}
-                                  >
-                                    💬 Chat
-                                  </button>
-                                </div>
-                              )}
-
-                              {onRebook && (
-                                <button onClick={() => onRebook(it)} style={{ background: TEAL, color: "#fff", border: "none", borderRadius: 999, padding: "8px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
-                                  ↻ Book again
+                            {it.subtitle && <div style={{ color: "#475569", fontSize: 12, marginTop: 2 }}>{it.subtitle}</div>}
+                            <div style={{ color: "#94A3B8", fontSize: 11, marginTop: 4 }}>{it.module} · {new Date(it.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
+                            {showOtpOption && (
+                              <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setOtpTarget({ item: it, doctorName: docName });
+                                  }}
+                                  style={{
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    gap: 4,
+                                    background: "#ECFDF5",
+                                    color: "#065F46",
+                                    border: "1px solid #A7F3D0",
+                                    borderRadius: 999,
+                                    padding: "3px 9px",
+                                    fontSize: 11,
+                                    fontWeight: 700,
+                                    cursor: "pointer",
+                                  }}
+                                >
+                                  🔑 Consultation OTP (tap to view)
                                 </button>
-                              )}
-                            </div>
+                              </div>
+                            )}
                           </div>
 
-                          {it.id.startsWith("ne:") && (
-                            <NursingEngagementPanel engagement={it.raw as NursingEngagement} />
-                          )}
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", alignSelf: "center", justifyContent: "flex-end" }}>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setReviewTarget({ item: it, doctorName: docName });
+                              }}
+                              aria-label={`Review ${docName}`}
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: 5,
+                                background: userRating ? "#FEF3C7" : "#FFFBEB",
+                                color: "#92400E",
+                                border: "1px solid #FDE68A",
+                                borderRadius: 999,
+                                padding: "8px 12px",
+                                fontSize: 12,
+                                fontWeight: 700,
+                                cursor: "pointer",
+                                whiteSpace: "nowrap",
+                                boxShadow: "0 1px 2px rgba(245,158,11,0.12)",
+                              }}
+                            >
+                              <span style={{ color: "#F59E0B", fontSize: 13 }}>★</span>
+                              {userRating ? `${userRating}★ Reviewed` : "Review your doctor"}
+                            </button>
 
-                          {it.id.startsWith("da:") && it.raw?.mode === "home_visit" && (
-                            <HomeVisitPanel audience="patient" completedOnly={it.status === "completed"} />
-                          )}
+                            <button
+                              type="button"
+                              disabled={!isConsultationOver}
+                              aria-disabled={!isConsultationOver}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (!isConsultationOver) return;
+                                setChatDoctor(docName);
+                              }}
+                              aria-label={isConsultationOver ? `Chat with ${docName}` : `Chat available after consultation`}
+                              title={isConsultationOver ? `Chat with ${docName}` : "Chat will be enabled once consultation is over"}
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: 5,
+                                background: isConsultationOver ? "#F0FDFA" : "#F8FAFC",
+                                color: isConsultationOver ? "#0F766E" : "#94A3B8",
+                                border: isConsultationOver ? "1px solid #99F6E4" : "1px solid #E2E8F0",
+                                borderRadius: 999,
+                                padding: "8px 12px",
+                                fontSize: 12,
+                                fontWeight: 700,
+                                cursor: isConsultationOver ? "pointer" : "not-allowed",
+                                whiteSpace: "nowrap",
+                                boxShadow: isConsultationOver ? "0 1px 2px rgba(13,148,136,0.12)" : "none",
+                                opacity: isConsultationOver ? 1 : 0.65,
+                              }}
+                            >
+                              <span style={{ fontSize: 13, filter: isConsultationOver ? "none" : "grayscale(100%)" }}>💬</span>
+                              Chat
+                            </button>
+
+                            {onRebook && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onRebook(it);
+                                }}
+                                aria-label={`Book ${it.title} again`}
+                                style={{
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: 5,
+                                  background: TEAL,
+                                  color: "#fff",
+                                  border: "none",
+                                  borderRadius: 999,
+                                  padding: "8px 12px",
+                                  fontSize: 12,
+                                  fontWeight: 700,
+                                  cursor: "pointer",
+                                  whiteSpace: "nowrap",
+                                  boxShadow: "0 1px 2px rgba(13,148,136,0.35)",
+                                }}
+                              >
+                                ↻ Book again
+                              </button>
+                            )}
+                          </div>
                         </li>
                       );
                     })}
@@ -579,28 +557,6 @@ export default function MyBookingsOverlay({
             </div>
           )}
         </main>
-
-        {rescheduling && (
-          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 2000 }}>
-            <div style={{ background: "#fff", padding: 20, borderRadius: 16, maxWidth: 500, width: "90%" }}>
-              <h3>Reschedule Appointment</h3>
-              <SlotPickerCalendarStandalone
-                providerId={rescheduling.raw.provider_id}
-                onSelect={async (start, end) => {
-                  setBusyId(rescheduling.id);
-                  try {
-                    await rescheduleDoctorAppointment(rescheduling.raw.id, start.toISOString(), end.toISOString());
-                    setRescheduling(null);
-                    setTrigger(t => t + 1);
-                  } catch (e: any) { alert(e.message); }
-                  setBusyId(null);
-                }}
-                onClose={() => setRescheduling(null)}
-              />
-            </div>
-          </div>
-        )}
-
         {chatDoctor && <PatientChatOverlay doctorName={chatDoctor} onClose={() => setChatDoctor(null)} />}
         {reviewTarget && (
           <PatientReviewModal
@@ -1332,7 +1288,7 @@ function PatientReviewModal({
           .update({
             rating_provider: rating,
             rating_provider_at: new Date().toISOString(),
-          } as any)
+          })
           .eq("id", cleanId);
       }
       saveReview(item.id, doctorName, rating, comment);

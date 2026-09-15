@@ -452,7 +452,9 @@ test('disjoint overdue bookings cannot give one doctor two active home visits in
 test('late travel reserves from server time and cannot overrun a near-future commitment', async () => {
   const { patient, doctor } = await pair();
   const overdue = await overdueVisit(patient, doctor, 1, 4);
-  await rpc(doctor, 'hv_save_provider_settings', { ...providerSettings, lead_minutes: 0 });
+  const safeTz = new Date().getUTCHours() < 12 ? 'UTC' : 'Pacific/Honolulu';
+  await actor(doctor, 'update public.provider_availability set timezone=$1 where user_id=$2', [safeTz, doctor]);
+  await rpc(doctor, 'hv_save_provider_settings', { ...providerSettings, timezone: safeTz, lead_minutes: 0 });
   const soon = new Date(Date.now() + 20 * 60_000).toISOString();
   let { visit: future } = await book(patient, doctor, { start_time: soon });
   future = await action(doctor, future, 'accept');

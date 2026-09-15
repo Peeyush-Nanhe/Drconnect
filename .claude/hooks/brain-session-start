@@ -1,0 +1,69 @@
+#!/bin/sh
+# brain.md SessionStart hook — inject a compact `brain list-pages` snapshot
+
+# Hook failures must not block sessions.
+set -e
+trap 'exit 0' EXIT
+exec 2>/dev/null
+
+if [ "${1:-}" = codex ]; then
+  cd "$(dirname "$0")/../.."
+elif [ -n "$CLAUDE_PROJECT_DIR" ] && [ -d "$CLAUDE_PROJECT_DIR" ]; then
+  cd "$CLAUDE_PROJECT_DIR"
+fi
+
+find_cli() {
+  if [ -n "$BRAIN_CLI" ] && [ -f "$BRAIN_CLI" ]; then
+    echo "$BRAIN_CLI"; return 0
+  fi
+  for c in \
+    "skills/brain-page/bin/brain.mjs" \
+    ".codex/skills/brain-page/bin/brain.mjs" \
+    ".agents/skills/brain-page/bin/brain.mjs" \
+    ".claude/skills/brain-page/bin/brain.mjs" \
+    "$HOME/.claude/skills/brain-page/bin/brain.mjs" \
+    "$HOME/.codex/skills/brain-page/bin/brain.mjs" \
+    "$HOME/.config/opencode/skills/brain-page/bin/brain.mjs" \
+    "$HOME/.cursor/skills/brain-page/bin/brain.mjs" \
+    "$HOME/.pi/agent/skills/brain-page/bin/brain.mjs"; do
+    if [ -f "$c" ]; then echo "$c"; return 0; fi
+  done
+  if command -v brain >/dev/null 2>&1; then
+    echo "brain"; return 0
+  fi
+  return 1
+}
+
+cli=$(find_cli)
+
+invoke() {
+  if [ -f "$cli" ]; then
+    node "$cli" "$@"
+  else
+    "$cli" "$@"
+  fi
+}
+
+dir_out=$(invoke brain-dir 2>/dev/null)
+printf '%s\n' "$dir_out" | grep -q '^populated: true$' || exit 0
+
+pages=$(invoke list-pages 2>/dev/null)
+[ -n "$pages" ] || exit 0
+
+if [ "${1:-}" = codex ]; then
+  # 8 KiB byte budget, not tokens; Codex's own context limit remains the backstop.
+  printf '%s\n' "$pages" | LC_ALL=C awk '
+    BEGIN {
+      output = "Project brain pages (brain list-pages):\nRead current details with brain read-page <id>.\n\n"
+      notice = "[Index truncated; run brain list-pages for the full index.]\n"
+      limit = 8192 - length(notice)
+    }
+    {
+      if (length(output) + length($0) + 1 > limit) truncated = 1
+      if (!truncated) output = output $0 "\n"
+    }
+    END { printf "%s%s", output, truncated ? notice : "" }
+  '
+else
+  printf '%s\n\n%s\n' "Project brain pages (brain list-pages):" "$pages"
+fi
