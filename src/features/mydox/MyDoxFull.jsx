@@ -15229,18 +15229,67 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
           emergency={!!repeatModal.emergency}
           prior={repeatModal.prior} preferred={preferred[repeatModal.favKey] || []}
           onTogglePreferred={(name) => togglePreferred(repeatModal.favKey, name)}
-          onRequest={(p) => { const rm = repeatModal; setRepeatModal(null); setSelectedSpec(null); if (rm.fromOverlay) setServiceView(null); const isMy = rm.prior && p.name === rm.prior.name; const prefName = (rm.favs || []).find(n => !rm.prior || n !== rm.prior.name) || null; setDirectReq({ provider: p, spec: rm.spec, fromOverlay: rm.fromOverlay, emergency: !!rm.emergency, isMy, myName: rm.prior?.name || null, preferredName: prefName }); if (rm.emergency) { (async () => { try { const dbMy = myMedicos.get(rm.spec?.id || rm.spec?.name || "", "my") || myMedicos.get(rm.spec?.name || "", "my"); const dbPref = myMedicos.get(rm.spec?.id || rm.spec?.name || "", "preferred") || myMedicos.get(rm.spec?.name || "", "preferred"); let targetId = isMy ? (dbMy?.medico_id || null) : (dbPref?.medico_id || null); if (!targetId) { try { targetId = await myMedicos.lookupMedicoIdByName(p.name); } catch (_) { } } const row = await createCareRequest({ specialty: rm.spec?.name || "General", emergency: true, notes: `Direct call to ${p.name}${isMy ? " (My Doctor)" : " (Preferred)"}`, notification_stage: isMy ? "my_doctor" : "preferred", my_doctor_id: isMy ? targetId : null, preferred_id: isMy ? null : targetId }); setDirectReq(cur => cur && cur.provider?.name === p.name ? { ...cur, dbId: row.id } : cur); } catch (err) { console.warn("emergency direct request insert failed", err?.message); } })(); } }}
+          onRequest={(p) => {
+            const rm = repeatModal;
+            setRepeatModal(null);
+            setSelectedSpec(null);
+            if (rm.fromOverlay) setServiceView(null);
+            const isMy = rm.prior && p.name === rm.prior.name;
+            const prefName = (rm.favs || []).find(n => !rm.prior || n !== rm.prior.name) || null;
+            setDirectReq({ provider: p, spec: rm.spec, fromOverlay: rm.fromOverlay, emergency: !!rm.emergency, isMy, myName: rm.prior?.name || null, preferredName: prefName });
+            (async () => {
+              try {
+                const dbMy = myMedicos.get(rm.spec?.id || rm.spec?.name || "", "my") || myMedicos.get(rm.spec?.name || "", "my");
+                const dbPref = myMedicos.get(rm.spec?.id || rm.spec?.name || "", "preferred") || myMedicos.get(rm.spec?.name || "", "preferred");
+                let targetId = isMy ? (dbMy?.medico_id || null) : (dbPref?.medico_id || null);
+                if (!targetId) {
+                  try { targetId = await myMedicos.lookupMedicoIdByName(p.name); } catch (_) { }
+                }
+                const specialtyName = rm.spec?.name || (rm.cat === "therapist" ? "Physiotherapy" : "General");
+                const row = await createCareRequest({
+                  specialty: specialtyName,
+                  emergency: !!rm.emergency,
+                  fare: rm.spec?.base || (rm.cat === "therapist" ? 700 : 500),
+                  notes: `Direct call to ${p.name}${isMy ? " (My Doctor)" : " (Preferred)"}`,
+                  notification_stage: isMy ? "my_doctor" : "preferred",
+                  my_doctor_id: isMy ? targetId : null,
+                  preferred_id: isMy ? null : targetId
+                });
+                setDirectReq(cur => cur && cur.provider?.name === p.name ? { ...cur, dbId: row.id } : cur);
+              } catch (err) {
+                console.warn("direct request insert failed", err?.message);
+              }
+            })();
+          }}
           onBroadcast={() => { const rm = repeatModal; setRepeatModal(null); proceedNormal(rm.spec, rm.fromOverlay); }}
           onClose={() => setRepeatModal(null)} />
       )}
       {directReq && (
         <DirectRequestOverlay
           provider={directReq.provider} spec={directReq.spec} who="you"
+          dbId={directReq.dbId}
           emergency={!!directReq.emergency}
           fallbackLabel={directReq.emergency ? (directReq.isMy ? (directReq.preferredName ? `Not accepting — try Preferred (${directReq.preferredName}) →` : "Not accepting — broadcast to any available →") : "Not accepting — broadcast to any available →") : undefined}
           onConfirmed={() => { const dr = directReq; setDirectReq(null); setConfirmedBooking({ name: dr.provider.name + " · " + (dr.spec?.name || "Visit"), label: "Repeat visit · same provider" }); }}
-          onFallback={() => { const dr = directReq; setDirectReq(null); if (dr.emergency && dr.isMy) { setEmgFallback({ spec: dr.spec, myName: dr.myName, preferredName: dr.preferredName, fromOverlay: dr.fromOverlay }); return; } proceedNormal(dr.spec, dr.fromOverlay); }}
-          onClose={() => setDirectReq(null)} />
+          onFallback={() => {
+            const dr = directReq;
+            setDirectReq(null);
+            if (dr.dbId) {
+              try { cancelCareRequest(dr.dbId); } catch (_) { }
+            }
+            if (dr.emergency && dr.isMy) {
+              setEmgFallback({ spec: dr.spec, myName: dr.myName, preferredName: dr.preferredName, fromOverlay: dr.fromOverlay });
+              return;
+            }
+            proceedNormal(dr.spec, dr.fromOverlay);
+          }}
+          onClose={() => {
+            const dr = directReq;
+            setDirectReq(null);
+            if (dr.dbId) {
+              try { cancelCareRequest(dr.dbId); } catch (_) { }
+            }
+          }} />
       )}
       {emgFallback && (
         <EmergencyPreferredPromptModal
@@ -16172,11 +16221,39 @@ function EmergencyPreferredPromptModal({ myName, preferredName, spec, onTryPrefe
 }
 
 /* Direct request to one provider — they accept, else fall back to a full broadcast */
-function DirectRequestOverlay({ provider, spec, who, emergency, fallbackLabel, onConfirmed, onFallback, onClose }) {
+function DirectRequestOverlay({ provider, spec, who, emergency, fallbackLabel, dbId, onConfirmed, onFallback, onClose }) {
   const [phase, setPhase] = useState("contacting"); // contacting → accepted
   const [left, setLeft] = useState(emergency ? 60 : 600); // emergency = 1-minute window, else 10 minutes
   const fallbackCalledRef = useRef(false);
-  useEffect(() => { if (phase !== "contacting") return; if (emergency) return; const t = setTimeout(() => setPhase("accepted"), 3200); return () => clearTimeout(t); }, [phase, emergency]);
+
+  // Live Realtime subscription to care_requests row if dbId exists:
+  useEffect(() => {
+    if (!dbId || phase !== "contacting") return;
+    const ch = supabase
+      .channel(`care_req_direct_${dbId}_${Math.random().toString(36).slice(2)}`)
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "care_requests", filter: `id=eq.${dbId}` },
+        (payload) => {
+          if (payload.new && (payload.new.status === "accepted" || payload.new.status === "assigned" || payload.new.status === "completed")) {
+            setPhase("accepted");
+          }
+        }
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(ch);
+    };
+  }, [dbId, phase]);
+
+  // If there's NO dbId (e.g. offline/mock demo mode without backend), fall back to 3.2s simulation:
+  useEffect(() => {
+    if (phase !== "contacting" || dbId) return;
+    if (emergency) return;
+    const t = setTimeout(() => setPhase("accepted"), 3200);
+    return () => clearTimeout(t);
+  }, [phase, emergency, dbId]);
+
   useEffect(() => { fallbackCalledRef.current = false; }, [provider?.name, spec?.name, emergency]);
   useEffect(() => { if (phase !== "contacting") return; const iv = setInterval(() => setLeft(s => Math.max(0, s - 1)), 1000); return () => clearInterval(iv); }, [phase]);
   useEffect(() => { if (phase !== "contacting" || left > 0 || fallbackCalledRef.current) return; fallbackCalledRef.current = true; onFallback && onFallback(); }, [phase, left, onFallback]);
