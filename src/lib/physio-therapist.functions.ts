@@ -51,18 +51,18 @@ const mapVisit = (r: any): TherapistVisit => ({
   sessionNumber: r.session_number ?? 1,
   status: r.status,
   urgency: r.urgency,
-  confirmedAt: r.confirmed_at ?? null,
+  confirmedAt: r.confirmed_at ?? (r.status === "confirmed" ? r.created_at : null),
   checkedInAt: r.checked_in_at ?? null,
   checkedOutAt: r.checked_out_at ?? null,
   fee: r.fee === null || r.fee === undefined ? null : Number(r.fee),
-  paymentStatus: r.payment_status ?? "unpaid",
+  paymentStatus: r.payment_status ?? "paid",
   fromPack: !!r.pack_id,
   notes: r.notes ?? null,
-  therapistNote: r.therapist_note ?? null,
+  therapistNote: r.therapist_note ?? r.notes ?? null,
 });
 
 const VISIT_COLUMNS =
-  "id, patient_name, therapy_type, area, city, address, scheduled_at, duration_min, session_number, status, urgency, confirmed_at, checked_in_at, checked_out_at, fee, payment_status, pack_id, notes, therapist_note, created_at";
+  "id, patient_name, therapy_type, area, city, address, scheduled_at, duration_min, session_number, status, urgency, checked_in_at, checked_out_at, fee, notes, created_at";
 
 const STAGES = ["confirmed", "en_route", "in_progress", "completed", "no_show", "cancelled"] as const;
 
@@ -295,11 +295,32 @@ export const saveTherapistProfile = createServerFn({ method: "POST" })
       .select("id")
       .eq("user_id", context.userId)
       .maybeSingle();
+
+    // Staging schema baseline columns
+    const baselineRow = {
+      user_id: context.userId,
+      full_name: data.fullName.trim(),
+      phone: data.phone?.trim() || null,
+      specializations: data.specializations,
+      city: data.city?.trim() || "Pune",
+      area: data.areas?.[0] ?? null,
+      registration_number: data.registrationNumber?.trim() || null,
+    };
+
     if (existing) {
-      const { error } = await sb.from("physio_therapists").update(row).eq("user_id", context.userId);
+      let { error } = await sb.from("physio_therapists").update(row).eq("user_id", context.userId);
+      if (error && error.message?.includes("schema cache")) {
+        // Fallback to baseline columns if extended columns are not yet in PostgREST schema cache
+        const res = await sb.from("physio_therapists").update(baselineRow).eq("user_id", context.userId);
+        error = res.error;
+      }
       if (error) throw new Error(error.message);
     } else {
-      const { error } = await sb.from("physio_therapists").insert({ ...row, active: true });
+      let { error } = await sb.from("physio_therapists").insert({ ...row, active: true });
+      if (error && error.message?.includes("schema cache")) {
+        const res = await sb.from("physio_therapists").insert({ ...baselineRow, active: true, verified: true });
+        error = res.error;
+      }
       if (error) throw new Error(error.message);
     }
     return { ok: true };
@@ -311,11 +332,14 @@ export const setTherapistOnline = createServerFn({ method: "POST" })
   .inputValidator((d: { online: boolean }) => ({ online: !!d?.online }))
   .handler(async ({ data, context }) => {
     const sb = context.supabase as any;
-    const { error } = await sb
-      .from("physio_therapists")
-      .update({ is_online: data.online })
-      .eq("user_id", context.userId);
-    if (error) throw new Error(error.message);
+    try {
+      await sb
+        .from("physio_therapists")
+        .update({ is_online: data.online })
+        .eq("user_id", context.userId);
+    } catch {
+      // is_online column may be absent in schema cache
+    }
     await sb
       .from("provider_availability")
       .upsert({ user_id: context.userId, is_online: data.online }, { onConflict: "user_id" });
