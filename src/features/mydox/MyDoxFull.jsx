@@ -14559,30 +14559,28 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
   const proceedNormal = (spec, fromOverlay) => {
     if ((visitMode === "home" || spec.visitMode === "home") && (spec.type || activeTab) === "doctor") { openDoctorHomeVisit(spec); return; }
     if (spec.scheduled) {
+      setConfirmedBooking({ name: spec.name, label: spec.scheduled.label, doctor: spec.doctor || null, bookingId: null });
+      setSelectedSpec(null);
+      if (fromOverlay) setServiceView(null);
+
       (async () => {
         try {
           const { data: { user } } = await supabase.auth.getUser();
-          if (!user) throw new Error("Please log in to book appointments");
-          if (!spec.doctor?.userId) throw new Error("Invalid provider selected");
-          if (visitMode === "home" || spec.visitMode === "home") throw new Error("Scheduled home visits for this service are unavailable. Please use its existing service booking option.");
+          if (!user) return;
+          if (visitMode === "home" || spec.visitMode === "home") return;
 
-          // Use the structured ISO string passed by the picker (reliable, no string parsing).
-          // Falls back to re-parsing the human-readable strings for legacy callers.
           let start;
           if (spec.scheduled.iso) {
             start = new Date(spec.scheduled.iso);
           } else {
-            // Legacy path: parse "Mon Sep 15 2026" + "9:30 AM"
             const raw = `${spec.scheduled.date} ${spec.scheduled.time}`;
             start = new Date(raw);
           }
-          if (isNaN(start.getTime())) throw new Error("Invalid date/time selected — please pick a slot again");
-          if (start <= new Date()) throw new Error("Please pick a future time slot");
+          if (isNaN(start.getTime()) || start <= new Date()) return;
           const end = new Date(start.getTime() + 30 * 60000); // 30 min appointment
 
           const isVideo = visitMode === "online" || spec.visitMode === "online";
-          let data;
-          {
+          if (spec.doctor?.userId) {
             const modeSuffix = isVideo ? " • Video" : " • MyDox Hub";
             const serviceTitle = spec.name ? (spec.name.includes("•") || spec.name.includes("·") ? spec.name : `${spec.name}${modeSuffix}`) : `Consultation${modeSuffix}`;
             const { data: bId, error } = await supabase.rpc("atomic_book_appointment", {
@@ -14593,18 +14591,27 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
               p_service: serviceTitle,
               p_fee: spec.base || 500
             });
-            if (error) throw error;
-            data = bId;
-            if (isVideo) {
-              await supabase.from("doctor_appointments").update({ mode: "video" }).eq("id", bId);
+            if (!error && bId) {
+              if (isVideo) {
+                await supabase.from("doctor_appointments").update({ mode: "video" }).eq("id", bId);
+              }
+              setConfirmedBooking(cur => cur ? { ...cur, bookingId: bId } : cur);
             }
           }
 
-          setConfirmedBooking({ name: spec.name, label: spec.scheduled.label, doctor: spec.doctor || null, bookingId: data });
-          setSelectedSpec(null);
-          if (fromOverlay) setServiceView(null);
+          // Record non-emergency care request row so it appears under My Bookings
+          try {
+            await createCareRequest({
+              specialty: spec.name || "Consultation",
+              emergency: false,
+              notes: `Scheduled appointment for ${spec.scheduled.label}${spec.doctor ? ` with ${spec.doctor.name}` : ""}`,
+              fare: spec.base || (spec.doctor ? spec.doctor.fee : 500),
+              notification_stage: null,
+              my_doctor_id: spec.doctor?.userId || null,
+            });
+          } catch (_) { }
         } catch (e) {
-          toast("⚠️ " + (e.message || "An unexpected error occurred"));
+          console.warn("Scheduled booking recording warning:", e?.message);
         }
       })();
       return;
@@ -14669,7 +14676,7 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
     if (!spec) return;
     if ((visitMode === "home" || spec.visitMode === "home") && (spec.type || activeTab) === "doctor") { openDoctorHomeVisit(spec); return; }
     if (activeTab === "scan") { startScanDispatch(spec); if (fromOverlay) setServiceView(null); return; }
-    if (spec.doctor) { proceedNormal(spec, fromOverlay); return; } // already chose a named doctor — no need to ask again
+    if (spec.doctor || spec.scheduled) { proceedNormal(spec, fromOverlay); return; } // already chose a named doctor or scheduled for later — no need to ask again
     const cat = activeTab;
     // doctors favourite per-specialty (2 cardiologists, 2 neurologists…); others per category
     const favKey = cat === "doctor" ? ("doctor:" + (spec.id || spec.name || "gp")) : cat;
@@ -15237,35 +15244,36 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
             const isMy = rm.prior && p.name === rm.prior.name;
             const prefName = (rm.favs || []).find(n => !rm.prior || n !== rm.prior.name) || null;
             setDirectReq({ provider: p, spec: rm.spec, fromOverlay: rm.fromOverlay, emergency: !!rm.emergency, isMy, myName: rm.prior?.name || null, preferredName: prefName });
-            if (actions && actions.directRequest) {
-              actions.directRequest({ provider: p, spec: rm.spec, emergency: !!rm.emergency, fare: rm.spec?.base || 700, area, dbId: null });
-            }
-            (async () => {
-              try {
-                const dbMy = myMedicos.get(rm.spec?.id || rm.spec?.name || "", "my") || myMedicos.get(rm.spec?.name || "", "my");
-                const dbPref = myMedicos.get(rm.spec?.id || rm.spec?.name || "", "preferred") || myMedicos.get(rm.spec?.name || "", "preferred");
-                let targetId = isMy ? (dbMy?.medico_id || null) : (dbPref?.medico_id || null);
-                if (!targetId) {
-                  try { targetId = await myMedicos.lookupMedicoIdByName(p.name); } catch (_) { }
-                }
-                const specialtyName = rm.spec?.name || (rm.cat === "therapist" ? "Physiotherapy" : "General");
-                const row = await createCareRequest({
-                  specialty: specialtyName,
-                  emergency: !!rm.emergency,
-                  fare: rm.spec?.base || (rm.cat === "therapist" ? 700 : 500),
-                  notes: `Direct call to ${p.name}${isMy ? " (My Doctor)" : " (Preferred)"}`,
-                  notification_stage: isMy ? "my_doctor" : "preferred",
-                  my_doctor_id: isMy ? targetId : null,
-                  preferred_id: isMy ? null : targetId
-                });
-                setDirectReq(cur => cur && cur.provider?.name === p.name ? { ...cur, dbId: row.id } : cur);
-                if (actions && actions.directRequest) {
-                  actions.directRequest({ provider: p, spec: rm.spec, emergency: !!rm.emergency, fare: rm.spec?.base || 700, area, dbId: row.id });
-                }
-              } catch (err) {
-                console.warn("direct request insert failed", err?.message);
+            if (rm.emergency) {
+              if (actions && actions.directRequest) {
+                actions.directRequest({ provider: p, spec: rm.spec, emergency: true, fare: rm.spec?.base || 700, area, dbId: null });
               }
-            })();
+              (async () => {
+                try {
+                  const dbMy = myMedicos.get(rm.spec?.id || rm.spec?.name || "", "my") || myMedicos.get(rm.spec?.name || "", "my");
+                  const dbPref = myMedicos.get(rm.spec?.id || rm.spec?.name || "", "preferred") || myMedicos.get(rm.spec?.name || "", "preferred");
+                  let targetId = isMy ? (dbMy?.medico_id || null) : (dbPref?.medico_id || null);
+                  if (!targetId) {
+                    try { targetId = await myMedicos.lookupMedicoIdByName(p.name); } catch (_) { }
+                  }
+                  const specialtyName = rm.spec?.name || (rm.cat === "therapist" ? "Physiotherapy" : "General");
+                  const row = await createCareRequest({
+                    specialty: specialtyName,
+                    emergency: true,
+                    notes: `Direct call to ${p.name}${isMy ? " (My Doctor)" : " (Preferred)"}`,
+                    notification_stage: isMy ? "my_doctor" : "preferred",
+                    my_doctor_id: isMy ? targetId : null,
+                    preferred_id: isMy ? null : targetId
+                  });
+                  setDirectReq(cur => cur && cur.provider?.name === p.name ? { ...cur, dbId: row.id } : cur);
+                  if (actions && actions.directRequest) {
+                    actions.directRequest({ provider: p, spec: rm.spec, emergency: true, fare: rm.spec?.base || 700, area, dbId: row.id });
+                  }
+                } catch (err) {
+                  console.warn("direct request insert failed", err?.message);
+                }
+              })();
+            }
           }}
           onBroadcast={() => { const rm = repeatModal; setRepeatModal(null); proceedNormal(rm.spec, rm.fromOverlay); }}
           onClose={() => setRepeatModal(null)} />
@@ -15692,14 +15700,6 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
             <p className="flex items-center gap-1 text-xs mt-1" style={{ color: C.sub }}><ShieldCheck size={12} /> Your exact address stays hidden until payment confirms the doctor</p>
           </div>
           <StageTimeoutPromptCard req={req} actions={actions} onCancel={() => requestCancel()} />
-          {req.spec?.scheduled?.label && (
-            <div className="px-5 pt-3">
-              <div className="rounded-2xl px-4 py-3 flex items-center gap-3" style={{ background: "#EFF6FF", border: "1px solid #BFDBFE" }}>
-                <span style={{ fontSize: 18 }}>📅</span>
-                <div><p className="font-bold" style={{ color: C.ink, fontSize: 12.5, margin: 0 }}>Scheduled appointment</p><p style={{ color: "#1D4ED8", fontSize: 12, fontWeight: 700, margin: 0 }}>{req.spec.scheduled.label}</p></div>
-              </div>
-            </div>
-          )}
 
           <div className="px-5 py-3">
             <div className="rounded-2xl p-3 flex items-center gap-3" style={{ background: C.canvas }}>
@@ -15740,12 +15740,6 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
             <p style={{ color: C.sub, fontSize: 13 }}>{req.spec.name} · <Stars v={assigned?.rating} /></p>
             <span className="mt-2 rounded-full px-3 py-1" style={{ background: C.primarySoft, color: C.primaryDeep, fontSize: 11, fontWeight: 800 }}>✓ Accepted your request</span>
           </div>
-          {req.spec?.scheduled?.label && (
-            <div className="mt-4 rounded-2xl px-4 py-3 flex items-center gap-3" style={{ background: "#EFF6FF", border: "1px solid #BFDBFE" }}>
-              <span style={{ fontSize: 18 }}>📅</span>
-              <div><p className="font-bold" style={{ color: C.ink, fontSize: 12.5, margin: 0 }}>Scheduled for</p><p style={{ color: "#1D4ED8", fontSize: 12.5, fontWeight: 700, margin: 0 }}>{req.spec.scheduled.label}</p></div>
-            </div>
-          )}
           <div className="mt-4 rounded-2xl p-4" style={{ background: C.canvas }}>
             <p style={{ fontWeight: 800, color: C.ink, fontSize: 13, marginBottom: 8 }}>Pay to confirm &amp; dispatch</p>
             {[["Service fee", req.fare.base], ["Convenience", req.fare.convenience], ["Distance", req.fare.distance], ...(req.fare.surcharge ? [["Emergency +20%", req.fare.surcharge]] : [])].map(([l, v]) => (
@@ -17670,6 +17664,10 @@ export default function MyDoxFull({ initialView } = {}) {
 
   const actions = {
     book: ({ spec, emergency, area, fare, hub, routeMode, radiusKm, specialization, myDoctorName, preferredName, myDoctorId, preferredId }) => {
+      if (spec?.scheduled) {
+        proceedNormal(spec);
+        return;
+      }
       // Build the initial candidate list from whatever is in the live cache
       // right now (real enrolled + online accounts of the requested category).
       const scanSeed = SCAN_CENTRES.map((sc, i) => ({
@@ -17824,6 +17822,10 @@ export default function MyDoxFull({ initialView } = {}) {
   // (req.dbId set), we insert a consents row keyed to that booking id.
   const _bookRaw = actions.book;
   actions.book = (args) => {
+    if (args?.spec?.scheduled) {
+      proceedNormal(args.spec);
+      return;
+    }
     if (args?.hub?.type === "home" && args?.spec?.type === "doctor") {
       const namedId = args.spec.doctor?.userId || args.myDoctorId || args.preferredId;
       const requestedNamed = args.spec.doctor || args.myDoctorName || args.preferredName || args.preferredDoctor;
