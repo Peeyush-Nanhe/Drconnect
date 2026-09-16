@@ -20,7 +20,7 @@ const SPEED_KMPH: Record<string, number> = { ambulance: 34, physiotherapist: 22,
 
 export const shareProviderLocation = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: { lat: number; lng: number }) => {
+  .validator((input: { lat: number; lng: number }) => {
     if (!input || !Number.isFinite(input.lat) || !Number.isFinite(input.lng)) throw new Error("Location is required");
     if (input.lat < -90 || input.lat > 90 || input.lng < -180 || input.lng > 180) throw new Error("Invalid location");
     return input;
@@ -112,7 +112,7 @@ export type FacilityDutyInput = {
 
 export const postFacilityNurseDuty = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: FacilityDutyInput) => {
+  .validator((input: FacilityDutyInput) => {
     if (!input?.hospitalId) throw new Error("Choose the hospital posting this duty");
     if (!input.skill?.trim()) throw new Error("Choose the nursing skill needed");
     if (!input.title?.trim() || input.title.trim().length > 160) throw new Error("Enter a duty title under 160 characters");
