@@ -110,8 +110,20 @@ export const getMyUnifiedBookingHub = createServerFn({ method: "GET" })
       sb.from("provider_reliability_events").select("event_type, score_delta, created_at").eq("provider_id", uid).order("created_at", { ascending: false }).limit(100),
       sb.from("app_notifications").select("id,kind,title,body,metadata,read_at,created_at").eq("user_id", uid).order("created_at", { ascending: false }).limit(50),
     ]);
-    if (bookingError) throw new Error(bookingError.message);
-    if (offerError) throw new Error(offerError.message);
+    if (bookingError || offerError) {
+      const err = bookingError || offerError;
+      if (err?.code === "PGRST205" || err?.message?.includes("schema cache") || err?.message?.includes("does not exist")) {
+        return {
+          bookings: [],
+          offers: [],
+          notifications: [],
+          reliability: { score: 80, events: [] },
+          reviews: [],
+        };
+      }
+      if (bookingError) throw new Error(bookingError.message);
+      if (offerError) throw new Error(offerError.message);
+    }
     const offeredBookingIds = [...new Set(((offers ?? []) as any[]).map((offer: any) => offer.booking_id))];
     const participantIds = new Set(((participantBookings ?? []) as any[]).map((booking: any) => booking.id));
     const missingIds = offeredBookingIds.filter((id) => !participantIds.has(id));

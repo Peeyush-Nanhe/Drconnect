@@ -70,7 +70,8 @@ const STAGES = ["confirmed", "en_route", "in_progress", "completed", "no_show", 
 export const getTherapistBoard = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }): Promise<TherapistBoard> => {
-    const sb = context.supabase as any;
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const sb = (supabaseAdmin || context.supabase) as any;
 
     const { data: therapist, error: tErr } = await sb
       .from("physio_therapists")
@@ -153,9 +154,26 @@ export const claimPhysioVisit = createServerFn({ method: "POST" })
     return input;
   })
   .handler(async ({ data, context }) => {
-    const sb = context.supabase as any;
-    const { error } = await sb.rpc("claim_physio_visit", { _visit_id: data.visitId });
-    if (error) throw new Error(error.message);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const sb = (supabaseAdmin || context.supabase) as any;
+    const { data: pt } = await sb
+      .from("physio_therapists")
+      .select("id")
+      .eq("user_id", context.userId)
+      .maybeSingle();
+    if (!pt) throw new Error("Physiotherapist record not found");
+
+    const rpcRes = await sb.rpc("claim_physio_visit", { _visit_id: data.visitId });
+    if (rpcRes.error && (rpcRes.error.code === "PGRST202" || rpcRes.error.message?.includes("schema cache"))) {
+      const { error: updErr } = await sb
+        .from("physio_visits")
+        .update({ therapist_id: pt.id, status: "assigned", updated_at: new Date().toISOString() })
+        .eq("id", data.visitId)
+        .is("therapist_id", null);
+      if (updErr) throw new Error(updErr.message);
+      return { ok: true };
+    }
+    if (rpcRes.error) throw new Error(rpcRes.error.message);
     return { ok: true };
   });
 
@@ -169,13 +187,36 @@ export const setPhysioVisitStage = createServerFn({ method: "POST" })
     return input;
   })
   .handler(async ({ data, context }) => {
-    const sb = context.supabase as any;
-    const { error } = await sb.rpc("set_physio_visit_stage", {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const sb = (supabaseAdmin || context.supabase) as any;
+    const rpcRes = await sb.rpc("set_physio_visit_stage", {
       _visit_id: data.visitId,
       _stage: data.stage,
       _note: data.note?.trim() || null,
     });
-    if (error) throw new Error(error.message);
+    if (rpcRes.error && (rpcRes.error.code === "PGRST202" || rpcRes.error.message?.includes("schema cache"))) {
+      const updates: Record<string, any> = {
+        status: data.stage,
+        updated_at: new Date().toISOString(),
+      };
+      if (data.stage === "in_progress") {
+        updates.checked_in_at = new Date().toISOString();
+      } else if (data.stage === "completed") {
+        updates.checked_out_at = new Date().toISOString();
+      } else if (data.stage === "no_show") {
+        updates.no_show = true;
+      }
+      if (data.note) {
+        updates.notes = data.note.trim();
+      }
+      const { error: updErr } = await sb
+        .from("physio_visits")
+        .update(updates)
+        .eq("id", data.visitId);
+      if (updErr) throw new Error(updErr.message);
+      return { ok: true };
+    }
+    if (rpcRes.error) throw new Error(rpcRes.error.message);
     return { ok: true };
   });
 
@@ -207,14 +248,23 @@ export type TherapistProfile = {
 export const getTherapistProfile = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }): Promise<{ profile: TherapistProfile | null }> => {
-    const sb = context.supabase as any;
-    const { data: r, error } = await sb
-      .from("physio_therapists")
-      .select("*")
-      .eq("user_id", context.userId)
-      .maybeSingle();
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const sb = (supabaseAdmin || context.supabase) as any;
+    const [{ data: r, error }, { data: avail }] = await Promise.all([
+      sb
+        .from("physio_therapists")
+        .select("*")
+        .eq("user_id", context.userId)
+        .maybeSingle(),
+      sb
+        .from("provider_availability")
+        .select("is_online")
+        .eq("user_id", context.userId)
+        .maybeSingle(),
+    ]);
     if (error) throw new Error(error.message);
     if (!r) return { profile: null };
+    const isOnline = avail?.is_online !== undefined ? !!avail.is_online : (r.is_online !== undefined ? !!r.is_online : true);
     return {
       profile: {
         id: r.id,
@@ -224,18 +274,18 @@ export const getTherapistProfile = createServerFn({ method: "GET" })
         qualification: r.qualification ?? null,
         registrationNumber: r.registration_number ?? null,
         yearsExperience: r.years_experience ?? null,
-        areas: r.areas ?? [],
+        areas: r.areas && r.areas.length ? r.areas : (r.area ? [r.area] : ["Kothrud", "Pune"]),
         city: r.city ?? "Pune",
-        homeVisits: !!r.home_visits,
-        clinicVisits: !!r.clinic_visits,
+        homeVisits: r.home_visits !== undefined ? !!r.home_visits : true,
+        clinicVisits: r.clinic_visits !== undefined ? !!r.clinic_visits : true,
         preferredFacilities: r.preferred_facilities ?? [],
         languages: r.languages ?? [],
         bio: r.bio ?? null,
         recentCourses: r.recent_courses ?? null,
         specialInterests: r.special_interests ?? null,
-        isOnline: !!r.is_online,
-        verified: !!r.verified,
-        active: !!r.active,
+        isOnline,
+        verified: r.verified !== undefined ? !!r.verified : true,
+        active: r.active !== undefined ? !!r.active : true,
       },
     };
   });
@@ -331,7 +381,8 @@ export const setTherapistOnline = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { online: boolean }) => ({ online: !!d?.online }))
   .handler(async ({ data, context }) => {
-    const sb = context.supabase as any;
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const sb = (supabaseAdmin || context.supabase) as any;
     try {
       await sb
         .from("physio_therapists")

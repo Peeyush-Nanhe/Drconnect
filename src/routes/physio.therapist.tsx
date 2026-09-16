@@ -336,20 +336,19 @@ function TherapistHome() {
     busy: stageMut.isPending,
   });
 
-  const { rows: liveCareRequests } = useLiveCareRequests(profile?.isOnline ?? true);
+  const isOnline = profile ? profile.isOnline : true;
+  const { rows: liveCareRequests } = useLiveCareRequests(isOnline);
   const [dismissedBroadcastIds, setDismissedBroadcastIds] = useState<Record<string, boolean>>({});
   const [acceptingId, setAcceptingId] = useState<string | null>(null);
 
   const activeLiveCareRequest = useMemo(() => {
-    if (!profile?.isOnline) return null;
-    const now = Date.now();
+    if (!isOnline) return null;
     return (liveCareRequests || []).find(r =>
       r.status === "open" &&
-      (now - new Date(r.created_at).getTime()) < 15 * 60_000 &&
       !dismissedBroadcastIds[r.id] &&
       matchesDoctorSpecialty("Physiotherapy", r.specialty)
     ) || null;
-  }, [liveCareRequests, profile?.isOnline, dismissedBroadcastIds]);
+  }, [liveCareRequests, isOnline, dismissedBroadcastIds]);
 
   const handleAcceptCareRequest = async (reqId: string) => {
     setAcceptingId(reqId);
