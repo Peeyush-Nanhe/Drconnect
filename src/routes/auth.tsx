@@ -259,10 +259,10 @@ function AuthPage() {
           else setMsg("Check your email to confirm your account.");
         } else {
           let targetEmail = email.trim();
-          const isRahulNair = targetEmail.toLowerCase() === "rahul.nair@demo.med" || targetEmail.toLowerCase() === "therapist1@demo.med";
-          if (isRahulNair) {
-            targetEmail = "medico1@demo.med";
-          }
+          const normalizedEmail = targetEmail.toLowerCase();
+          const isRahulNair = normalizedEmail === "rahul.nair@demo.med" || normalizedEmail === "therapist1@demo.med";
+          const demoAccount = DEMO_ACCOUNTS.find((a) => a.email.toLowerCase() === normalizedEmail);
+
           let { data, error } = await supabase.auth.signInWithPassword({ email: targetEmail, password });
           if (error && (password === "demo123456" || password === "CareDemo!2026")) {
             const altPass = password === "demo123456" ? "CareDemo!2026" : "demo123456";
@@ -272,8 +272,24 @@ function AuthPage() {
               error = null;
             }
           }
+          if (error && isRahulNair) {
+            targetEmail = "medico1@demo.med";
+            let retry = await supabase.auth.signInWithPassword({ email: targetEmail, password });
+            if (retry.error && (password === "demo123456" || password === "CareDemo!2026")) {
+              const altPass = password === "demo123456" ? "CareDemo!2026" : "demo123456";
+              retry = await supabase.auth.signInWithPassword({ email: targetEmail, password: altPass });
+            }
+            if (!retry.error && retry.data) {
+              data = retry.data;
+              error = null;
+            }
+          }
           if (error) throw error;
-          if (data?.user) await afterLogin(data.user.id, "medico", isRahulNair ? "Rahul Nair" : undefined);
+          if (data?.user) {
+            const targetView = demoAccount?.view || (isRahulNair ? "therapist" : undefined);
+            const targetName = demoAccount?.name || (isRahulNair ? "Rahul Nair" : undefined);
+            await afterLogin(data.user.id, targetView, targetName);
+          }
         }
       } else if (mode === "email-otp") {
         if (!otpSent) {
