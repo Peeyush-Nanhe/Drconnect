@@ -1474,3 +1474,58 @@ export async function listVerifiedProviders() {
   if (error) throw error;
   return (data || []) as { id: string; name: string; specialty: string; hospital: string | null; city: string }[];
 }
+
+export function matchesDoctorSpecialty(doctorSpecialty: string | null | undefined, requestSpecialty: string | null | undefined): boolean {
+  if (!requestSpecialty) return true; // generic broadcast open to any provider
+  const doc = String(doctorSpecialty || "").toLowerCase().trim();
+  const req = String(requestSpecialty || "").toLowerCase().trim();
+
+  if (!doc) {
+    return req.includes("general") || req.includes("consult") || req === "doctor";
+  }
+  if (doc === req) return true;
+
+  // Physiotherapy group
+  const isPhysioReq = req.includes("physio") || req.includes("therap");
+  const isPhysioDoc = doc.includes("physio") || doc.includes("therap");
+  if (isPhysioReq || isPhysioDoc) {
+    return isPhysioReq && isPhysioDoc;
+  }
+
+  // Cardiology group
+  const isCardioReq = req.includes("cardio") || req.includes("heart");
+  const isCardioDoc = doc.includes("cardio") || doc.includes("heart");
+  if (isCardioReq || isCardioDoc) {
+    return isCardioReq && isCardioDoc;
+  }
+
+  // Neurology group
+  const isNeuroReq = req.includes("neuro") || req.includes("brain") || req.includes("nerve");
+  const isNeuroDoc = doc.includes("neuro") || doc.includes("brain") || doc.includes("nerve");
+  if (isNeuroReq || isNeuroDoc) {
+    return isNeuroReq && isNeuroDoc;
+  }
+
+  // Pediatrics group
+  const isPediaReq = req.includes("child") || req.includes("pediatric") || req.includes("paediatric");
+  const isPediaDoc = doc.includes("child") || doc.includes("pediatric") || doc.includes("paediatric");
+  if (isPediaReq || isPediaDoc) {
+    return isPediaReq && isPediaDoc;
+  }
+
+  // Orthopedics group
+  const isOrthoReq = req.includes("ortho") || req.includes("bone") || req.includes("joint");
+  const isOrthoDoc = doc.includes("ortho") || doc.includes("bone") || doc.includes("joint");
+  if (isOrthoReq || isOrthoDoc) {
+    return isOrthoReq && isOrthoDoc;
+  }
+
+  // General Physician group
+  const isGeneralReq = req.includes("general") || req.includes("consult") || req.includes("physician") || req === "doctor";
+  const isGeneralDoc = doc.includes("general") || doc.includes("physician") || doc === "gp";
+  if (isGeneralReq && isGeneralDoc) {
+    return true;
+  }
+
+  return doc.includes(req) || req.includes(doc);
+}

@@ -74,12 +74,12 @@ interface DemoAccountItem {
 const DEMO_BUTTONS: DemoAccountItem[] = [
   { label: "Patient 1", email: "patient1@demo.med", defaultPass: "CareDemo!2026", testNote: "One-Click Demo Patient Access" },
   { label: "Patient 2", email: "patient2@demo.med", defaultPass: "CareDemo!2026" },
-  { label: "Medico 1", email: "medico1@demo.med", defaultPass: "CareDemo!2026" },
-  { label: "Medico 2", email: "medico2@demo.med", defaultPass: "CareDemo!2026" },
+  { label: "Medico 1 (Dr. Anita Rao - Cardiology)", email: "medico1@demo.med", defaultPass: "CareDemo!2026" },
+  { label: "Medico 2 (Dr. Vikram Iyer - Neurology)", email: "medico2@demo.med", defaultPass: "CareDemo!2026" },
   { label: "Dr. Rahul Nair", email: "rahul.nair@demo.med", defaultPass: "CareDemo!2026" },
   { label: "Nurse (Sister Asha)", email: "nurse1@demo.med", defaultPass: "CareDemo!2026" },
   { label: "Technician (Rohit Kale)", email: "tech1@demo.med", defaultPass: "CareDemo!2026" },
-  { label: "Physio (Kavita Deshmukh)", email: "physio1@demo.med", defaultPass: "CareDemo!2026" },
+  { label: "Physio (Dr. Kavita Deshmukh - Physiotherapy)", email: "physio1@demo.med", defaultPass: "CareDemo!2026" },
   { label: "Hub 1", email: "hub1@demo.med", defaultPass: "CareDemo!2026" },
   { label: "Hub 2", email: "hub2@demo.med", defaultPass: "CareDemo!2026" },
   { label: "Scan 1", email: "scan1@demo.med", defaultPass: "CareDemo!2026" },
@@ -124,7 +124,7 @@ function AuthPage() {
   async function afterLogin(userId: string, viewOverride?: string, nameOverride?: string) {
     const [rolesRes, profileRes, authRes, requestRes] = await Promise.all([
       supabase.from("user_roles").select("role").eq("user_id", userId),
-      supabase.from("profiles").select("full_name, view").eq("id", userId).maybeSingle(),
+      supabase.from("profiles").select("full_name, view, specialty").eq("id", userId).maybeSingle(),
       supabase.auth.getUser(),
       supabase.from("account_role_requests").select("requested_role, requested_view, status").eq("user_id", userId).maybeSingle(),
     ]);
@@ -158,6 +158,11 @@ function AuthPage() {
       localStorage.setItem("mc_user_name", fullName);
       localStorage.setItem("mc_user_role", primary);
       localStorage.setItem("mc_profile_id", userId);
+      if (profileRes.data?.specialty) {
+        localStorage.setItem("mc_user_specialty", profileRes.data.specialty);
+      } else {
+        localStorage.removeItem("mc_user_specialty");
+      }
     }
 
     // Provider/facility claims are requests, not privileges. Keep the user on

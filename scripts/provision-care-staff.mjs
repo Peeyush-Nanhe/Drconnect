@@ -41,10 +41,11 @@ const REVIEWER_ID = "c9b79c1d-203f-4918-b11c-bc22525ceabf";
 const STAFF_ACCOUNTS = [
   {
     email: "physio1@demo.med",
-    fullName: "Kavita Deshmukh",
+    fullName: "Dr. Kavita Deshmukh",
     role: "provider",
     view: "physio_staff",
     type: "physio",
+    specialty: "Physiotherapy",
   },
   {
     email: "nurse1@demo.med",
@@ -127,6 +128,7 @@ async function run() {
         id: userId,
         full_name: acc.fullName,
         view: acc.view,
+        specialty: acc.specialty || null,
       },
       { onConflict: "id" }
     );

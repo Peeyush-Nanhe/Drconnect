@@ -630,6 +630,61 @@ function providerHandles(providerSpecialty, term) {
   const t = String(term).toLowerCase().trim();
   return caps.some(c => c.includes(t) || t.includes(c));
 }
+
+export function matchesDoctorSpecialty(doctorSpecialty, requestSpecialty) {
+  if (!requestSpecialty) return true; // generic broadcast open to any provider
+  const doc = String(doctorSpecialty || "").toLowerCase().trim();
+  const req = String(requestSpecialty || "").toLowerCase().trim();
+
+  if (!doc) {
+    return req.includes("general") || req.includes("consult") || req === "doctor";
+  }
+  if (doc === req) return true;
+
+  // Physiotherapy group
+  const isPhysioReq = req.includes("physio") || req.includes("therap");
+  const isPhysioDoc = doc.includes("physio") || doc.includes("therap");
+  if (isPhysioReq || isPhysioDoc) {
+    return isPhysioReq && isPhysioDoc;
+  }
+
+  // Cardiology group
+  const isCardioReq = req.includes("cardio") || req.includes("heart");
+  const isCardioDoc = doc.includes("cardio") || doc.includes("heart");
+  if (isCardioReq || isCardioDoc) {
+    return isCardioReq && isCardioDoc;
+  }
+
+  // Neurology group
+  const isNeuroReq = req.includes("neuro") || req.includes("brain") || req.includes("nerve");
+  const isNeuroDoc = doc.includes("neuro") || doc.includes("brain") || doc.includes("nerve");
+  if (isNeuroReq || isNeuroDoc) {
+    return isNeuroReq && isNeuroDoc;
+  }
+
+  // Pediatrics group
+  const isPediaReq = req.includes("child") || req.includes("pediatric") || req.includes("paediatric");
+  const isPediaDoc = doc.includes("child") || doc.includes("pediatric") || doc.includes("paediatric");
+  if (isPediaReq || isPediaDoc) {
+    return isPediaReq && isPediaDoc;
+  }
+
+  // Orthopedics group
+  const isOrthoReq = req.includes("ortho") || req.includes("bone") || req.includes("joint");
+  const isOrthoDoc = doc.includes("ortho") || doc.includes("bone") || doc.includes("joint");
+  if (isOrthoReq || isOrthoDoc) {
+    return isOrthoReq && isOrthoDoc;
+  }
+
+  // General Physician group
+  const isGeneralReq = req.includes("general") || req.includes("consult") || req.includes("physician") || req === "doctor";
+  const isGeneralDoc = doc.includes("general") || doc.includes("physician") || doc === "gp";
+  if (isGeneralReq && isGeneralDoc) {
+    return true;
+  }
+
+  return doc.includes(req) || req.includes(doc);
+}
 function buildLiveCategory(view, seededFallback, filters) {
   const f = filters || {};
   const radius = typeof f.radiusKm === "number" ? f.radiusKm : null;
@@ -7938,16 +7993,171 @@ function DoctorApp({ req, hubReq, online, setOnline, onAccept, sevaActions }) {
   // Live subscription to real broadcast care_requests inserted by patients on other devices.
   // Any 'open' row within a generous 15-minute window is treated as an incoming ping — so a medico
   // who comes online a moment after the patient hit "Broadcast" still sees the request.
+  const [showDoctorProfile, setShowDoctorProfile] = useState(false);
+  const [profileSpecialty, setProfileSpecialty] = useState(null);
+  const [profileName, setProfileName] = useState(null);
+  const [profileDegree, setProfileDegree] = useState(null);
+
+  useEffect(() => {
+    const userId = session?.user?.id;
+    if (!userId) return;
+    let alive = true;
+    (async () => {
+      try {
+        const { data: p } = await supabase
+          .from("profiles")
+          .select("full_name, specialty, view")
+          .eq("id", userId)
+          .maybeSingle();
+        if (p && alive) {
+          if (p.specialty) setProfileSpecialty(p.specialty);
+          if (p.full_name) setProfileName(p.full_name);
+        }
+        const { data: pt } = await supabase
+          .from("physio_therapists")
+          .select("full_name, qualification, specializations")
+          .eq("user_id", userId)
+          .maybeSingle();
+        if (pt && alive) {
+          setProfileSpecialty("Physiotherapy");
+          if (pt.full_name) setProfileName(pt.full_name);
+          if (pt.qualification) setProfileDegree(pt.qualification);
+        }
+      } catch (e) {
+        console.warn("DoctorApp profile load error:", e);
+      }
+    })();
+    return () => { alive = false; };
+  }, [session?.user?.id]);
+
+  const currentName = profileName || (typeof window !== "undefined" && window.localStorage.getItem("mc_user_name")) || YOU.name;
+
+  const currentSpecialty = useMemo(() => {
+    if (profileSpecialty) return profileSpecialty;
+    if (typeof window !== "undefined") {
+      const stored = window.localStorage.getItem("mc_user_specialty");
+      if (stored) return stored;
+    }
+    const lower = currentName.toLowerCase();
+    if (lower.includes("anita")) return "Cardiology";
+    if (lower.includes("vikram")) return "Neurology";
+    if (lower.includes("kavita") || lower.includes("therapist") || lower.includes("physio")) return "Physiotherapy";
+    if (lower.includes("leela")) return "Child Specialist";
+    return "General Physician";
+  }, [profileSpecialty, currentName]);
+
+  const isTherapist = currentSpecialty.toLowerCase().includes("physio") || currentSpecialty.toLowerCase().includes("therap");
+  const defaultDegree = isTherapist ? (profileDegree || "MPT (Ortho & Neuro)") : currentSpecialty.includes("Cardio") ? "MD, DM (Cardiology)" : currentSpecialty.includes("Neuro") ? "MD, DM (Neurology)" : "MBBS, MD";
+  const specialtyLabel = isTherapist ? `Physiotherapist · ${defaultDegree}` : `${currentSpecialty} · ★ 4.9`;
+
+  const storageKey = `mc_doc_status_toggles_${currentName.replace(/[^a-zA-Z0-9]/g, "_")}`;
+  const [statusToggles, setStatusToggles] = useState(() => {
+    try {
+      if (typeof window !== "undefined") {
+        const saved = window.localStorage.getItem(storageKey);
+        if (saved) return JSON.parse(saved);
+      }
+    } catch {}
+    return {
+      homeVisits: true,
+      clinicVisits: true,
+      videoConsults: true,
+      emergency: true,
+      disabledSkills: {},
+    };
+  });
+
+  const toggleStatus = (key) => {
+    setStatusToggles(prev => {
+      const next = { ...prev, [key]: !prev[key] };
+      try {
+        if (typeof window !== "undefined") {
+          window.localStorage.setItem(storageKey, JSON.stringify(next));
+        }
+      } catch {}
+      return next;
+    });
+  };
+
+  const toggleSkill = (skill) => {
+    setStatusToggles(prev => {
+      const disabledSkills = { ...(prev.disabledSkills || {}) };
+      if (disabledSkills[skill]) {
+        delete disabledSkills[skill];
+      } else {
+        disabledSkills[skill] = true;
+      }
+      const next = { ...prev, disabledSkills };
+      try {
+        if (typeof window !== "undefined") {
+          window.localStorage.setItem(storageKey, JSON.stringify(next));
+        }
+      } catch {}
+      return next;
+    });
+  };
+
+  const doctorSkills = useMemo(() => {
+    if (isTherapist) {
+      return ["Orthopedic Physiotherapy", "Neurological Rehab", "Sports Injury", "Post-Surgery Recovery", "Geriatric Rehab", "Movement Therapy"];
+    }
+    if (currentSpecialty.toLowerCase().includes("cardio")) {
+      return ["Clinical Cardiology", "ECG & Heart Review", "Hypertension", "Post-Angioplasty Care", "Preventive Cardiac Care"];
+    }
+    if (currentSpecialty.toLowerCase().includes("neuro")) {
+      return ["Clinical Neurology", "Stroke Rehabilitation", "Headache & Migraine", "Neuropathy Review", "Epilepsy Management"];
+    }
+    if (currentSpecialty.toLowerCase().includes("child") || currentSpecialty.toLowerCase().includes("pedia")) {
+      return ["Child Healthcare", "Pediatric Vaccination", "Growth & Nutrition", "Newborn Care", "Pediatric Infection"];
+    }
+    return ["General Consult", "Fever & Infection", "Diabetes Review", "Hypertension Care", "Preventive Health"];
+  }, [isTherapist, currentSpecialty]);
+
+  const doctorAcceptsRequest = useCallback((r) => {
+    if (!r) return false;
+    const reqSpec = r.specialty || r.spec?.name || "";
+    if (!matchesDoctorSpecialty(currentSpecialty, reqSpec)) return false;
+
+    // Gating by visit mode and emergency toggles
+    const isEmerg = !!(r.emergency || r.spec?.emergency);
+    if (isEmerg && statusToggles.emergency === false) return false;
+
+    const notesStr = String(r.notes || r.hub?.name || "").toLowerCase();
+    const isHome = notesStr.includes("home") || (r.home_visit_status && r.home_visit_status !== "none");
+    const isVideo = notesStr.includes("video") || notesStr.includes("tele");
+    if (isHome && statusToggles.homeVisits === false) return false;
+    if (isVideo && statusToggles.videoConsults === false) return false;
+    if (!isHome && !isVideo && statusToggles.clinicVisits === false) return false;
+
+    // Gating by skills toggles if specific skill was disabled
+    if (statusToggles.disabledSkills) {
+      for (const [skill, disabled] of Object.entries(statusToggles.disabledSkills)) {
+        if (disabled) {
+          const sLower = skill.toLowerCase();
+          if (reqSpec.toLowerCase().includes(sLower) || notesStr.includes(sLower)) {
+            return false;
+          }
+        }
+      }
+    }
+    return true;
+  }, [currentSpecialty, statusToggles]);
+
   const { rows: liveRows } = useLiveCareRequests(online);
   const liveOpen = useMemo(() => {
     if (!online) return null;
     const now = Date.now();
-    return (liveRows || []).find(r =>
-      r.status === "open" &&
-      (now - new Date(r.created_at).getTime()) < 15 * 60_000 &&
-      (req?.dbId !== r.id) // don't ping myself for my own patient-side broadcast
-    ) || null;
-  }, [liveRows, online, req?.dbId]);
+    return (liveRows || []).find(r => {
+      if (r.status !== "open") return false;
+      if ((now - new Date(r.created_at).getTime()) >= 15 * 60_000) return false;
+      if (req?.dbId === r.id) return false; // don't ping myself for my own patient-side broadcast
+      // Targeted doctor stages check
+      const myId = session?.user?.id;
+      if (r.notification_stage === "my_doctor" && r.my_doctor_id && myId && r.my_doctor_id !== myId) return false;
+      if (r.notification_stage === "preferred" && r.preferred_id && myId && r.preferred_id !== myId) return false;
+      return doctorAcceptsRequest(r);
+    }) || null;
+  }, [liveRows, online, req?.dbId, doctorAcceptsRequest, session?.user?.id]);
 
   const liveIncoming = liveOpen ? {
     r: {
@@ -7957,19 +8167,19 @@ function DoctorApp({ req, hubReq, online, setOnline, onAccept, sevaActions }) {
       emergency: !!liveOpen.emergency,
       hub: { name: liveOpen.notes?.replace(/^Hub:\s*/, "") || "MyDox Hub — Koregaon Park", address: "Nearby", type: "medconnect" },
       fare: { total: liveOpen.fare || 800 },
-      // Give the medico a fresh 30s countdown from the moment they see the ping,
-      // instead of racing the patient's original 15s local timer.
       remaining: 30,
       status: "broadcasting",
     },
     src: "live",
   } : null;
 
-  // Determine which request to show as incoming (local mock takes precedence, then live)
-  const activeIncoming = (req?.status === "broadcasting") ? { r: req, src: "patient" }
-    : (hubReq?.status === "broadcasting") ? { r: hubReq, src: "hub" }
-      : liveIncoming;
+  // Determine which request to show as incoming (gated by doctor specialization and status toggles)
+  const reqMatches = (req?.status === "broadcasting") && doctorAcceptsRequest(req);
+  const hubReqMatches = (hubReq?.status === "broadcasting") && doctorAcceptsRequest(hubReq);
 
+  const activeIncoming = reqMatches ? { r: req, src: "patient" }
+    : hubReqMatches ? { r: hubReq, src: "hub" }
+      : liveIncoming;
 
   useEffect(() => {
     if (req?.status === "broadcasting" || hubReq?.status === "broadcasting") setActed(false);
@@ -7982,16 +8192,11 @@ function DoctorApp({ req, hubReq, online, setOnline, onAccept, sevaActions }) {
   const youCand = activeIncoming?.r?.candidates?.find(c => c.id === "you") || (activeIncoming ? { id: "you", distanceKm: 1.4, etaMin: 8 } : null);
   const broadcastType = activeIncoming?.r?.spec?.name || "providers";
 
-  const [showRahulProfile, setShowRahulProfile] = useState(false);
-  const currentName = (typeof window !== "undefined" && window.localStorage.getItem("mc_user_name")) || YOU.name;
-  const isTherapist = currentName.toLowerCase().includes("rahul") || currentName.toLowerCase().includes("therapist") || currentName.toLowerCase().includes("physio");
-  const specialtyLabel = isTherapist ? "Physiotherapist · BPT, MPT" : "General Physician · ★ 4.9";
-
   return (
     <Screen>
       <div className="px-5 pt-4 pb-4" style={{ background: online ? grad : "#3A4A45" }}>
         <div className="flex items-center justify-between text-white">
-          <div className="flex items-center gap-2.5 cursor-pointer" onClick={() => setShowRahulProfile(true)}>
+          <div className="flex items-center gap-2.5 cursor-pointer" onClick={() => setShowDoctorProfile(true)}>
             <Avatar name={currentName} size={40} />
             <div><p className="font-extrabold leading-tight" style={{ fontSize: 15 }}>{currentName}</p><p className="text-xs opacity-85">{specialtyLabel} <span style={{ textDecoration: "underline", opacity: 0.9 }}>· View Profile</span></p></div>
           </div>
@@ -8004,18 +8209,18 @@ function DoctorApp({ req, hubReq, online, setOnline, onAccept, sevaActions }) {
             <ModuleProfilePill />
           </div>
         </div>
-        {showRahulProfile && (
-          <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(15,23,42,.65)", display: "flex", alignItems: "flex-end", justifyContent: "center" }} onClick={() => setShowRahulProfile(false)}>
-            <div style={{ width: "100%", maxWidth: 440, background: "#fff", borderRadius: "24px 24px 0 0", padding: "22px 20px 28px", fontFamily: "'Plus Jakarta Sans', sans-serif" }} onClick={(e) => e.stopPropagation()}>
+        {showDoctorProfile && (
+          <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(15,23,42,.65)", display: "flex", alignItems: "flex-end", justifyContent: "center" }} onClick={() => setShowDoctorProfile(false)}>
+            <div style={{ width: "100%", maxWidth: 440, background: "#fff", borderRadius: "24px 24px 0 0", padding: "22px 20px 28px", maxHeight: "88vh", overflowY: "auto", fontFamily: "'Plus Jakarta Sans', sans-serif" }} onClick={(e) => e.stopPropagation()}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                  <Avatar name="Rahul Nair" size={48} />
+                  <Avatar name={currentName} size={48} />
                   <div>
-                    <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: "#0F172A" }}>Rahul Nair</h2>
-                    <p style={{ margin: "2px 0 0", fontSize: 12, fontWeight: 600, color: "#0EA5E9" }}>Physiotherapist · BPT, MPT (Neuro & Ortho)</p>
+                    <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: "#0F172A" }}>{currentName}</h2>
+                    <p style={{ margin: "2px 0 0", fontSize: 12, fontWeight: 600, color: isTherapist ? "#0EA5E9" : "#0D9488" }}>{specialtyLabel}</p>
                   </div>
                 </div>
-                <button onClick={() => setShowRahulProfile(false)} style={{ background: "#F1F5F9", border: "none", borderRadius: "50%", width: 32, height: 32, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 700, color: "#64748B" }}>✕</button>
+                <button onClick={() => setShowDoctorProfile(false)} style={{ background: "#F1F5F9", border: "none", borderRadius: "50%", width: 32, height: 32, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 700, color: "#64748B" }}>✕</button>
               </div>
 
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 16 }}>
@@ -8028,29 +8233,105 @@ function DoctorApp({ req, hubReq, online, setOnline, onAccept, sevaActions }) {
                   <p style={{ margin: "2px 0 0", fontSize: 10, fontWeight: 600, color: "#64748B" }}>EXPERIENCE</p>
                 </div>
                 <div style={{ background: "#F8FAFC", borderRadius: 12, padding: "10px 8px", textAlign: "center", border: "1px solid #E2E8F0" }}>
-                  <p style={{ margin: 0, fontSize: 16, fontWeight: 800, color: "#0EA5E9" }}>₹700</p>
+                  <p style={{ margin: 0, fontSize: 16, fontWeight: 800, color: isTherapist ? "#0EA5E9" : "#0D9488" }}>{isTherapist ? "₹700" : "₹800"}</p>
                   <p style={{ margin: "2px 0 0", fontSize: 10, fontWeight: 600, color: "#64748B" }}>BASE FEE</p>
                 </div>
               </div>
 
-              <div style={{ marginBottom: 14 }}>
-                <p style={{ margin: "0 0 6px", fontSize: 11, fontWeight: 800, color: "#475569", textTransform: "uppercase" }}>Specializations & Skills</p>
+              {/* Multi-toggle status controls for availability */}
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                  <p style={{ margin: 0, fontSize: 11, fontWeight: 800, color: "#475569", textTransform: "uppercase" }}>Broadcast & Service Modes</p>
+                  <span style={{ fontSize: 10, fontWeight: 600, color: "#0D9488" }}>Affects incoming pings</span>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {[
+                    { key: "homeVisits", icon: "🏠", label: "Home Visits", desc: "Receive nearby home visit requests" },
+                    { key: "clinicVisits", icon: "🏥", label: "Clinic / Hub Visits", desc: "Receive walk-in & hub appointments" },
+                    { key: "videoConsults", icon: "📹", label: "Video Consultations", desc: "Receive online teleconsult requests" },
+                    { key: "emergency", icon: "⚡", label: "Emergency Broadcasts", desc: "Immediate 2-hour emergency requests" },
+                  ].map(item => {
+                    const active = statusToggles[item.key] !== false;
+                    return (
+                      <div key={item.key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 12px", background: active ? "#F0FDF4" : "#F8FAFC", border: `1px solid ${active ? "#BBF7D0" : "#E2E8F0"}`, borderRadius: 12 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                          <span style={{ fontSize: 17 }}>{item.icon}</span>
+                          <div>
+                            <p style={{ margin: 0, fontSize: 12.5, fontWeight: 700, color: active ? "#166534" : "#64748B" }}>{item.label}</p>
+                            <p style={{ margin: "1px 0 0", fontSize: 10, color: active ? "#15803D" : "#94A3B8" }}>{item.desc}</p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => toggleStatus(item.key)}
+                          style={{
+                            width: 44,
+                            height: 24,
+                            borderRadius: 12,
+                            background: active ? "#22C55E" : "#CBD5E1",
+                            border: "none",
+                            cursor: "pointer",
+                            position: "relative",
+                            transition: "background .2s",
+                            flexShrink: 0,
+                          }}
+                          aria-label={`Toggle ${item.label}`}
+                        >
+                          <div style={{
+                            width: 18,
+                            height: 18,
+                            borderRadius: "50%",
+                            background: "#fff",
+                            position: "absolute",
+                            top: 3,
+                            left: active ? 23 : 3,
+                            transition: "left .2s",
+                            boxShadow: "0 1px 3px rgba(0,0,0,.2)",
+                          }} />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Specializations & Skills multi-toggles */}
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                  <p style={{ margin: 0, fontSize: 11, fontWeight: 800, color: "#475569", textTransform: "uppercase" }}>Specializations & Skills</p>
+                  <span style={{ fontSize: 10, fontWeight: 600, color: "#64748B" }}>Tap to toggle</span>
+                </div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                  {["Neurological Rehab", "Orthopedic Physiotherapy", "Post-Surgery Recovery", "Sports Injury", "Movement Therapy", "Geriatric Rehab"].map(s => (
-                    <span key={s} style={{ background: "#E0F2FE", color: "#0369A1", fontSize: 11, fontWeight: 700, borderRadius: 20, padding: "4px 10px" }}>{s}</span>
-                  ))}
+                  {doctorSkills.map(s => {
+                    const active = !statusToggles.disabledSkills?.[s];
+                    return (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => toggleSkill(s)}
+                        style={{
+                          background: active ? (isTherapist ? "#E0F2FE" : "#E6F4EA") : "#F1F5F9",
+                          color: active ? (isTherapist ? "#0369A1" : "#137333") : "#94A3B8",
+                          border: active ? `1px solid ${isTherapist ? "#BAE6FD" : "#CEEAD6"}` : "1px solid #E2E8F0",
+                          fontSize: 11,
+                          fontWeight: 700,
+                          borderRadius: 20,
+                          padding: "5px 11px",
+                          cursor: "pointer",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 4,
+                        }}
+                      >
+                        <span>{active ? "✓" : "✕"}</span>
+                        <span>{s}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
-              <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 14, padding: "12px 14px", marginBottom: 16, display: "flex", alignItems: "center", gap: 10 }}>
-                <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#22C55E" }} />
-                <div>
-                  <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: "#15803D" }}>Active & Available for Home & Hub Visits</p>
-                  <p style={{ margin: "1px 0 0", fontSize: 11, color: "#166534" }}>Koregaon Park & nearby Pune service radius</p>
-                </div>
-              </div>
-
-              <button onClick={() => setShowRahulProfile(false)} style={{ width: "100%", borderRadius: 14, padding: "12px", border: "none", background: "#0EA5E9", color: "#fff", fontWeight: 800, fontSize: 14, cursor: "pointer" }}>Close Profile</button>
+              <button onClick={() => setShowDoctorProfile(false)} style={{ width: "100%", borderRadius: 14, padding: "12px", border: "none", background: isTherapist ? "#0EA5E9" : "#0D9488", color: "#fff", fontWeight: 800, fontSize: 14, cursor: "pointer" }}>Save & Close Profile</button>
             </div>
           </div>
         )}
