@@ -76,7 +76,7 @@ const DEMO_BUTTONS: DemoAccountItem[] = [
   { label: "Patient 2", email: "patient2@demo.med", defaultPass: "CareDemo!2026" },
   { label: "Medico 1", email: "medico1@demo.med", defaultPass: "CareDemo!2026" },
   { label: "Medico 2", email: "medico2@demo.med", defaultPass: "CareDemo!2026" },
-  { label: "Therapist (Rahul Nair)", email: "rahul.nair@demo.med", defaultPass: "CareDemo!2026" },
+  { label: "Dr. Rahul Nair", email: "rahul.nair@demo.med", defaultPass: "CareDemo!2026" },
   { label: "Nurse (Sister Asha)", email: "nurse1@demo.med", defaultPass: "CareDemo!2026" },
   { label: "Technician (Rohit Kale)", email: "tech1@demo.med", defaultPass: "CareDemo!2026" },
   { label: "Physio (Kavita Deshmukh)", email: "physio1@demo.med", defaultPass: "CareDemo!2026" },
@@ -220,12 +220,12 @@ function AuthPage() {
             password: pwd,
           });
           if (!error && data.user) {
-            const isTherapist = demoEmail.toLowerCase().includes("rahul") || demoEmail.toLowerCase().includes("therapist");
+            const isTherapist = demoEmail.toLowerCase().includes("therapist");
             const demoAccount = DEMO_ACCOUNTS.find(
               (a) => a.email.toLowerCase() === demoEmail.toLowerCase() || a.email.toLowerCase() === em.toLowerCase()
             );
             const targetView = demoAccount?.view || (isTherapist ? "therapist" : undefined);
-            const targetName = demoAccount?.name || (isTherapist ? "Rahul Nair" : undefined);
+            const targetName = demoAccount?.name || (isTherapist ? "Therapist" : undefined);
             await afterLogin(data.user.id, targetView, targetName);
             return;
           }
@@ -286,8 +286,8 @@ function AuthPage() {
           }
           if (error) throw error;
           if (data?.user) {
-            const targetView = demoAccount?.view || (isRahulNair ? "therapist" : undefined);
-            const targetName = demoAccount?.name || (isRahulNair ? "Rahul Nair" : undefined);
+            const targetView = demoAccount?.view || (isRahulNair ? "medico" : undefined);
+            const targetName = demoAccount?.name || (isRahulNair ? "Dr. Rahul Nair" : undefined);
             await afterLogin(data.user.id, targetView, targetName);
           }
         }

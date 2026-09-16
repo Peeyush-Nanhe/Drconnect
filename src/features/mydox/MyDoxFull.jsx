@@ -185,7 +185,7 @@ const DOCTORS_EXT = [
 ];
 
 const THERAPISTS = [
-  { id: "physio", name: "Rahul Nair — Physiotherapist", shortName: "Rahul Nair", Icon: Activity, desc: "Movement & rehabilitation • BPT, MPT (Neuro & Ortho)", avail: 9, base: 700, color: "#0EA5E9", rating: 4.9 },
+  { id: "physio", name: "Physiotherapist", shortName: "Physio", Icon: Activity, desc: "Movement & rehabilitation • BPT, MPT (Neuro & Ortho)", avail: 9, base: 700, color: "#0EA5E9", rating: 4.9 },
   { id: "speech", name: "Speech Therapist", Icon: MessageCircle, desc: "Language & swallowing", avail: 4, base: 1200, color: "#8B5CF6" },
   { id: "psycho", name: "Psychotherapist", Icon: Brain, desc: "Mental wellness & CBT", avail: 6, base: 1500, color: "#6366F1" },
   { id: "occup", name: "Occupational Therapist", Icon: Clipboard, desc: "Daily function & skills", avail: 3, base: 1000, color: "#F59E0B" },
@@ -16140,7 +16140,7 @@ function AmbulanceApp({ ambulanceJob, ambulanceActions, scanDispatch }) {
 /* Seeded "previously attended" provider per medico category (patient & hub share the concept) */
 const PRIOR_MEDICOS = {
   doctor: { name: "Dr. Anjali Sharma", sub: "General Physician", rating: 4.8, visits: 3, color: "#2563EB" },
-  therapist: { name: "Rahul Nair", sub: "Physiotherapist", rating: 4.7, visits: 2, color: "#0EA5E9" },
+  therapist: { name: "Kavita Deshmukh", sub: "Physiotherapist", rating: 4.8, visits: 2, color: "#0EA5E9" },
   diet: { name: "Sneha Kapoor", sub: "Dietitian", rating: 4.9, visits: 1, color: "#16A34A" },
   technician: { name: "Imran Shaikh", sub: "Lab Technician", rating: 4.6, visits: 2, color: "#F59E0B" },
   nurse: { name: "Mary Thomas", sub: "Home Nurse", rating: 4.8, visits: 4, color: "#DB2777" },
@@ -17791,7 +17791,7 @@ export default function MyDoxFull({ initialView } = {}) {
       const localId = Date.now();
       const svc = { ...(spec || {}), name: spec?.name || "Physiotherapy", type: spec?.type || "therapist" };
       const homeHub = { id: "home", name: "Your Home", type: "home", address: (area || "Koregaon Park") + ", Pune", patEtaMin: 0 };
-      const targetCandidate = { id: "you", name: provider?.name || "Rahul Nair", rating: provider?.rating || 4.7, distanceKm: 1.2, etaMin: 8, notified: true };
+      const targetCandidate = { id: "you", name: provider?.name || "Kavita Deshmukh", rating: provider?.rating || 4.8, distanceKm: 1.2, etaMin: 8, notified: true };
       setReq({
         id: localId,
         dbId: dbId || null,

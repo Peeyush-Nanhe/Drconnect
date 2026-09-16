@@ -62,10 +62,10 @@ const STAFF_ACCOUNTS = [
   },
   {
     email: "rahul.nair@demo.med",
-    fullName: "Rahul Nair",
+    fullName: "Dr. Rahul Nair",
     role: "provider",
-    view: "therapist",
-    type: "physio",
+    view: "medico",
+    type: "doctor",
   },
 ];
 
@@ -186,35 +186,6 @@ async function run() {
     { onConflict: "user_id" }
   );
   if (pt1Err) console.warn("physio_therapists (physio1):", pt1Err.message);
-
-  // 2. rahul.nair@demo.med (Rahul Nair)
-  const rahulId = createdUserMap.get("rahul.nair@demo.med");
-  const { error: rahulErr } = await admin.from("physio_therapists").upsert(
-    {
-      user_id: rahulId,
-      full_name: "Rahul Nair",
-      phone: "+91 98234 55678",
-      specializations: ["neuro", "geriatric", "post_surgical"],
-      area: "Baner",
-      areas: ["Baner", "Aundh", "Wakad", "Hinjewadi"],
-      city: "Pune",
-      registration_number: "PT-MH-2015-09912",
-      qualification: "MPT (Neuro)",
-      years_experience: 11,
-      languages: ["english", "hindi", "marathi", "malayalam"],
-      bio: "Lead neuro-physiotherapist specializing in stroke rehabilitation, Parkinson management, and balance therapy.",
-      is_online: true,
-      verified: true,
-      active: true,
-      home_visits: true,
-      clinic_visits: true,
-      preferred_facilities: ["Metro Imaging Baner"],
-      lat: 18.559,
-      lng: 73.7868,
-    },
-    { onConflict: "user_id" }
-  );
-  if (rahulErr) console.warn("physio_therapists (rahul):", rahulErr.message);
 
   // 3. nurse1@demo.med (Sister Asha Pawar)
   const nurse1Id = createdUserMap.get("nurse1@demo.med");
