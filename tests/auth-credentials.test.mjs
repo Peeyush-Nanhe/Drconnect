@@ -10,7 +10,17 @@ function resolveUserView(primaryRole, requestedView) {
     admin: 'admin',
     super_admin: 'admin',
   };
-  const providerViews = new Set(['medico', 'ambulance', 'seva', 'coordinator', 'care_physician']);
+  const providerViews = new Set([
+    'medico',
+    'ambulance',
+    'seva',
+    'coordinator',
+    'care_physician',
+    'nurse',
+    'technician',
+    'physio_staff',
+    'therapist',
+  ]);
   const facilityViews = new Set(['hub', 'diagnostic', 'pharmacy', 'labs']);
 
   let derivedView = ROLE_TO_VIEW[primaryRole] || 'patient';
@@ -59,4 +69,11 @@ test('Standard provider accounts map to default medico view', () => {
 
   const view = resolveUserView('provider', undefined);
   assert.equal(view, 'medico');
+});
+
+test('Care staff roles resolve to their dedicated portal views', () => {
+  assert.equal(resolveUserView('provider', 'nurse'), 'nurse');
+  assert.equal(resolveUserView('provider', 'technician'), 'technician');
+  assert.equal(resolveUserView('provider', 'physio_staff'), 'physio_staff');
+  assert.equal(resolveUserView('provider', 'therapist'), 'therapist');
 });

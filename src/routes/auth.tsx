@@ -3,6 +3,7 @@ import { useState } from "react";
 import { ShieldCheck } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import type { AppRole } from "@/features/mydox/backend";
+import { DEMO_ACCOUNTS } from "@/features/medconnect/demo-accounts";
 
 export const Route = createFileRoute("/auth")({
   validateSearch: (s: Record<string, unknown>) => ({
@@ -44,11 +45,14 @@ const KIND_TO_ROLE: Record<SignupKind, AppRole> = {
 // "view" is what we store in localStorage.mc_view and drives the dashboard shown.
 const SUBTYPES: Record<"provider" | "facility", { view: string; label: string; desc: string }[]> = {
   provider: [
+    { view: "nurse", label: "Nurse", desc: "Home nursing & hospital duty shifts" },
+    { view: "technician", label: "Diagnostic Technician", desc: "Sample collection & diagnostics" },
+    { view: "physio_staff", label: "Physiotherapist", desc: "Rehabilitation & physio sessions" },
     { view: "ambulance", label: "Ambulance", desc: "Emergency transport crew" },
     { view: "seva", label: "Seva", desc: "Charitable and community care" },
     { view: "coordinator", label: "Health Coordinator", desc: "Patient cases, referrals and care navigation" },
     { view: "care_physician", label: "Care Physician / RMO", desc: "Hospital shifts, locum and full-time roles" },
-    { view: "medico", label: "Other medico staff", desc: "Nurse, technician, allied" },
+    { view: "medico", label: "Other medico staff", desc: "Doctor, clinic, allied" },
   ],
   facility: [
     { view: "hub", label: "Hospital / Hub", desc: "Beds, admissions, ER" },
@@ -73,6 +77,9 @@ const DEMO_BUTTONS: DemoAccountItem[] = [
   { label: "Medico 1", email: "medico1@demo.med", defaultPass: "CareDemo!2026" },
   { label: "Medico 2", email: "medico2@demo.med", defaultPass: "CareDemo!2026" },
   { label: "Therapist (Rahul Nair)", email: "rahul.nair@demo.med", defaultPass: "CareDemo!2026" },
+  { label: "Nurse (Sister Asha)", email: "nurse1@demo.med", defaultPass: "CareDemo!2026" },
+  { label: "Technician (Rohit Kale)", email: "tech1@demo.med", defaultPass: "CareDemo!2026" },
+  { label: "Physio (Kavita Deshmukh)", email: "physio1@demo.med", defaultPass: "CareDemo!2026" },
   { label: "Hub 1", email: "hub1@demo.med", defaultPass: "CareDemo!2026" },
   { label: "Hub 2", email: "hub2@demo.med", defaultPass: "CareDemo!2026" },
   { label: "Scan 1", email: "scan1@demo.med", defaultPass: "CareDemo!2026" },
@@ -129,7 +136,17 @@ function AuthPage() {
     const storedSubtype = typeof metadata.subtype === "string" ? metadata.subtype : undefined;
     const request = requestRes.data;
 
-    const providerViews = new Set(["medico", "ambulance", "seva", "coordinator", "care_physician"]);
+    const providerViews = new Set([
+      "medico",
+      "ambulance",
+      "seva",
+      "coordinator",
+      "care_physician",
+      "nurse",
+      "technician",
+      "physio_staff",
+      "therapist",
+    ]);
     const facilityViews = new Set(["hub", "diagnostic", "pharmacy", "labs"]);
     const requestedView = viewOverride || storedSubtype || request?.requested_view || profileRes.data?.view || undefined;
     let derivedView = ROLE_TO_VIEW[primary];
@@ -157,6 +174,18 @@ function AuthPage() {
 
     if (search.next) {
       window.location.assign(search.next);
+      return;
+    }
+    if (derivedView === "nurse") {
+      navigate({ to: "/nurse" });
+      return;
+    }
+    if (derivedView === "technician") {
+      navigate({ to: "/technician" });
+      return;
+    }
+    if (derivedView === "physio_staff" || derivedView === "therapist") {
+      navigate({ to: "/physio/therapist" });
       return;
     }
     navigate({ to: "/" });
@@ -192,7 +221,12 @@ function AuthPage() {
           });
           if (!error && data.user) {
             const isTherapist = demoEmail.toLowerCase().includes("rahul") || demoEmail.toLowerCase().includes("therapist");
-            await afterLogin(data.user.id, "medico", isTherapist ? "Rahul Nair" : undefined);
+            const demoAccount = DEMO_ACCOUNTS.find(
+              (a) => a.email.toLowerCase() === demoEmail.toLowerCase() || a.email.toLowerCase() === em.toLowerCase()
+            );
+            const targetView = demoAccount?.view || (isTherapist ? "therapist" : undefined);
+            const targetName = demoAccount?.name || (isTherapist ? "Rahul Nair" : undefined);
+            await afterLogin(data.user.id, targetView, targetName);
             return;
           }
           if (error) lastError = error;

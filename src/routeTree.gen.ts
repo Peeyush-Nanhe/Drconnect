@@ -12,24 +12,34 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as BookingsRouteImport } from './routes/bookings'
+import { Route as CareBookingRouteImport } from './routes/care-booking'
 import { Route as DesignPreviewRouteImport } from './routes/design-preview'
 import { Route as HomeVisitsRouteImport } from './routes/home-visits'
 import { Route as MapRouteImport } from './routes/map'
+import { Route as MatchingRouteImport } from './routes/matching'
 import { Route as McpRouteImport } from './routes/mcp'
+import { Route as NurseRouteImport } from './routes/nurse'
 import { Route as StitchPreviewRouteImport } from './routes/stitch-preview'
 import { Route as SurgeryRouteImport } from './routes/surgery'
+import { Route as TechnicianRouteImport } from './routes/technician'
 import { Route as Char91DotmcpChar93ListToolsRouteImport } from './routes/[.mcp]/list-tools'
 import { Route as Char91DotwellKnownChar93OauthProtectedResourceRouteImport } from './routes/[.well-known]/oauth-protected-resource'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
+import { Route as AdminBookingOperationsRouteImport } from './routes/admin.booking-operations'
 import { Route as AdminCredentialsRouteImport } from './routes/admin.credentials'
+import { Route as AdminHomecareRouteImport } from './routes/admin.homecare'
 import { Route as AdminLiveRouteImport } from './routes/admin.live'
 import { Route as AdminLocumRouteImport } from './routes/admin.locum'
 import { Route as AdminPhysicianRouteImport } from './routes/admin.physician'
 import { Route as AdminPhysioRouteImport } from './routes/admin.physio'
+import { Route as AdminTechnicianRouteImport } from './routes/admin.technician'
 import { Route as AdminUsersRouteImport } from './routes/admin.users'
 import { Route as AdminWellnessRouteImport } from './routes/admin.wellness'
 import { Route as DevRaceAcceptRouteImport } from './routes/dev.race-accept'
+import { Route as HospitalNurseDutiesRouteImport } from './routes/hospital.nurse-duties'
+import { Route as NursesFindRouteImport } from './routes/nurses.find'
 import { Route as PhysioBookRouteImport } from './routes/physio.book'
+import { Route as PhysioTherapistRouteImport } from './routes/physio.therapist'
 import { Route as PhysioVisitsRouteImport } from './routes/physio.visits'
 import { Route as ProviderAvailabilityRouteImport } from './routes/provider.availability'
 import { Route as ProviderEarningsRouteImport } from './routes/provider.earnings'
@@ -54,6 +64,11 @@ const BookingsRoute = BookingsRouteImport.update({
   path: '/bookings',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CareBookingRoute = CareBookingRouteImport.update({
+  id: '/care-booking',
+  path: '/care-booking',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DesignPreviewRoute = DesignPreviewRouteImport.update({
   id: '/design-preview',
   path: '/design-preview',
@@ -69,9 +84,19 @@ const MapRoute = MapRouteImport.update({
   path: '/map',
   getParentRoute: () => rootRouteImport,
 } as any)
+const MatchingRoute = MatchingRouteImport.update({
+  id: '/matching',
+  path: '/matching',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const McpRoute = McpRouteImport.update({
   id: '/mcp',
   path: '/mcp',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const NurseRoute = NurseRouteImport.update({
+  id: '/nurse',
+  path: '/nurse',
   getParentRoute: () => rootRouteImport,
 } as any)
 const StitchPreviewRoute = StitchPreviewRouteImport.update({
@@ -82,6 +107,11 @@ const StitchPreviewRoute = StitchPreviewRouteImport.update({
 const SurgeryRoute = SurgeryRouteImport.update({
   id: '/surgery',
   path: '/surgery',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TechnicianRoute = TechnicianRouteImport.update({
+  id: '/technician',
+  path: '/technician',
   getParentRoute: () => rootRouteImport,
 } as any)
 const Char91DotmcpChar93ListToolsRoute =
@@ -101,9 +131,19 @@ const AdminIndexRoute = AdminIndexRouteImport.update({
   path: '/admin/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminBookingOperationsRoute = AdminBookingOperationsRouteImport.update({
+  id: '/admin/booking-operations',
+  path: '/admin/booking-operations',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminCredentialsRoute = AdminCredentialsRouteImport.update({
   id: '/admin/credentials',
   path: '/admin/credentials',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminHomecareRoute = AdminHomecareRouteImport.update({
+  id: '/admin/homecare',
+  path: '/admin/homecare',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminLiveRoute = AdminLiveRouteImport.update({
@@ -126,6 +166,11 @@ const AdminPhysioRoute = AdminPhysioRouteImport.update({
   path: '/admin/physio',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminTechnicianRoute = AdminTechnicianRouteImport.update({
+  id: '/admin/technician',
+  path: '/admin/technician',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminUsersRoute = AdminUsersRouteImport.update({
   id: '/admin/users',
   path: '/admin/users',
@@ -141,9 +186,24 @@ const DevRaceAcceptRoute = DevRaceAcceptRouteImport.update({
   path: '/dev/race-accept',
   getParentRoute: () => rootRouteImport,
 } as any)
+const HospitalNurseDutiesRoute = HospitalNurseDutiesRouteImport.update({
+  id: '/hospital/nurse-duties',
+  path: '/hospital/nurse-duties',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const NursesFindRoute = NursesFindRouteImport.update({
+  id: '/nurses/find',
+  path: '/nurses/find',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PhysioBookRoute = PhysioBookRouteImport.update({
   id: '/physio/book',
   path: '/physio/book',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PhysioTherapistRoute = PhysioTherapistRouteImport.update({
+  id: '/physio/therapist',
+  path: '/physio/therapist',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PhysioVisitsRoute = PhysioVisitsRouteImport.update({
@@ -193,23 +253,33 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/bookings': typeof BookingsRoute
+  '/care-booking': typeof CareBookingRoute
   '/design-preview': typeof DesignPreviewRoute
   '/home-visits': typeof HomeVisitsRoute
   '/map': typeof MapRoute
+  '/matching': typeof MatchingRoute
   '/mcp': typeof McpRoute
+  '/nurse': typeof NurseRoute
   '/stitch-preview': typeof StitchPreviewRoute
   '/surgery': typeof SurgeryRoute
+  '/technician': typeof TechnicianRoute
   '/.mcp/list-tools': typeof Char91DotmcpChar93ListToolsRoute
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
+  '/admin/booking-operations': typeof AdminBookingOperationsRoute
   '/admin/credentials': typeof AdminCredentialsRoute
+  '/admin/homecare': typeof AdminHomecareRoute
   '/admin/live': typeof AdminLiveRoute
   '/admin/locum': typeof AdminLocumRoute
   '/admin/physician': typeof AdminPhysicianRoute
   '/admin/physio': typeof AdminPhysioRoute
+  '/admin/technician': typeof AdminTechnicianRoute
   '/admin/users': typeof AdminUsersRoute
   '/admin/wellness': typeof AdminWellnessRoute
   '/dev/race-accept': typeof DevRaceAcceptRoute
+  '/hospital/nurse-duties': typeof HospitalNurseDutiesRoute
+  '/nurses/find': typeof NursesFindRoute
   '/physio/book': typeof PhysioBookRoute
+  '/physio/therapist': typeof PhysioTherapistRoute
   '/physio/visits': typeof PhysioVisitsRoute
   '/provider/availability': typeof ProviderAvailabilityRoute
   '/provider/earnings': typeof ProviderEarningsRoute
@@ -224,23 +294,33 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/bookings': typeof BookingsRoute
+  '/care-booking': typeof CareBookingRoute
   '/design-preview': typeof DesignPreviewRoute
   '/home-visits': typeof HomeVisitsRoute
   '/map': typeof MapRoute
+  '/matching': typeof MatchingRoute
   '/mcp': typeof McpRoute
+  '/nurse': typeof NurseRoute
   '/stitch-preview': typeof StitchPreviewRoute
   '/surgery': typeof SurgeryRoute
+  '/technician': typeof TechnicianRoute
   '/.mcp/list-tools': typeof Char91DotmcpChar93ListToolsRoute
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
+  '/admin/booking-operations': typeof AdminBookingOperationsRoute
   '/admin/credentials': typeof AdminCredentialsRoute
+  '/admin/homecare': typeof AdminHomecareRoute
   '/admin/live': typeof AdminLiveRoute
   '/admin/locum': typeof AdminLocumRoute
   '/admin/physician': typeof AdminPhysicianRoute
   '/admin/physio': typeof AdminPhysioRoute
+  '/admin/technician': typeof AdminTechnicianRoute
   '/admin/users': typeof AdminUsersRoute
   '/admin/wellness': typeof AdminWellnessRoute
   '/dev/race-accept': typeof DevRaceAcceptRoute
+  '/hospital/nurse-duties': typeof HospitalNurseDutiesRoute
+  '/nurses/find': typeof NursesFindRoute
   '/physio/book': typeof PhysioBookRoute
+  '/physio/therapist': typeof PhysioTherapistRoute
   '/physio/visits': typeof PhysioVisitsRoute
   '/provider/availability': typeof ProviderAvailabilityRoute
   '/provider/earnings': typeof ProviderEarningsRoute
@@ -256,23 +336,33 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/bookings': typeof BookingsRoute
+  '/care-booking': typeof CareBookingRoute
   '/design-preview': typeof DesignPreviewRoute
   '/home-visits': typeof HomeVisitsRoute
   '/map': typeof MapRoute
+  '/matching': typeof MatchingRoute
   '/mcp': typeof McpRoute
+  '/nurse': typeof NurseRoute
   '/stitch-preview': typeof StitchPreviewRoute
   '/surgery': typeof SurgeryRoute
+  '/technician': typeof TechnicianRoute
   '/.mcp/list-tools': typeof Char91DotmcpChar93ListToolsRoute
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
+  '/admin/booking-operations': typeof AdminBookingOperationsRoute
   '/admin/credentials': typeof AdminCredentialsRoute
+  '/admin/homecare': typeof AdminHomecareRoute
   '/admin/live': typeof AdminLiveRoute
   '/admin/locum': typeof AdminLocumRoute
   '/admin/physician': typeof AdminPhysicianRoute
   '/admin/physio': typeof AdminPhysioRoute
+  '/admin/technician': typeof AdminTechnicianRoute
   '/admin/users': typeof AdminUsersRoute
   '/admin/wellness': typeof AdminWellnessRoute
   '/dev/race-accept': typeof DevRaceAcceptRoute
+  '/hospital/nurse-duties': typeof HospitalNurseDutiesRoute
+  '/nurses/find': typeof NursesFindRoute
   '/physio/book': typeof PhysioBookRoute
+  '/physio/therapist': typeof PhysioTherapistRoute
   '/physio/visits': typeof PhysioVisitsRoute
   '/provider/availability': typeof ProviderAvailabilityRoute
   '/provider/earnings': typeof ProviderEarningsRoute
@@ -289,23 +379,33 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/bookings'
+    | '/care-booking'
     | '/design-preview'
     | '/home-visits'
     | '/map'
+    | '/matching'
     | '/mcp'
+    | '/nurse'
     | '/stitch-preview'
     | '/surgery'
+    | '/technician'
     | '/.mcp/list-tools'
     | '/.well-known/oauth-protected-resource'
+    | '/admin/booking-operations'
     | '/admin/credentials'
+    | '/admin/homecare'
     | '/admin/live'
     | '/admin/locum'
     | '/admin/physician'
     | '/admin/physio'
+    | '/admin/technician'
     | '/admin/users'
     | '/admin/wellness'
     | '/dev/race-accept'
+    | '/hospital/nurse-duties'
+    | '/nurses/find'
     | '/physio/book'
+    | '/physio/therapist'
     | '/physio/visits'
     | '/provider/availability'
     | '/provider/earnings'
@@ -320,23 +420,33 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/bookings'
+    | '/care-booking'
     | '/design-preview'
     | '/home-visits'
     | '/map'
+    | '/matching'
     | '/mcp'
+    | '/nurse'
     | '/stitch-preview'
     | '/surgery'
+    | '/technician'
     | '/.mcp/list-tools'
     | '/.well-known/oauth-protected-resource'
+    | '/admin/booking-operations'
     | '/admin/credentials'
+    | '/admin/homecare'
     | '/admin/live'
     | '/admin/locum'
     | '/admin/physician'
     | '/admin/physio'
+    | '/admin/technician'
     | '/admin/users'
     | '/admin/wellness'
     | '/dev/race-accept'
+    | '/hospital/nurse-duties'
+    | '/nurses/find'
     | '/physio/book'
+    | '/physio/therapist'
     | '/physio/visits'
     | '/provider/availability'
     | '/provider/earnings'
@@ -351,23 +461,33 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/bookings'
+    | '/care-booking'
     | '/design-preview'
     | '/home-visits'
     | '/map'
+    | '/matching'
     | '/mcp'
+    | '/nurse'
     | '/stitch-preview'
     | '/surgery'
+    | '/technician'
     | '/.mcp/list-tools'
     | '/.well-known/oauth-protected-resource'
+    | '/admin/booking-operations'
     | '/admin/credentials'
+    | '/admin/homecare'
     | '/admin/live'
     | '/admin/locum'
     | '/admin/physician'
     | '/admin/physio'
+    | '/admin/technician'
     | '/admin/users'
     | '/admin/wellness'
     | '/dev/race-accept'
+    | '/hospital/nurse-duties'
+    | '/nurses/find'
     | '/physio/book'
+    | '/physio/therapist'
     | '/physio/visits'
     | '/provider/availability'
     | '/provider/earnings'
@@ -383,23 +503,33 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthRoute: typeof AuthRoute
   BookingsRoute: typeof BookingsRoute
+  CareBookingRoute: typeof CareBookingRoute
   DesignPreviewRoute: typeof DesignPreviewRoute
   HomeVisitsRoute: typeof HomeVisitsRoute
   MapRoute: typeof MapRoute
+  MatchingRoute: typeof MatchingRoute
   McpRoute: typeof McpRoute
+  NurseRoute: typeof NurseRoute
   StitchPreviewRoute: typeof StitchPreviewRoute
   SurgeryRoute: typeof SurgeryRoute
+  TechnicianRoute: typeof TechnicianRoute
   Char91DotmcpChar93ListToolsRoute: typeof Char91DotmcpChar93ListToolsRoute
   Char91DotwellKnownChar93OauthProtectedResourceRoute: typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
+  AdminBookingOperationsRoute: typeof AdminBookingOperationsRoute
   AdminCredentialsRoute: typeof AdminCredentialsRoute
+  AdminHomecareRoute: typeof AdminHomecareRoute
   AdminLiveRoute: typeof AdminLiveRoute
   AdminLocumRoute: typeof AdminLocumRoute
   AdminPhysicianRoute: typeof AdminPhysicianRoute
   AdminPhysioRoute: typeof AdminPhysioRoute
+  AdminTechnicianRoute: typeof AdminTechnicianRoute
   AdminUsersRoute: typeof AdminUsersRoute
   AdminWellnessRoute: typeof AdminWellnessRoute
   DevRaceAcceptRoute: typeof DevRaceAcceptRoute
+  HospitalNurseDutiesRoute: typeof HospitalNurseDutiesRoute
+  NursesFindRoute: typeof NursesFindRoute
   PhysioBookRoute: typeof PhysioBookRoute
+  PhysioTherapistRoute: typeof PhysioTherapistRoute
   PhysioVisitsRoute: typeof PhysioVisitsRoute
   ProviderAvailabilityRoute: typeof ProviderAvailabilityRoute
   ProviderEarningsRoute: typeof ProviderEarningsRoute
@@ -434,6 +564,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BookingsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/care-booking': {
+      id: '/care-booking'
+      path: '/care-booking'
+      fullPath: '/care-booking'
+      preLoaderRoute: typeof CareBookingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/design-preview': {
       id: '/design-preview'
       path: '/design-preview'
@@ -455,11 +592,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MapRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/matching': {
+      id: '/matching'
+      path: '/matching'
+      fullPath: '/matching'
+      preLoaderRoute: typeof MatchingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/mcp': {
       id: '/mcp'
       path: '/mcp'
       fullPath: '/mcp'
       preLoaderRoute: typeof McpRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/nurse': {
+      id: '/nurse'
+      path: '/nurse'
+      fullPath: '/nurse'
+      preLoaderRoute: typeof NurseRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/stitch-preview': {
@@ -474,6 +625,13 @@ declare module '@tanstack/react-router' {
       path: '/surgery'
       fullPath: '/surgery'
       preLoaderRoute: typeof SurgeryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/technician': {
+      id: '/technician'
+      path: '/technician'
+      fullPath: '/technician'
+      preLoaderRoute: typeof TechnicianRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/.mcp/list-tools': {
@@ -497,11 +655,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/booking-operations': {
+      id: '/admin/booking-operations'
+      path: '/admin/booking-operations'
+      fullPath: '/admin/booking-operations'
+      preLoaderRoute: typeof AdminBookingOperationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin/credentials': {
       id: '/admin/credentials'
       path: '/admin/credentials'
       fullPath: '/admin/credentials'
       preLoaderRoute: typeof AdminCredentialsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/homecare': {
+      id: '/admin/homecare'
+      path: '/admin/homecare'
+      fullPath: '/admin/homecare'
+      preLoaderRoute: typeof AdminHomecareRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin/live': {
@@ -532,6 +704,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminPhysioRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/technician': {
+      id: '/admin/technician'
+      path: '/admin/technician'
+      fullPath: '/admin/technician'
+      preLoaderRoute: typeof AdminTechnicianRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin/users': {
       id: '/admin/users'
       path: '/admin/users'
@@ -553,11 +732,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DevRaceAcceptRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/hospital/nurse-duties': {
+      id: '/hospital/nurse-duties'
+      path: '/hospital/nurse-duties'
+      fullPath: '/hospital/nurse-duties'
+      preLoaderRoute: typeof HospitalNurseDutiesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/nurses/find': {
+      id: '/nurses/find'
+      path: '/nurses/find'
+      fullPath: '/nurses/find'
+      preLoaderRoute: typeof NursesFindRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/physio/book': {
       id: '/physio/book'
       path: '/physio/book'
       fullPath: '/physio/book'
       preLoaderRoute: typeof PhysioBookRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/physio/therapist': {
+      id: '/physio/therapist'
+      path: '/physio/therapist'
+      fullPath: '/physio/therapist'
+      preLoaderRoute: typeof PhysioTherapistRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/physio/visits': {
@@ -623,24 +823,34 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthRoute: AuthRoute,
   BookingsRoute: BookingsRoute,
+  CareBookingRoute: CareBookingRoute,
   DesignPreviewRoute: DesignPreviewRoute,
   HomeVisitsRoute: HomeVisitsRoute,
   MapRoute: MapRoute,
+  MatchingRoute: MatchingRoute,
   McpRoute: McpRoute,
+  NurseRoute: NurseRoute,
   StitchPreviewRoute: StitchPreviewRoute,
   SurgeryRoute: SurgeryRoute,
+  TechnicianRoute: TechnicianRoute,
   Char91DotmcpChar93ListToolsRoute: Char91DotmcpChar93ListToolsRoute,
   Char91DotwellKnownChar93OauthProtectedResourceRoute:
     Char91DotwellKnownChar93OauthProtectedResourceRoute,
+  AdminBookingOperationsRoute: AdminBookingOperationsRoute,
   AdminCredentialsRoute: AdminCredentialsRoute,
+  AdminHomecareRoute: AdminHomecareRoute,
   AdminLiveRoute: AdminLiveRoute,
   AdminLocumRoute: AdminLocumRoute,
   AdminPhysicianRoute: AdminPhysicianRoute,
   AdminPhysioRoute: AdminPhysioRoute,
+  AdminTechnicianRoute: AdminTechnicianRoute,
   AdminUsersRoute: AdminUsersRoute,
   AdminWellnessRoute: AdminWellnessRoute,
   DevRaceAcceptRoute: DevRaceAcceptRoute,
+  HospitalNurseDutiesRoute: HospitalNurseDutiesRoute,
+  NursesFindRoute: NursesFindRoute,
   PhysioBookRoute: PhysioBookRoute,
+  PhysioTherapistRoute: PhysioTherapistRoute,
   PhysioVisitsRoute: PhysioVisitsRoute,
   ProviderAvailabilityRoute: ProviderAvailabilityRoute,
   ProviderEarningsRoute: ProviderEarningsRoute,
