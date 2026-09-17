@@ -17964,9 +17964,17 @@ export default function MyDoxFull({ initialView } = {}) {
 
   useEffect(() => {
     if (req?.status === "assigned") {
-      actions.pay();
+      setReq(r => {
+        if (!r || r.status !== "assigned") return r;
+        if (r.dbId) {
+          payAndGenerateOtp(r.dbId, r.fare?.total ?? null)
+            .then(otp => setReq(cur => (cur && cur.dbId === r.dbId) ? { ...cur, otp } : cur))
+            .catch(err => console.warn("payAndGenerateOtp failed", err?.message));
+        }
+        return { ...r, status: "converging", paid: true };
+      });
     }
-  }, [req?.status, req?.id, actions]);
+  }, [req?.status, req?.id, req?.dbId, req?.fare?.total]);
 
   // Emergency auto-escalation → persist stage change to DB so real providers see it.
   useEffect(() => {
