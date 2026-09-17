@@ -110,19 +110,38 @@ GRANT EXECUTE ON FUNCTION public.set_physio_visit_stage(uuid, text, text) TO aut
 GRANT EXECUTE ON FUNCTION public.set_physio_visit_stage(uuid, text, text) TO service_role;
 
 -- 5. RPC to claim an unassigned physio visit
-CREATE OR REPLACE FUNCTION public.claim_physio_visit(_visit_id uuid)
+DROP FUNCTION IF EXISTS public.claim_physio_visit(_visit_id uuid);
+CREATE OR REPLACE FUNCTION public.claim_physio_visit(
+  _visit_id uuid,
+  _therapist_id uuid DEFAULT NULL
+)
 RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = ''
 AS $$
 DECLARE
-  v_therapist_id uuid;
+  v_therapist_id uuid := _therapist_id;
+  v_caller uuid := auth.uid();
   v_now timestamptz := now();
 BEGIN
-  SELECT id INTO v_therapist_id
-    FROM public.physio_therapists
-    WHERE user_id = auth.uid() AND active = true;
+  IF v_therapist_id IS NULL THEN
+    IF v_caller IS NULL THEN
+      RAISE EXCEPTION 'Active therapist profile not found';
+    END IF;
+    SELECT id INTO v_therapist_id
+      FROM public.physio_therapists
+      WHERE user_id = v_caller AND active = true;
+  ELSE
+    IF v_caller IS NOT NULL AND NOT public.is_admin_user() THEN
+      IF NOT EXISTS (
+        SELECT 1 FROM public.physio_therapists
+        WHERE id = v_therapist_id AND user_id = v_caller AND active = true
+      ) THEN
+        RAISE EXCEPTION 'Not authorized to claim for this therapist';
+      END IF;
+    END IF;
+  END IF;
 
   IF v_therapist_id IS NULL THEN
     RAISE EXCEPTION 'Active therapist profile not found';
@@ -139,10 +158,10 @@ BEGIN
     RAISE EXCEPTION 'Visit is no longer available to claim';
   END IF;
 
-  RETURN jsonb_build_object('ok', true, 'visit_id', _visit_id);
+  RETURN jsonb_build_object('ok', true, 'visit_id', _visit_id, 'therapist_id', v_therapist_id);
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.claim_physio_visit(uuid) FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public.claim_physio_visit(uuid) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.claim_physio_visit(uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.claim_physio_visit(uuid, uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.claim_physio_visit(uuid, uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.claim_physio_visit(uuid, uuid) TO service_role;

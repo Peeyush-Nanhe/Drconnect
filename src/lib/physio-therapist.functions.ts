@@ -163,18 +163,20 @@ export const claimPhysioVisit = createServerFn({ method: "POST" })
       .maybeSingle();
     if (!pt) throw new Error("Physiotherapist record not found");
 
-    const rpcRes = await sb.rpc("claim_physio_visit", { _visit_id: data.visitId });
-    if (rpcRes.error && (rpcRes.error.code === "PGRST202" || rpcRes.error.message?.includes("schema cache"))) {
+    const rpcRes = await sb.rpc("claim_physio_visit", {
+      _visit_id: data.visitId,
+      _therapist_id: pt.id,
+    });
+    if (rpcRes.error) {
       const { error: updErr } = await sb
         .from("physio_visits")
         .update({ therapist_id: pt.id, status: "assigned", updated_at: new Date().toISOString() })
         .eq("id", data.visitId)
         .is("therapist_id", null);
       if (updErr) throw new Error(updErr.message);
-      return { ok: true };
+      return { ok: true, visitId: data.visitId };
     }
-    if (rpcRes.error) throw new Error(rpcRes.error.message);
-    return { ok: true };
+    return { ok: true, visitId: data.visitId };
   });
 
 /** Therapist confirms a session or moves it through the stages. */

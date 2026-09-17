@@ -286,9 +286,21 @@ function TherapistHome() {
 
   const claim = useMutation({
     mutationFn: (visitId: string) => claimVisit({ data: { visitId } }),
-    onSuccess: () => {
+    onSuccess: (_data, visitId) => {
       setNotice("Session taken — confirm the slot to let the patient know.");
       qc.invalidateQueries({ queryKey: ["therapist-board"] });
+      const claimedVisit = (board.data?.openRequests ?? []).find((v) => v.id === visitId);
+      if (claimedVisit?.scheduledAt) {
+        const sod = new Date();
+        sod.setHours(0, 0, 0, 0);
+        const eod = sod.getTime() + 24 * 3600_000;
+        const t = new Date(claimedVisit.scheduledAt).getTime();
+        if (t >= eod) {
+          setTab("upcoming");
+          return;
+        }
+      }
+      setTab("today");
     },
     onError: (e: unknown) => setNotice(e instanceof Error ? e.message : "Could not take this session"),
   });

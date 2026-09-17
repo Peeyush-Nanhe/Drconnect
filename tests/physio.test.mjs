@@ -256,6 +256,26 @@ test("Phase 3 · set_physio_visit_stage confirmed sets status and confirmed_at",
   assert.equal(r.notes, "Confirmed by partner/therapist");
 });
 
+test("Phase 3 · claim_physio_visit assigns open visit to therapist", async () => {
+  const openVisit = (await actor(null, `
+    insert into public.physio_visits(patient_id, therapy_type, area, city, scheduled_at, status, urgency)
+    values ($1,'sports','Baner','Pune', now()+interval'2 days','requested','planned')
+    returning id
+  `, [IDS.patient], "service_role")).rows[0];
+
+  const res = await actor(null, `
+    select public.claim_physio_visit($1, $2) as result
+  `, [openVisit.id, IDS.therapist1], "service_role");
+  assert.equal(res.rows[0].result.ok, true);
+
+  const r = (await actor(null,
+    "select status, therapist_id from public.physio_visits where id=$1",
+    [openVisit.id], "service_role"
+  )).rows[0];
+  assert.equal(r.status, "assigned");
+  assert.equal(r.therapist_id, IDS.therapist1);
+});
+
 test("Phase 3 · en_route — checked_in_at still null", async () => {
   await actor(IDS.partnerUser,
     "update public.physio_visits set status='en_route' where id=$1",
