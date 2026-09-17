@@ -14713,7 +14713,7 @@ function PatientApp({ req, setReq, actions, scanDispatch, scanDispatchActions, a
       });
       setDirectReq(null);
       setScreen("track");
-      toast(`${prof?.full_name || directReq.provider?.name || "Doctor"} accepted — please pay to confirm`);
+      toast(`${prof?.full_name || directReq.provider?.name || "Doctor"} accepted your request`);
     };
 
     const syncDirectRequest = async () => {
@@ -16158,58 +16158,11 @@ function PatientApp({ req, setReq, actions, scanDispatch, scanDispatchActions, a
         {cancelDialog}
       </Screen>
     );
-    if (req.status === "assigned") return (
-      <Screen>
-        <Header title="Medico confirmed!" emergency={req.emergency} />
-        <div className="flex-1 overflow-y-auto px-5 py-4">
-          <div className="flex flex-col items-center text-center">
-            {assigned && <Avatar name={assigned.name} size={64} emergency={req.emergency} />}
-            <p className="font-extrabold mt-3" style={{ color: C.ink, fontSize: 18 }}>{assigned?.name}</p>
-            <p style={{ color: C.sub, fontSize: 13 }}>{req.spec.name} · <Stars v={assigned?.rating} /></p>
-            <span className="mt-2 rounded-full px-3 py-1" style={{ background: C.primarySoft, color: C.primaryDeep, fontSize: 11, fontWeight: 800 }}>✓ Accepted your request</span>
-          </div>
-          <div className="mt-4 rounded-2xl p-4" style={{ background: C.canvas }}>
-            <p style={{ fontWeight: 800, color: C.ink, fontSize: 13, marginBottom: 8 }}>Pay to confirm &amp; dispatch</p>
-            {[["Service fee", req.fare.base], ["Convenience", req.fare.convenience], ["Distance", req.fare.distance], ...(req.fare.surcharge ? [["Emergency +20%", req.fare.surcharge]] : [])].map(([l, v]) => (
-              <div key={l} style={{ display: "flex", justifyContent: "space-between", padding: "3px 0", fontSize: 12.5, color: C.sub }}><span>{l}</span><span>{inr(v)}</span></div>
-            ))}
-            <div style={{ height: 1, background: C.line, margin: "7px 0" }} />
-            <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 800, color: C.ink, fontSize: 15 }}><span>Total</span><span>{inr(req.fare.total)}</span></div>
-            <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
-              {["UPI", "Card", "Wallet"].map((m, i) => (<div key={m} style={{ flex: 1, textAlign: "center", border: `1.5px solid ${i === 0 ? C.primary : C.line}`, borderRadius: 10, padding: "7px 0", fontSize: 11, fontWeight: 700, color: i === 0 ? C.primaryDeep : C.sub, background: i === 0 ? C.primarySoft : "#fff" }}>{m}</div>))}
-            </div>
-          </div>
-          <p className="flex items-center gap-1.5 mt-3" style={{ color: C.sub, fontSize: 11.5 }}><ShieldCheck size={13} /> Money held in escrow · released only after OTP arrival</p>
-          <p className="flex items-center gap-1.5 mt-1.5" style={{ color: C.primaryDeep, fontSize: 11.5, fontWeight: 600 }}><MessageCircle size={13} /> Chat &amp; call open the moment you pay</p>
-          <div className="mt-4">
-            {paying === "done" ? (
-              <div className="rounded-2xl p-4 text-center" style={{ background: C.primarySoft }}>
-                <div className="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-2" style={{ background: C.primary }}><Check size={26} color="white" /></div>
-                <p style={{ fontWeight: 800, color: C.primaryDeep, fontSize: 15, margin: 0 }}>Payment received ✓</p>
-                <p style={{ color: C.sub, fontSize: 11.5, margin: "3px 0 0" }}>{inr(req.fare.total)} paid · dispatching your medico…</p>
-              </div>
-            ) : (
-              <PrimaryBtn emergency={req.emergency} onClick={() => {
-                if (paying !== "idle") return;
-                setPaying("processing");
-                setTimeout(() => {
-                  setPaying("done");
-                  setTimeout(() => { actions.pay(); setPaying("idle"); }, 900);
-                }, 800);
-              }}>
-                {paying === "processing" ? <>Processing…</> : <><Check size={16} /> Pay {inr(req.fare.total)} &amp; Dispatch</>}
-              </PrimaryBtn>
-            )}
-            <p style={{ textAlign: "center", color: C.faint, fontSize: 10, margin: "8px 0 0" }}>Demo payment · Razorpay integration coming soon</p>
-          </div>
-        </div>
-      </Screen>
-    );
-    if (req.status === "converging" || req.status === "at_hub") {
+    if (req.status === "converging" || req.status === "at_hub" || req.status === "assigned") {
       const atHub = req.status === "at_hub";
       return (
         <Screen>
-          <Header title={atHub ? "Both at the hub!" : "Converging at hub"} onBack={() => setScreen("home")} emergency={req.emergency} />
+          <Header title={atHub ? "Both at the hub!" : (req.hub?.type === "home" ? "Medico en route" : "Converging at hub")} onBack={() => setScreen("home")} emergency={req.emergency} />
           <div className="flex-1 overflow-y-auto px-5 py-4">
             <MapConverge req={req} />
             <div className="rounded-2xl p-4 mt-3" style={{ background: C.surface, border: `1px solid ${C.line}` }}>
@@ -18010,9 +17963,10 @@ export default function MyDoxFull({ initialView } = {}) {
   }, []);
 
   useEffect(() => {
-    // Patient must pay on the "assigned" screen; payment moves status to "converging".
-    // (No auto-advance — handled by the Pay button.)
-  }, [req?.status, req?.id]);
+    if (req?.status === "assigned") {
+      actions.pay();
+    }
+  }, [req?.status, req?.id, actions]);
 
   // Emergency auto-escalation → persist stage change to DB so real providers see it.
   useEffect(() => {
@@ -18044,14 +17998,18 @@ export default function MyDoxFull({ initialView } = {}) {
           .from("profiles").select("full_name, specialty").eq("id", row.accepted_by).maybeSingle();
         if (cancelled) return;
         const acceptedName = prof?.full_name || "Medico on the way";
+        if (dbId && !row.paid_at) {
+          payAndGenerateOtp(dbId, null).catch(() => { });
+        }
         setReq(r => {
-          if (!r || r.dbId !== dbId || r.status === "converging" || r.status === "at_hub" || r.status === "completed") return r;
+          if (!r || r.dbId !== dbId || r.status === "completed") return r;
           const winner = {
             id: "db_winner", name: acceptedName, rating: 4.9, exp: 10,
             distanceKm: 1.5, etaMin: 7, area: r.hub?.area || "", notified: true,
           };
           return {
-            ...r, status: "assigned", assignedId: winner.id, stopRebroadcast: true,
+            ...r, status: "converging", paid: true, assignedId: winner.id, stopRebroadcast: true,
+            otp: row.otp || r.otp || "0000",
             doctorEtaHub: winner.etaMin * 60, doctorInitEta: winner.etaMin * 60,
             candidates: [winner, ...(r.candidates || []).filter(c => c.id !== "db_winner")],
           };
@@ -18176,9 +18134,12 @@ export default function MyDoxFull({ initialView } = {}) {
         id: "db_winner", name: providerName || "Medico on the way", rating: 4.9, exp: 10,
         distanceKm: 1.5, etaMin: 7, area: nextHub?.area || "", notified: true,
       };
+      if (row.id && !row.paid_at) {
+        payAndGenerateOtp(row.id, nextFare?.total ?? null).catch(() => { });
+      }
       setReq({
         id: Date.now(), dbId: row.id, spec: svc, emergency: !!emergency, area: patientArea, fare: nextFare, hub: nextHub,
-        routeMode: "preferred", otp: row.otp || "0000", status: "assigned", stage: row.notification_stage || null,
+        routeMode: "preferred", otp: row.otp || "0000", status: "converging", paid: true, stage: row.notification_stage || null,
         elapsed: 0, remaining: 60, coverageKm: 4, candidates: [winner], assignedId: winner.id,
         doctorEtaHub: winner.etaMin * 60, doctorInitEta: winner.etaMin * 60,
         patientEtaHub: nextHub?.patEtaMin ? nextHub.patEtaMin * 60 : 0,
@@ -18313,7 +18274,7 @@ export default function MyDoxFull({ initialView } = {}) {
   };
 
   const onAccept = (src, who, etaMin) => {
-    if (src === "patient") setReq(r => r?.status === "broadcasting" ? { ...r, status: "assigned", assignedId: who, doctorEtaHub: etaMin * 60, doctorInitEta: etaMin * 60 } : r);
+    if (src === "patient") setReq(r => r?.status === "broadcasting" ? { ...r, status: "converging", paid: true, assignedId: who, doctorEtaHub: etaMin * 60, doctorInitEta: etaMin * 60 } : r);
     else setHubReq(r => r?.status === "broadcasting" ? { ...r, status: "assigned", assignedId: who, doctorEtaHub: etaMin * 60, doctorInitEta: etaMin * 60 } : r);
   };
 
