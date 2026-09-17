@@ -1449,8 +1449,8 @@ function SpecialtyPickerModern({
         const mapped = data.filter(d => d.is_available).map(d => {
           const dt = new Date(d.start_time);
           const dateIdx = schedDates.findIndex(sd => sd.toDateString() === dt.toDateString());
-          return { dateIdx, h: dt.getHours(), m: dt.getMinutes() };
-        }).filter(s => s.dateIdx >= 0);
+          return { dateIdx, h: dt.getHours(), m: dt.getMinutes(), start_time: d.start_time };
+        }).filter(s => s.dateIdx >= 0 && new Date(s.start_time).getTime() > Date.now());
         setAvailableSlots(mapped);
 
         const firstAvail = Array.from({ length: 14 }, (_, i) => i).find(dIdx => mapped.some(s => s.dateIdx === dIdx));
@@ -1467,7 +1467,16 @@ function SpecialtyPickerModern({
   }, [selectedDoctor, schedDates]);
   const dayLabel = (d, i) => i === 0 ? "Today" : i === 1 ? "Tomorrow" : d.toLocaleDateString("en-US", { weekday: "short" });
   const fmtTime = t => { const ap = t.h < 12 ? "AM" : "PM"; const hh = t.h % 12 === 0 ? 12 : t.h % 12; return `${hh}:${t.m === 0 ? "00" : "30"} ${ap}`; };
-  const schedConfirmed = schedDate != null && schedTime != null;
+  const isSlotInPast = React.useMemo(() => {
+    if (schedDate == null || schedTime == null) return false;
+    const _sd = schedDates[schedDate];
+    const _st = schedTimes[schedTime];
+    if (!_sd || !_st) return false;
+    const d = new Date(_sd);
+    d.setHours(_st.h, _st.m, 0, 0);
+    return d.getTime() <= Date.now();
+  }, [schedDate, schedTime, schedDates, schedTimes]);
+  const schedConfirmed = schedDate != null && schedTime != null && !isSlotInPast;
   const schedLabel = schedConfirmed ? `${dayLabel(schedDates[schedDate], schedDate)}, ${schedDates[schedDate].getDate()} ${schedDates[schedDate].toLocaleDateString("en-US", { month: "short" })} · ${fmtTime(schedTimes[schedTime])}` : null;
 
   const providers = [
@@ -1653,8 +1662,8 @@ function SpecialtyPickerSimple({ providerType, selectedSpec, setSelectedSpec, em
         const mapped = data.filter(d => d.is_available).map(d => {
           const dt = new Date(d.start_time);
           const dateIdx = schedDates.findIndex(sd => sd.toDateString() === dt.toDateString());
-          return { dateIdx, h: dt.getHours(), m: dt.getMinutes() };
-        }).filter(s => s.dateIdx >= 0);
+          return { dateIdx, h: dt.getHours(), m: dt.getMinutes(), start_time: d.start_time };
+        }).filter(s => s.dateIdx >= 0 && new Date(s.start_time).getTime() > Date.now());
         setAvailableSlots(mapped);
 
         // Auto-select first date that has available slots if none selected or if current selection has no slots
@@ -1673,7 +1682,16 @@ function SpecialtyPickerSimple({ providerType, selectedSpec, setSelectedSpec, em
   const [profileDoctor, setProfileDoctor] = React.useState(null);
   const fmtTime = t => { const ap = t.h < 12 ? "AM" : "PM"; const hh = t.h % 12 === 0 ? 12 : t.h % 12; return `${hh}:${t.m === 0 ? "00" : String(t.m)} ${ap}`; };
   const dayLabel = (d, i) => i === 0 ? "Today" : i === 1 ? "Tomorrow" : d.toLocaleDateString("en-US", { weekday: "short" });
-  const schedConfirmed = schedDate != null && schedTime != null;
+  const isSlotInPast = React.useMemo(() => {
+    if (schedDate == null || schedTime == null) return false;
+    const _sd = schedDates[schedDate];
+    const _st = schedTimes[schedTime];
+    if (!_sd || !_st) return false;
+    const d = new Date(_sd);
+    d.setHours(_st.h, _st.m, 0, 0);
+    return d.getTime() <= Date.now();
+  }, [schedDate, schedTime, schedDates, schedTimes]);
+  const schedConfirmed = schedDate != null && schedTime != null && !isSlotInPast;
   const schedLabel = schedConfirmed ? `${dayLabel(schedDates[schedDate], schedDate)}, ${schedDates[schedDate].getDate()} ${schedDates[schedDate].toLocaleDateString("en-US", { month: "short" })} · ${fmtTime(schedTimes[schedTime])}` : null;
   const panelDoctors = React.useMemo(() => panelDoctorsForSpec(selectedSpec), [selectedSpec?.id]);
   const needsDoctor = providerType === "doctor"; // only doctors get the professional-score panel; therapist/nurse/scan etc. stay on the simpler model
@@ -14887,6 +14905,13 @@ function PatientApp({ req, setReq, actions, scanDispatch, scanDispatchActions, a
   const proceedNormal = (spec, fromOverlay) => {
     if ((visitMode === "home" || spec.visitMode === "home") && (spec.type || activeTab) === "doctor") { openDoctorHomeVisit(spec); return; }
     if (spec.scheduled) {
+      if (spec.scheduled.iso) {
+        const schedMs = new Date(spec.scheduled.iso).getTime();
+        if (!isNaN(schedMs) && schedMs <= Date.now()) {
+          toast && toast("Cannot book a past time slot. Please choose an upcoming slot.");
+          return;
+        }
+      }
       const isPhysio = String(spec.name || "").toLowerCase().includes("physio") || String(spec.name || "").toLowerCase().includes("therap");
       const fareAmount = spec.base || (spec.doctor ? spec.doctor.fee : (isPhysio ? 700 : 500));
       const specialtyName = isPhysio ? "Physiotherapist" : (spec.name || "Consultation");
