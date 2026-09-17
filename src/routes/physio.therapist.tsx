@@ -11,8 +11,11 @@ import {
   setTherapistOnline,
   type TherapistProfileInput,
   type TherapistVisit,
+  insertEmergencyPhysioVisit,
 } from "@/lib/physio-therapist.functions";
 import { listCareVenues, venueKindLabel } from "@/lib/care-venues.functions";
+import { supabase } from "@/integrations/supabase/client";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { UnifiedProviderOffers } from "@/features/bookings/UnifiedProviderOffers";
 import { useLiveCareRequests, acceptCareRequest, matchesDoctorSpecialty, verifyAndCompleteConsultation } from "@/features/mydox/backend";
 import {
@@ -100,7 +103,7 @@ function SessionOverDialog({
   onClose: () => void;
   onConfirm: (visit: TherapistVisit, notes: string) => void;
 }) {
-  const [notes, setNotes] = useState(visit.notes ?? "");
+  const [notes, setNotes] = useState(() => (visit.notes && visit.notes.includes("request (ID:")) ? "" : (visit.notes ?? ""));
   const [otp, setOtp] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
   const [busy, setBusy] = useState(false);
@@ -302,6 +305,12 @@ function VisitCard({
   onClaim?: (id: string) => void;
   busy?: boolean;
 }) {
+  let displayFee = v.fee ?? 0;
+  if (v.urgency === "urgent") {
+    if (displayFee === 700) displayFee = 840;
+    if (displayFee === 1500) displayFee = 1800;
+  }
+
   return (
     <Card accent={!!onClaim || v.urgency === "urgent"}>
       <div className="flex items-start justify-between gap-3">
@@ -318,7 +327,7 @@ function VisitCard({
           </div>
         </div>
         <div className="shrink-0 text-right">
-          <div className="rounded-full bg-teal-50 px-3 py-1 text-[11px] font-bold text-teal-700">₹{v.fee ?? 0}</div>
+          <div className="rounded-full bg-teal-50 px-3 py-1 text-[11px] font-bold text-teal-700">₹{displayFee}</div>
           <div className="mt-1 text-[10px] font-semibold text-slate-500">{STATUS_LABEL[v.status] ?? v.status}</div>
         </div>
       </div>
@@ -329,12 +338,12 @@ function VisitCard({
           {v.fromPack
             ? "Paid from session pack"
             : v.paymentStatus === "paid"
-              ? `Paid ₹${v.fee ?? 0}`
-              : `Payment pending ₹${v.fee ?? 0}`}
+              ? `Paid ₹${displayFee}`
+              : `Payment pending ₹${displayFee}`}
         </span>
       </div>
 
-      {v.notes ? (
+      {v.notes && !v.notes.includes("request (ID:") ? (
         <div className="mt-2 rounded-xl bg-slate-50 p-2 text-xs text-slate-700">
           <span className="font-semibold text-slate-500">
             {v.status === "completed" ? "Session notes: " : "Note: "}
@@ -384,6 +393,7 @@ function TherapistHome() {
   const goOnline = useServerFn(setTherapistOnline);
   const setStage = useServerFn(setPhysioVisitStage);
   const claimVisit = useServerFn(claimPhysioVisit);
+  const insertVisit = useServerFn(insertEmergencyPhysioVisit);
   const qc = useQueryClient();
 
   const signOut = async () => {
@@ -569,8 +579,21 @@ function TherapistHome() {
   const handleAcceptCareRequest = async (reqId: string) => {
     setAcceptingId(reqId);
     try {
-      await acceptCareRequest(reqId);
+      const cr = await acceptCareRequest(reqId);
+      if (cr && (String(cr.specialty || "").toLowerCase().includes("physio") || String(cr.specialty || "").toLowerCase().includes("therap"))) {
+        const { data: pData } = await supabase.from("profiles").select("full_name").eq("id", cr.patient_id).maybeSingle();
+        await insertVisit({
+          data: {
+            reqId: cr.id,
+            patientId: cr.patient_id,
+            patientName: pData?.full_name || "Emergency Patient",
+            specialty: cr.specialty || "Physiotherapy",
+            fare: cr.fare ? Math.round(cr.fare * 1.2) : Math.round(700 * 1.2)
+          }
+        });
+      }
       setNotice("Physiotherapy request accepted! Patient has been notified.");
+      qc.invalidateQueries({ queryKey: ["therapist-board"] });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Could not accept request.";
       setNotice(msg);

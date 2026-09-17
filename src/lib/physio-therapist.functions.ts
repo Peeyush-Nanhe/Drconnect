@@ -402,3 +402,51 @@ export const setTherapistOnline = createServerFn({ method: "POST" })
       .upsert({ user_id: context.userId, is_online: data.online }, { onConflict: "user_id" });
     return { ok: true, online: data.online };
   });
+
+export const insertEmergencyPhysioVisit = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator((d: { reqId: string, patientId: string, patientName: string, specialty: string, fare: number }) => d)
+  .handler(async ({ data, context }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const sb = (supabaseAdmin || context.supabase) as any;
+    
+    // Check if this request is already inserted? Optional, but insert might create duplicates if clicked multiple times.
+    const { data: existing } = await sb.from("physio_visits").select("id").eq("notes", `Emergency ${data.specialty} request (ID: ${data.reqId})`).maybeSingle();
+    if (existing) return { ok: true };
+
+    const { data: therapist } = await sb.from("physio_therapists").select("id").eq("user_id", context.userId).maybeSingle();
+    if (!therapist) {
+      // If the user isn't in physio_therapists, they can't be assigned a visit.
+      throw new Error("You must be registered as a therapist to accept this.");
+    }
+
+    const allowedTherapies = ['neuro','orthopaedic','sports','paediatric','geriatric','cardio_respiratory','post_surgical','pelvic_floor','general'];
+    let mappedType = data.specialty.toLowerCase().replace(/[^a-z_]/g, '_');
+    if (!allowedTherapies.includes(mappedType)) {
+      // Basic heuristics for common names
+      if (mappedType.includes("neuro")) mappedType = "neuro";
+      else if (mappedType.includes("ortho")) mappedType = "orthopaedic";
+      else if (mappedType.includes("sport")) mappedType = "sports";
+      else if (mappedType.includes("paed") || mappedType.includes("pedi")) mappedType = "paediatric";
+      else if (mappedType.includes("cardio")) mappedType = "cardio_respiratory";
+      else mappedType = "general";
+    }
+
+    const { error } = await sb.from("physio_visits").insert({
+        patient_id: data.patientId,
+        patient_name: data.patientName,
+        therapist_id: therapist.id,
+        therapy_type: mappedType,
+        area: "Emergency Location",
+        city: "Pune",
+        scheduled_at: new Date().toISOString(),
+        duration_min: 45,
+        session_number: 1,
+        status: "assigned",
+        urgency: "urgent",
+        fee: data.fare,
+        notes: `Emergency ${data.specialty} request (ID: ${data.reqId})`
+    });
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });

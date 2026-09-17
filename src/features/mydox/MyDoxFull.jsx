@@ -991,19 +991,22 @@ function TherapyPackageCard({ perSession, therapistName, therapyName, accent = "
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {THERAPY_PACKAGES.map(p => {
           const c = calc(p); const sel = pkgId === p.id; return (
-            <button key={p.id} onClick={() => setPkgId(sel ? null : p.id)} style={{ display: "flex", alignItems: "center", gap: 11, padding: "11px 12px", borderRadius: 14, border: `1.5px solid ${sel ? accent : C.line}`, background: sel ? accent + "0D" : "#fff", cursor: "pointer", textAlign: "left", fontFamily: "'Plus Jakarta Sans',sans-serif", width: "100%" }}>
-              <div style={{ width: 22, height: 22, borderRadius: "50%", border: `2px solid ${sel ? accent : C.line}`, background: sel ? accent : "#fff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{sel && <Check size={13} color="#fff" strokeWidth={3} />}</div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
-                  <span style={{ fontWeight: 800, color: C.ink, fontSize: 14 }}>{p.sessions} sessions</span>
-                  {p.discount > 0 && <span style={{ background: accent, color: "#fff", borderRadius: 99, padding: "1px 7px", fontSize: 9.5, fontWeight: 800 }}>{Math.round(p.discount * 100)}% OFF</span>}
-                  <span style={{ fontSize: 9.5, color: C.faint, fontWeight: 700 }}>{p.tag}</span>
+            <button key={p.id} onClick={() => setPkgId(sel ? null : p.id)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 10px", borderRadius: 14, border: `1.5px solid ${sel ? accent : C.line}`, background: sel ? accent + "0D" : "#fff", cursor: "pointer", textAlign: "left", fontFamily: "'Plus Jakarta Sans',sans-serif", width: "100%" }}>
+              <div style={{ width: 20, height: 20, borderRadius: "50%", border: `2px solid ${sel ? accent : C.line}`, background: sel ? accent : "#fff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{sel && <Check size={12} color="#fff" strokeWidth={3} />}</div>
+              <div style={{ flex: 1, minWidth: 0, paddingRight: 4 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                  <span style={{ fontWeight: 800, color: C.ink, fontSize: 13.5, whiteSpace: "nowrap" }}>{p.sessions} sessions</span>
+                  {p.discount > 0 && <span style={{ background: accent, color: "#fff", borderRadius: 99, padding: "1px 5px", fontSize: 9, fontWeight: 800, whiteSpace: "nowrap" }}>{Math.round(p.discount * 100)}% OFF</span>}
                 </div>
-                <p style={{ margin: "2px 0 0", fontSize: 11, color: C.sub }}>{inr(c.per)}/session{p.discount > 0 ? ` · was ${inr(perSession)}` : ""}</p>
+                <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 3, flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 10, color: C.faint, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" }}>{p.tag}</span>
+                  <span style={{ fontSize: 10, color: C.line }}>•</span>
+                  <span style={{ fontSize: 10.5, color: C.sub, whiteSpace: "nowrap" }}>{inr(c.per)}/sesh</span>
+                </div>
               </div>
-              <div style={{ textAlign: "right", flexShrink: 0 }}>
-                <p style={{ margin: 0, fontWeight: 900, color: C.ink, fontSize: 15 }}>{inr(c.total)}</p>
-                {c.save > 0 && <p style={{ margin: 0, fontSize: 10, fontWeight: 700, color: accent }}>save {inr(c.save)}</p>}
+              <div style={{ textAlign: "right", flexShrink: 0, marginLeft: "auto" }}>
+                <p style={{ margin: 0, fontWeight: 900, color: C.ink, fontSize: 14, whiteSpace: "nowrap" }}>{inr(c.total)}</p>
+                {c.save > 0 && <p style={{ margin: 0, fontSize: 9.5, fontWeight: 700, color: accent, whiteSpace: "nowrap" }}>save {inr(c.save)}</p>}
               </div>
             </button>
           );
@@ -7354,7 +7357,7 @@ function AcceptedPatientsCard({ rows, onOpenHistory }) {
     if (!uid) return [];
     return (rows || []).filter(r => {
       if (r.accepted_by !== uid) return false;
-      if (r.status === "accepted") return true;
+      if (["accepted", "assigned", "converging", "en_route", "arrived", "in_progress", "otp_verified"].includes(r.status)) return true;
       if (r.status === "completed" && isToday(r.completed_at || r.updated_at)) return true;
       return false;
     }).sort((a, b) => {
@@ -14385,6 +14388,9 @@ function PatientApp({ req, setReq, actions, scanDispatch, scanDispatchActions, a
   const [dashboardTab, setDashboardTab] = useState("home");
   const [bookingOpen, setBookingOpen] = useState(false);
   const dashboardScrollRef = useRef(null);
+  const [directReq, setDirectReq] = useState(null); // {provider,spec,fromOverlay,emergency,isMy,myName,preferredName}
+  const [scanDirect, setScanDirect] = useState(null); // {provider,scan}
+
   const patientName = (() => { try { return localStorage.getItem("mc_user_name") || ""; } catch { return ""; } })();
   const changeDashboardTab = (tab) => {
     setDashboardTab(tab); setBookingOpen(false); setSearchFocused(false); setQuery(""); setServiceView(null);
@@ -14569,7 +14575,6 @@ function PatientApp({ req, setReq, actions, scanDispatch, scanDispatchActions, a
   }); // favourite scan centres (max 2)
   const [scanOptions, setScanOptions] = useState(null); // {scan} — ambulance opt-in step
   const [scanRepeat, setScanRepeat] = useState(null); // {scan} — favourite scan-centre pop-up
-  const [scanDirect, setScanDirect] = useState(null); // {provider,scan}
   const toggleScanPreferred = (name) => {
     setScanPreferred(cur => {
       if (cur.includes(name)) return cur.filter(n => n !== name);
@@ -14596,7 +14601,6 @@ function PatientApp({ req, setReq, actions, scanDispatch, scanDispatchActions, a
   }, [preferred, labPreferred, scanPreferred, prefsKey]);
   const [showPrefMgr, setShowPrefMgr] = useState(false); // preferred doctors manager
   const [repeatModal, setRepeatModal] = useState(null); // {cat,spec,fromOverlay} — repeat-provider pop-up
-  const [directReq, setDirectReq] = useState(null); // {provider,spec,fromOverlay,emergency,isMy,myName,preferredName}
   const [emgFallback, setEmgFallback] = useState(null); // emergency: My didn't accept → ask about Preferred
   const [aiMessages, setAiMessages] = useState([]);
   const [aiLoading, setAiLoading] = useState(false);
@@ -14639,7 +14643,7 @@ function PatientApp({ req, setReq, actions, scanDispatch, scanDispatchActions, a
   // screen is waiting for payment/OTP.
   useEffect(() => {
     const canRecover = !req || ["broadcasting", "expired"].includes(req.status) || (req.status === "assigned" && !req.paid);
-    if (!canRecover) return;
+    if (!canRecover || directReq || scanDirect) return;
     let cancelled = false;
     let inFlight = false;
 
@@ -14672,7 +14676,7 @@ function PatientApp({ req, setReq, actions, scanDispatch, scanDispatchActions, a
         });
         setDirectReq(null);
         if (row.paid_at) actions?.markAcceptedCareRequestPaid?.({ row });
-        setScreen(row.paid_at ? "home" : "track");
+        setScreen("home");
       } catch (err) {
         console.warn("accepted-request recovery failed", err?.message);
       } finally {
@@ -14683,7 +14687,7 @@ function PatientApp({ req, setReq, actions, scanDispatch, scanDispatchActions, a
     tryAdopt();
     const poll = setInterval(tryAdopt, 3000);
     return () => { cancelled = true; clearInterval(poll); };
-  }, [req?.status, req?.dbId, req?.paid, actions, area]);
+  }, [req?.status, req?.dbId, req?.paid, actions, area, !!directReq, !!scanDirect]);
 
 
 
@@ -14711,9 +14715,8 @@ function PatientApp({ req, setReq, actions, scanDispatch, scanDispatchActions, a
         emergency: !!directReq.emergency,
         area,
       });
-      setDirectReq(null);
-      setScreen("track");
-      toast(`${prof?.full_name || directReq.provider?.name || "Doctor"} accepted your request`);
+      // The overlay stays open to show the "accepted" phase. 
+      // User clicks "Done" on the overlay to dismiss it and go to tracking.
     };
 
     const syncDirectRequest = async () => {
@@ -14768,10 +14771,14 @@ function PatientApp({ req, setReq, actions, scanDispatch, scanDispatchActions, a
     if (req.status === "completed") { setScreen("rate"); return; }
     // Show tracking for the early phases. Once converging/at_hub, don't yank the screen —
     // the patient can browse home and return via the live banner.
-    if (!req.scheduled && ["broadcasting", "expired", "assigned"].includes(req.status)) setScreen("track");
+    if (!req.scheduled && ["broadcasting", "expired", "assigned"].includes(req.status)) {
+      // Do not jump to the track screen if a direct request overlay or confirmation is currently active.
+      if (directReq || scanDirect || confirmedBooking) return;
+      setScreen("track");
+    }
     // Referral review does not confirm an appointment. Booking association must
     // be persisted by the authorised booking operation, never by local request state.
-  }, [req?.status]);
+  }, [req?.status, req?.scheduled, !!directReq, !!scanDirect, !!confirmedBooking]);
 
   // An authenticated referral ID opens the ordinary review and booking screen.
   useEffect(() => {
@@ -15311,7 +15318,7 @@ function PatientApp({ req, setReq, actions, scanDispatch, scanDispatchActions, a
       <PatientHeader name={patientName} home={dashboardTab === "home" && !bookingOpen} onProfile={() => changeDashboardTab("profile")} area={area} areas={AREAS} onAreaChange={setArea} onAction={handleDashboardAction} unread={notifs.filter(n => n.unread).length} />
 
       {/* Stage-flow overlay — per-stage 60s timer, manual escalation only, live audit timeline */}
-      <StageFlowOverlay req={req} actions={actions} onCancel={() => requestCancel()} />
+      {!directReq && !scanDirect && <StageFlowOverlay req={req} actions={actions} onCancel={() => requestCancel()} />}
 
 
 
@@ -15644,36 +15651,34 @@ function PatientApp({ req, setReq, actions, scanDispatch, scanDispatchActions, a
             const isMy = rm.prior && p.name === rm.prior.name;
             const prefName = (rm.favs || []).find(n => !rm.prior || n !== rm.prior.name) || null;
             setDirectReq({ provider: p, cat: rm.cat, spec: rm.spec, fromOverlay: rm.fromOverlay, emergency: !!rm.emergency, isMy, myName: rm.prior?.name || null, preferredName: prefName });
-            if (rm.emergency) {
-              if (actions && actions.directRequest) {
-                actions.directRequest({ provider: p, spec: rm.spec, emergency: true, fare: rm.spec?.base || 700, area, dbId: null });
-              }
-              (async () => {
-                try {
-                  const dbMy = myMedicos.get(rm.spec?.id || rm.spec?.name || "", "my") || myMedicos.get(rm.spec?.name || "", "my");
-                  const dbPref = myMedicos.get(rm.spec?.id || rm.spec?.name || "", "preferred") || myMedicos.get(rm.spec?.name || "", "preferred");
-                  let targetId = isMy ? (dbMy?.medico_id || null) : (dbPref?.medico_id || null);
-                  if (!targetId) {
-                    try { targetId = await myMedicos.lookupMedicoIdByName(p.name); } catch (_) { }
-                  }
-                  const specialtyName = rm.spec?.name || (rm.cat === "therapist" ? "Physiotherapy" : "General");
-                  const row = await createCareRequest({
-                    specialty: specialtyName,
-                    emergency: true,
-                    notes: `Direct call to ${p.name}${isMy ? " (My Doctor)" : " (Preferred)"}`,
-                    notification_stage: isMy ? "my_doctor" : "preferred",
-                    my_doctor_id: isMy ? targetId : null,
-                    preferred_id: isMy ? null : targetId
-                  });
-                  setDirectReq(cur => cur && cur.provider?.name === p.name ? { ...cur, dbId: row.id } : cur);
-                  if (actions && actions.directRequest) {
-                    actions.directRequest({ provider: p, spec: rm.spec, emergency: true, fare: rm.spec?.base || 700, area, dbId: row.id });
-                  }
-                } catch (err) {
-                  console.warn("direct request insert failed", err?.message);
-                }
-              })();
+            if (actions && actions.directRequest) {
+              actions.directRequest({ provider: p, spec: rm.spec, emergency: !!rm.emergency, fare: rm.spec?.base || 700, area, dbId: null });
             }
+            (async () => {
+              try {
+                const dbMy = myMedicos.get(rm.spec?.id || rm.spec?.name || "", "my") || myMedicos.get(rm.spec?.name || "", "my");
+                const dbPref = myMedicos.get(rm.spec?.id || rm.spec?.name || "", "preferred") || myMedicos.get(rm.spec?.name || "", "preferred");
+                let targetId = isMy ? (dbMy?.medico_id || null) : (dbPref?.medico_id || null);
+                if (!targetId) {
+                  try { targetId = await myMedicos.lookupMedicoIdByName(p.name); } catch (_) { }
+                }
+                const specialtyName = rm.spec?.name || (rm.cat === "therapist" ? "Physiotherapy" : "General");
+                const row = await createCareRequest({
+                  specialty: specialtyName,
+                  emergency: !!rm.emergency,
+                  notes: `Direct call to ${p.name}${isMy ? " (My Doctor)" : " (Preferred)"}`,
+                  notification_stage: isMy ? "my_doctor" : "preferred",
+                  my_doctor_id: isMy ? targetId : null,
+                  preferred_id: isMy ? null : targetId
+                });
+                setDirectReq(cur => cur && cur.provider?.name === p.name ? { ...cur, dbId: row.id } : cur);
+                if (actions && actions.directRequest) {
+                  actions.directRequest({ provider: p, spec: rm.spec, emergency: !!rm.emergency, fare: rm.spec?.base || 700, area, dbId: row.id });
+                }
+              } catch (err) {
+                console.warn("direct request insert failed", err?.message);
+              }
+            })();
           }}
           onBroadcast={() => { const rm = repeatModal; setRepeatModal(null); proceedNormal(rm.spec, rm.fromOverlay); }}
           onClose={() => setRepeatModal(null)} />
@@ -15806,9 +15811,12 @@ function PatientApp({ req, setReq, actions, scanDispatch, scanDispatchActions, a
             <button onClick={() => {
               const booking = confirmedBooking;
               setConfirmedBooking(null);
+              // If this was just a success message for a direct request (e.g. repeat visit), don't launch a broadcast.
+              if (!booking?.spec) return;
+              
               toast && toast("Booking confirmed! Dispatched live broadcast to medicos.");
               const isPhys = String(booking?.name || "").toLowerCase().includes("physio") || String(booking?.name || "").toLowerCase().includes("therap");
-              const fareAmt = isPhys ? 700 : 500;
+              const fareAmt = isPhys ? Math.round(700 * 1.2) : 500;
               const titleName = isPhys ? "Physiotherapist" : (booking?.name || "Consultation");
               const bData = {
                 id: "req-" + Date.now(),
@@ -15868,7 +15876,13 @@ function PatientApp({ req, setReq, actions, scanDispatch, scanDispatchActions, a
             <div style={{ display: "flex", gap: 8 }}>
               <button onClick={() => {
                 const svc = { ...selScan, type: "scan" };
-                const fare = buildFare(svc, emergency);
+                let fare = buildFare(svc, emergency);
+                if (isPhys && emergency) {
+                  // For emergency physio, calculate base 700 + 20% surge directly to match UI
+                  const base = 700;
+                  const surge = Math.round(base * 0.2);
+                  fare = { base, convenience: 0, distance: 0, surcharge: surge, total: base + surge };
+                }
                 if (wantAmbulance) {
                   fare.total += 500;
                   fare.ambulance = 500;
@@ -18119,7 +18133,7 @@ export default function MyDoxFull({ initialView } = {}) {
           specialty: spec.name || spec.type || "general",
           emergency: !!emergency,
           notes: hub?.name ? `Hub: ${hub.name}` : null,
-          fare: typeof fare === "number" ? fare : null,
+          fare: typeof fare === "number" ? fare : fare?.total ? fare.total : null,
           notification_stage: initialStage,
           my_doctor_id: myDoctorId || null,
           preferred_id: preferredId || null,

@@ -52,6 +52,7 @@ type Item = {
   createdAt: string;
   doctorName?: string;
   otp?: string;
+  isEmergency?: boolean;
 };
 
 const TEAL = "#0D9488";
@@ -171,7 +172,7 @@ export default function MyBookingsOverlay({
     (async () => {
       setLoading(true);
       const [cr, cp, pr, sn, bb, sb, mo, da, pv, sc, comm] = await Promise.all([
-        supabase.from("care_requests").select("id, specialty, status, notes, created_at, visit_type, accepted_by, rating_provider, otp").eq("patient_id", uid).order("created_at", { ascending: false }).limit(200),
+        supabase.from("care_requests").select("id, specialty, status, notes, created_at, visit_type, accepted_by, rating_provider, otp, emergency").eq("patient_id", uid).order("created_at", { ascending: false }).limit(200),
         supabase.from("care_program_bookings").select("id, program, tier, summary, status, created_at").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
         supabase.from("prosthetics_bookings").select("id, category, subtype, provider_name, status, created_at").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
         supabase.from("special_needs_bookings").select("id, category, subtype, provider_name, status, created_at").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
@@ -179,16 +180,16 @@ export default function MyBookingsOverlay({
         supabase.from("surgery_bookings").select("id, procedure, patient_name, mode, status, created_at").eq("facility_id", uid).order("created_at", { ascending: false }).limit(100),
         supabase.from("medicine_orders").select("id, pharmacy_name, delivery_speed, items, prescription_attached, total, status, created_at").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
         supabase.from("doctor_appointments").select("id, service, mode, status, start_time, end_time, created_at, provider_id, arrival_otp").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
-        supabase.from("physio_visits").select("id, therapy_type, area, city, session_number, status, created_at, therapist_id, scheduled_at, fee, otp").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
+        supabase.from("physio_visits").select("id, therapy_type, area, city, session_number, status, created_at, therapist_id, scheduled_at, fee, otp, urgency").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
         supabase.from("specialty_care_bookings").select("id, specialty_label, concern, mode, provider_name, status, created_at").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
         supabase.from("community_requests").select("id, type, notes, status, created_at").eq("requester_id", uid).order("created_at", { ascending: false }).limit(100),
       ]);
 
       const rows: Item[] = [];
       const localReviews: Record<string, number> = {};
-      const crRows = (cr.data as { id: string; specialty: string; status: string; notes: string | null; created_at: string; visit_type: string; accepted_by: string | null; rating_provider: number | null; otp: string | null }[] | null) ?? [];
+      const crRows = (cr.data as { id: string; specialty: string; status: string; notes: string | null; created_at: string; visit_type: string; accepted_by: string | null; rating_provider: number | null; otp: string | null; emergency?: boolean }[] | null) ?? [];
       const daRows = (da.data as { id: string; service: string | null; mode: string | null; status: string; start_time: string; end_time: string; created_at: string; provider_id: string | null; arrival_otp: string | null }[] | null) ?? [];
-      const pvRows = (pv.data as { id: string; therapy_type: string; area: string; city: string; session_number: number; status: string; created_at: string; therapist_id: string | null; scheduled_at: string | null; fee: number | null; otp: string | null }[] | null) ?? [];
+      const pvRows = (pv.data as { id: string; therapy_type: string; area: string; city: string; session_number: number; status: string; created_at: string; therapist_id: string | null; scheduled_at: string | null; fee: number | null; otp: string | null; urgency?: string }[] | null) ?? [];
       const scRows = (sc.data as { id: string; specialty_label: string; concern: string; mode: string; provider_name: string; status: string; created_at: string }[] | null) ?? [];
       const commRows = (comm.data as { id: string; type: string; notes: string | null; status: string; created_at: string }[] | null) ?? [];
 
@@ -226,6 +227,7 @@ export default function MyBookingsOverlay({
           createdAt: r.created_at,
           doctorName: docName,
           otp: r.otp || undefined,
+          isEmergency: !!r.emergency,
         });
       }
 
@@ -259,15 +261,21 @@ export default function MyBookingsOverlay({
         const timeStr = r.scheduled_at
           ? `${new Date(r.scheduled_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })} at ${new Date(r.scheduled_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
           : `${r.area}, ${r.city}`;
+        let displayFee = r.fee;
+        if (r.urgency === "urgent" && displayFee) {
+          if (displayFee === 700) displayFee = 840;
+          if (displayFee === 1500) displayFee = 1800;
+        }
         rows.push({
           id: itemId,
           module: "Physiotherapy",
           title: `${r.therapy_type.replace(/_/g, " ")} Physiotherapy — Session ${r.session_number || 1}`,
-          subtitle: `${timeStr}${r.fee ? ` · ₹${r.fee}` : ""}`,
+          subtitle: `${timeStr}${displayFee ? ` · ₹${displayFee}` : ""}`,
           status: r.status,
           createdAt: r.created_at,
           doctorName: therapistName || "Dr. Kavita Deshmukh",
           otp: r.otp || undefined,
+          isEmergency: r.urgency === "urgent",
         });
       }
 
@@ -439,6 +447,7 @@ export default function MyBookingsOverlay({
                             <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                               <span style={{ fontWeight: 700, fontSize: 14, textTransform: "capitalize", color: "#0F172A" }}>{it.title}</span>
                               <StatusChip status={it.status} />
+                              {it.isEmergency && <span style={{ background: "#FEE2E2", color: "#991B1B", padding: "2px 10px", borderRadius: 999, fontSize: 11, fontWeight: 800, textTransform: "uppercase", whiteSpace: "nowrap" }}>URGENT</span>}
                             </div>
                             {it.subtitle && <div style={{ color: "#475569", fontSize: 12, marginTop: 2 }}>{it.subtitle}</div>}
                             <div style={{ color: "#94A3B8", fontSize: 11, marginTop: 4 }}>{it.module} · {new Date(it.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
