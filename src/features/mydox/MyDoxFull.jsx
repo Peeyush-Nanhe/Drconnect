@@ -15118,9 +15118,9 @@ function PatientApp({ req, setReq, actions, scanDispatch, scanDispatchActions, a
     const dbPref = cat === "doctor" ? (myMedicos.get(spec.id || spec.name || "", "preferred") || myMedicos.get(spec.name || "", "preferred")) : null;
     const favs = dbPref && dbPref.medico_name && !localFavs.includes(dbPref.medico_name)
       ? [dbPref.medico_name, ...localFavs] : localFavs;
-    // Emergency + doctor: if a "My Doctor" exists, go straight to the emergency single-target flow.
-    if (emergency && cat === "doctor" && prior) { setRepeatModal({ cat, favKey, prior, spec, fromOverlay, emergency: true, favs }); return; }
-    if (PREF_CATS.includes(cat) && (prior || favs.length)) { setRepeatModal({ cat, favKey, prior, spec, fromOverlay, favs }); return; }
+    // Emergency + doctor/therapist: if a prior exists, go straight to the emergency single-target flow.
+    if (emergency && (cat === "doctor" || cat === "therapist") && prior) { setRepeatModal({ cat, favKey, prior, spec, fromOverlay, emergency: true, favs }); return; }
+    if (PREF_CATS.includes(cat) && (prior || favs.length)) { setRepeatModal({ cat, favKey, prior, spec, fromOverlay, emergency: !!emergency, favs }); return; }
     proceedNormal(spec, fromOverlay);
   };
 
@@ -15643,7 +15643,7 @@ function PatientApp({ req, setReq, actions, scanDispatch, scanDispatchActions, a
             if (rm.fromOverlay) setServiceView(null);
             const isMy = rm.prior && p.name === rm.prior.name;
             const prefName = (rm.favs || []).find(n => !rm.prior || n !== rm.prior.name) || null;
-            setDirectReq({ provider: p, spec: rm.spec, fromOverlay: rm.fromOverlay, emergency: !!rm.emergency, isMy, myName: rm.prior?.name || null, preferredName: prefName });
+            setDirectReq({ provider: p, cat: rm.cat, spec: rm.spec, fromOverlay: rm.fromOverlay, emergency: !!rm.emergency, isMy, myName: rm.prior?.name || null, preferredName: prefName });
             if (rm.emergency) {
               if (actions && actions.directRequest) {
                 actions.directRequest({ provider: p, spec: rm.spec, emergency: true, fare: rm.spec?.base || 700, area, dbId: null });
@@ -15680,7 +15680,7 @@ function PatientApp({ req, setReq, actions, scanDispatch, scanDispatchActions, a
       )}
       {directReq && (
         <DirectRequestOverlay
-          provider={directReq.provider} spec={directReq.spec} who="you"
+          provider={directReq.provider} cat={directReq.cat} spec={directReq.spec} who="you"
           dbId={directReq.dbId}
           reqStatus={req?.status}
           emergency={!!directReq.emergency}
@@ -16605,9 +16605,10 @@ function EmergencyPreferredPromptModal({ myName, preferredName, spec, onTryPrefe
 }
 
 /* Direct request to one provider — they accept, else fall back to a full broadcast */
-function DirectRequestOverlay({ provider, spec, who, emergency, fallbackLabel, dbId, reqStatus, onConfirmed, onFallback, onClose }) {
+function DirectRequestOverlay({ provider, cat, spec, who, emergency, fallbackLabel, dbId, reqStatus, onConfirmed, onFallback, onClose }) {
+  const isDoctorEmergency = emergency && (!cat || cat === "doctor");
   const [phase, setPhase] = useState("contacting"); // contacting → accepted
-  const [left, setLeft] = useState(emergency ? 60 : 600); // emergency = 1-minute window, else 10 minutes
+  const [left, setLeft] = useState(isDoctorEmergency ? 60 : 600); // emergency doctor = 1-minute window, else 10 minutes
   const fallbackCalledRef = useRef(false);
 
   // Synchronize when the provider accepts in-memory:
