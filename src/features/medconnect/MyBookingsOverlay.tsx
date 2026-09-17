@@ -31,6 +31,7 @@ function toast(msg: string) {
 
 type Module =
   | "Doctor / Nurse"
+  | "Physiotherapy"
   | "Lab / Scan"
   | "Home Care"
   | "Medicines"
@@ -83,6 +84,7 @@ function StatusChip({ status }: { status: string }) {
 
 const MODULE_ICON: Record<Module, string> = {
   "Doctor / Nurse": "🩺",
+  Physiotherapy: "🧘",
   "Lab / Scan": "🧪",
   "Home Care": "🏠",
   Medicines: "💊",
@@ -97,8 +99,9 @@ const MODULE_ICON: Record<Module, string> = {
 
 function classifyCareRequest(specialty: string): Module {
   const s = specialty.toLowerCase();
+  if (/(physio|therap)/.test(s)) return "Physiotherapy";
   if (/(lab|scan|xray|mri|ct|ultrasound|blood test)/.test(s)) return "Lab / Scan";
-  if (/(home|nurse|physio|caretaker)/.test(s)) return "Home Care";
+  if (/(home|nurse|caretaker)/.test(s)) return "Home Care";
   return "Doctor / Nurse";
 }
 
@@ -176,7 +179,7 @@ export default function MyBookingsOverlay({
         supabase.from("surgery_bookings").select("id, procedure, patient_name, mode, status, created_at").eq("facility_id", uid).order("created_at", { ascending: false }).limit(100),
         supabase.from("medicine_orders").select("id, pharmacy_name, delivery_speed, items, prescription_attached, total, status, created_at").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
         supabase.from("doctor_appointments").select("id, service, mode, status, start_time, end_time, created_at, provider_id, arrival_otp").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
-        supabase.from("physio_visits").select("id, therapy_type, area, city, session_number, status, created_at, therapist_id").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
+        supabase.from("physio_visits").select("id, therapy_type, area, city, session_number, status, created_at, therapist_id, scheduled_at, fee").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
         supabase.from("specialty_care_bookings").select("id, specialty_label, concern, mode, provider_name, status, created_at").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
         supabase.from("community_requests").select("id, type, notes, status, created_at").eq("requester_id", uid).order("created_at", { ascending: false }).limit(100),
       ]);
@@ -185,7 +188,7 @@ export default function MyBookingsOverlay({
       const localReviews: Record<string, number> = {};
       const crRows = (cr.data as { id: string; specialty: string; status: string; notes: string | null; created_at: string; visit_type: string; accepted_by: string | null; rating_provider: number | null; otp: string | null }[] | null) ?? [];
       const daRows = (da.data as { id: string; service: string | null; mode: string | null; status: string; start_time: string; end_time: string; created_at: string; provider_id: string | null; arrival_otp: string | null }[] | null) ?? [];
-      const pvRows = (pv.data as { id: string; therapy_type: string; area: string; city: string; session_number: number; status: string; created_at: string; therapist_id: string | null }[] | null) ?? [];
+      const pvRows = (pv.data as { id: string; therapy_type: string; area: string; city: string; session_number: number; status: string; created_at: string; therapist_id: string | null; scheduled_at: string | null; fee: number | null }[] | null) ?? [];
       const scRows = (sc.data as { id: string; specialty_label: string; concern: string; mode: string; provider_name: string; status: string; created_at: string }[] | null) ?? [];
       const commRows = (comm.data as { id: string; type: string; notes: string | null; status: string; created_at: string }[] | null) ?? [];
 
@@ -197,9 +200,15 @@ export default function MyBookingsOverlay({
 
       const doctorNames = new Map<string, string>();
       if (doctorIds.length) {
-        const { data: profs } = await supabase.from("profiles").select("id, full_name").in("id", doctorIds);
+        const [{ data: profs }, { data: physioTherapists }] = await Promise.all([
+          supabase.from("profiles").select("id, full_name").in("id", doctorIds),
+          supabase.from("physio_therapists").select("id, full_name").in("id", doctorIds),
+        ]);
         for (const p of (profs as { id: string; full_name: string | null }[] | null) ?? []) {
           if (p.full_name) doctorNames.set(p.id, p.full_name);
+        }
+        for (const pt of (physioTherapists as { id: string; full_name: string | null }[] | null) ?? []) {
+          if (pt.full_name) doctorNames.set(pt.id, pt.full_name);
         }
       }
 
@@ -225,6 +234,7 @@ export default function MyBookingsOverlay({
       }
 
       for (const r of daRows) {
+        const isPhysio = r.service && /(physio|therap)/i.test(r.service);
         const isHome = r.mode === "home_visit" || r.mode === "home" || (r.service && r.service.toLowerCase().includes("home"));
         const baseTitle = r.service || "Doctor Appointment";
         const title = isHome && !baseTitle.toLowerCase().includes("home") ? `${baseTitle} • Home visit` : baseTitle;
@@ -235,7 +245,7 @@ export default function MyBookingsOverlay({
         if (saved?.stars) localReviews[itemId] = saved.stars;
         rows.push({
           id: itemId,
-          module: isHome ? "Home Care" : "Doctor / Nurse",
+          module: isPhysio ? "Physiotherapy" : isHome ? "Home Care" : "Doctor / Nurse",
           title,
           subtitle: timeStr,
           status: r.status,
@@ -250,14 +260,17 @@ export default function MyBookingsOverlay({
         const itemId = `pv:${r.id}`;
         const saved = readReview(itemId, therapistName);
         if (saved?.stars) localReviews[itemId] = saved.stars;
+        const timeStr = r.scheduled_at
+          ? `${new Date(r.scheduled_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })} at ${new Date(r.scheduled_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+          : `${r.area}, ${r.city}`;
         rows.push({
           id: itemId,
-          module: "Home Care",
-          title: `${r.therapy_type.replace(/_/g, " ")} — session ${r.session_number}`,
-          subtitle: `${r.area}, ${r.city}`,
+          module: "Physiotherapy",
+          title: `${r.therapy_type.replace(/_/g, " ")} Physiotherapy — Session ${r.session_number || 1}`,
+          subtitle: `${timeStr}${r.fee ? ` · ₹${r.fee}` : ""}`,
           status: r.status,
           createdAt: r.created_at,
-          doctorName: therapistName,
+          doctorName: therapistName || "Dr. Kavita Deshmukh",
         });
       }
 
@@ -393,7 +406,7 @@ export default function MyBookingsOverlay({
                   <h2 style={{ margin: "0 0 8px 4px", fontSize: 12, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: 0.5 }}>{date}</h2>
                   <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: 10 }}>
                     {rows.map((it) => {
-                      const docName = it.doctorName || (/nurse/i.test(it.title) ? "Nurse Specialist" : /physio/i.test(it.title) ? "Dr. Rajesh K (PT)" : "Dr. Anita Rao");
+                      const docName = it.doctorName || (it.module === "Physiotherapy" || /physio/i.test(it.title) ? "Dr. Kavita Deshmukh" : /nurse/i.test(it.title) ? "Nurse Specialist" : "Dr. Anita Rao");
                       const userRating = reviewsMap[it.id] ?? (readReview(it.id, docName)?.stars ?? null);
                       const isConsultationOver = ["completed", "delivered", "closed", "finished"].includes((it.status || "").toLowerCase());
                       const showOtpOption = tab !== "previous" && !isConsultationOver;
@@ -485,7 +498,7 @@ export default function MyBookingsOverlay({
                               }}
                             >
                               <span style={{ color: "#F59E0B", fontSize: 13 }}>★</span>
-                              {userRating ? `${userRating}★ Reviewed` : "Review your doctor"}
+                              {userRating ? `${userRating}★ Reviewed` : (it.module === "Physiotherapy" ? "Review therapist" : "Review your doctor")}
                             </button>
 
                             <button
@@ -1565,7 +1578,7 @@ function BookingOtpModal({
   useEffect(() => {
     const [prefix, rawId] = target.item.id.split(":");
     if (!rawId) return;
-    const table = prefix === "cr" ? "care_requests" : prefix === "da" ? "doctor_appointments" : null;
+    const table = prefix === "cr" ? "care_requests" : prefix === "da" ? "doctor_appointments" : prefix === "pv" ? "physio_visits" : null;
     if (!table) return;
 
     let active = true;

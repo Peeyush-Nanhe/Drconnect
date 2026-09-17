@@ -23,7 +23,7 @@ export function PatientBookingSummary() {
       </div>
       {unread ? <span className="inline-flex items-center gap-1 rounded-full bg-destructive/10 px-2 py-1 text-xs font-bold text-destructive"><Bell className="size-3"/>{unread}</span> : null}
       <Button asChild size="sm" variant="outline"><Link to="/matching">Live matching</Link></Button>
-      <Button asChild size="sm"><Link to="/care-booking">{active ? "Track booking" : "Book care"}<ChevronRight/></Link></Button>
+      <Button asChild size="sm"><Link to="/care-booking">Book care<ChevronRight/></Link></Button>
     </div>
   </section>;
 }
