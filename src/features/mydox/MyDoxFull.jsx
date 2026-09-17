@@ -13834,7 +13834,7 @@ function StageFlowOverlay({ req, actions, onCancel }) {
   const dbId = req?.dbId || null;
   const flowId = req?.id || dbId || null;
   const status = req?.status;
-  const active = !!flowId && (status === "broadcasting" || status === "assigned");
+  const active = !!flowId && (status === "broadcasting" || status === "assigned") && !req?.scheduled;
   const { events } = useRequestAuditLog(active && dbId ? dbId : null);
   const [open, setOpen] = useState(true);
   const [stage, setStage] = useState(req?.stage || "my_doctor"); // patient's current confirmed stage
@@ -15284,18 +15284,6 @@ function PatientApp({ req, setReq, actions, scanDispatch, scanDispatchActions, a
   if (screen === "home") return (
     <Screen>
       <PatientHeader name={patientName} home={dashboardTab === "home" && !bookingOpen} onProfile={() => changeDashboardTab("profile")} area={area} areas={AREAS} onAreaChange={setArea} onAction={handleDashboardAction} unread={notifs.filter(n => n.unread).length} />
-
-      {/* Live request banner — return to tracking without cancelling */}
-      {req && ["broadcasting", "assigned", "converging", "at_hub"].includes(req.status) && (
-        <button onClick={() => setScreen("track")} style={{ flexShrink: 0, margin: "8px 14px 0", display: "flex", alignItems: "center", gap: 10, background: req.emergency ? C.emergSoft : C.primarySoft, border: `1px solid ${(req.emergency ? C.emerg : C.primary)}33`, borderRadius: 14, padding: "10px 12px", cursor: "pointer", textAlign: "left", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
-          <span style={{ width: 30, height: 30, borderRadius: "50%", background: req.emergency ? C.emerg : C.primary, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Navigation size={14} color="#fff" /></span>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <p style={{ margin: 0, fontWeight: 800, color: C.ink, fontSize: 12.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{req.status === "broadcasting" ? "Finding a medico…" : req.status === "at_hub" ? "Both at the hub" : assigned ? `${assigned.name} en route` : "Medico assigned"}</p>
-            <p style={{ margin: "1px 0 0", fontSize: 10.5, color: req.emergency ? C.emerg : C.primaryDeep, fontWeight: 700 }}>Active request · tap to track</p>
-          </div>
-          <ChevronRight size={16} style={{ color: req.emergency ? C.emerg : C.primary, flexShrink: 0 }} />
-        </button>
-      )}
 
       {/* Stage-flow overlay — per-stage 60s timer, manual escalation only, live audit timeline */}
       <StageFlowOverlay req={req} actions={actions} onCancel={() => requestCancel()} />
