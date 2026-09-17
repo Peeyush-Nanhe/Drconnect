@@ -8146,18 +8146,15 @@ function DoctorApp({ req, hubReq, online, setOnline, onAccept, sevaActions }) {
   const { rows: liveRows } = useLiveCareRequests(online);
   const liveOpen = useMemo(() => {
     if (!online) return null;
-    const now = Date.now();
     return (liveRows || []).find(r => {
       if (r.status !== "open") return false;
-      if ((now - new Date(r.created_at).getTime()) >= 15 * 60_000) return false;
-      if (req?.dbId === r.id) return false; // don't ping myself for my own patient-side broadcast
-      // Targeted doctor stages check
       const myId = session?.user?.id;
+      // Targeted doctor stages check
       if (r.notification_stage === "my_doctor" && r.my_doctor_id && myId && r.my_doctor_id !== myId) return false;
       if (r.notification_stage === "preferred" && r.preferred_id && myId && r.preferred_id !== myId) return false;
       return doctorAcceptsRequest(r);
     }) || null;
-  }, [liveRows, online, req?.dbId, doctorAcceptsRequest, session?.user?.id]);
+  }, [liveRows, online, doctorAcceptsRequest, session?.user?.id]);
 
   const liveIncoming = liveOpen ? {
     r: {
@@ -8182,8 +8179,10 @@ function DoctorApp({ req, hubReq, online, setOnline, onAccept, sevaActions }) {
       : liveIncoming;
 
   useEffect(() => {
-    if (req?.status === "broadcasting" || hubReq?.status === "broadcasting") setActed(false);
-  }, [req?.id, hubReq?.id]);
+    if (req?.status === "broadcasting" || hubReq?.status === "broadcasting" || liveOpen?.id) {
+      setActed(false);
+    }
+  }, [req?.id, req?.status, hubReq?.id, hubReq?.status, liveOpen?.id]);
 
   // Won by "you" in either req
   const wonReq = (req?.assignedId === "you" && ["assigned", "converging", "at_hub"].includes(req?.status)) ? req
@@ -8235,6 +8234,54 @@ function DoctorApp({ req, hubReq, online, setOnline, onAccept, sevaActions }) {
                 <div style={{ background: "#F8FAFC", borderRadius: 12, padding: "10px 8px", textAlign: "center", border: "1px solid #E2E8F0" }}>
                   <p style={{ margin: 0, fontSize: 16, fontWeight: 800, color: isTherapist ? "#0EA5E9" : "#0D9488" }}>{isTherapist ? "₹700" : "₹800"}</p>
                   <p style={{ margin: "2px 0 0", fontSize: 10, fontWeight: 600, color: "#64748B" }}>BASE FEE</p>
+                </div>
+              </div>
+
+              {/* Quick Persona Switcher for testing Provider Roles */}
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                  <p style={{ margin: 0, fontSize: 11, fontWeight: 800, color: "#475569", textTransform: "uppercase" }}>Provider Profile & Role</p>
+                  <span style={{ fontSize: 10, fontWeight: 600, color: isTherapist ? "#0EA5E9" : "#0D9488" }}>Tap to switch identity</span>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                  {[
+                    { name: "Dr. Kavita Deshmukh", spec: "Physiotherapy", role: "Physiotherapist" },
+                    { name: "Dr. Rahul Nair", spec: "General Physician", role: "General Physician" },
+                    { name: "Dr. Anita Rao", spec: "Cardiology", role: "Cardiologist" },
+                    { name: "Dr. Vikram Iyer", spec: "Neurology", role: "Neurologist" },
+                  ].map(p => {
+                    const isSelected = currentName.includes(p.name.split(" ")[1]);
+                    const isP = p.spec === "Physiotherapy";
+                    return (
+                      <button
+                        key={p.name}
+                        type="button"
+                        onClick={() => {
+                          setProfileName(p.name);
+                          setProfileSpecialty(p.spec);
+                          if (typeof window !== "undefined") {
+                            window.localStorage.setItem("mc_user_name", p.name);
+                            window.localStorage.setItem("mc_user_specialty", p.spec);
+                          }
+                        }}
+                        style={{
+                          padding: "8px 10px",
+                          borderRadius: 12,
+                          border: `1.5px solid ${isSelected ? (isP ? "#0EA5E9" : "#0D9488") : "#E2E8F0"}`,
+                          background: isSelected ? (isP ? "#F0F9FF" : "#F0FDF4") : "#F8FAFC",
+                          color: isSelected ? "#0F172A" : "#64748B",
+                          fontWeight: isSelected ? 800 : 600,
+                          fontSize: 11.5,
+                          cursor: "pointer",
+                          textAlign: "left",
+                          transition: "all .15s ease",
+                        }}
+                      >
+                        <div style={{ fontWeight: 800 }}>{p.name}</div>
+                        <div style={{ fontSize: 9.5, opacity: 0.85, color: isP ? "#0369A1" : "#0F766E" }}>{p.role}</div>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -14315,7 +14362,7 @@ function ProstheticsFlow({ onClose, onBook }) {
 /* ══════════════════════════════════════════════════════════════════
    PATIENT APP — PatientHome layout for "home" screen
 ══════════════════════════════════════════════════════════════════ */
-function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulanceActions, labOrder, labActions, sevaActions, onHomeVisit }) {
+function PatientApp({ req, setReq, actions, scanDispatch, scanDispatchActions, ambulanceActions, labOrder, labActions, sevaActions, onHomeVisit }) {
   const [screen, setScreen] = useState("home");
   const [dashboardTab, setDashboardTab] = useState("home");
   const [bookingOpen, setBookingOpen] = useState(false);
@@ -14703,7 +14750,7 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
     if (req.status === "completed") { setScreen("rate"); return; }
     // Show tracking for the early phases. Once converging/at_hub, don't yank the screen —
     // the patient can browse home and return via the live banner.
-    if (["broadcasting", "expired", "assigned"].includes(req.status)) setScreen("track");
+    if (!req.scheduled && ["broadcasting", "expired", "assigned"].includes(req.status)) setScreen("track");
     // Referral review does not confirm an appointment. Booking association must
     // be persisted by the authorised booking operation, never by local request state.
   }, [req?.status]);
@@ -14840,15 +14887,41 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
   const proceedNormal = (spec, fromOverlay) => {
     if ((visitMode === "home" || spec.visitMode === "home") && (spec.type || activeTab) === "doctor") { openDoctorHomeVisit(spec); return; }
     if (spec.scheduled) {
-      setConfirmedBooking({ name: spec.name, label: spec.scheduled.label, doctor: spec.doctor || null, bookingId: null });
+      const isPhysio = String(spec.name || "").toLowerCase().includes("physio") || String(spec.name || "").toLowerCase().includes("therap");
+      const fareAmount = spec.base || (spec.doctor ? spec.doctor.fee : (isPhysio ? 700 : 500));
+      const specialtyName = isPhysio ? "Physiotherapist" : (spec.name || "Consultation");
+
+      setConfirmedBooking({ name: spec.name, label: spec.scheduled.label, doctor: spec.doctor || null, bookingId: null, spec });
       setSelectedSpec(null);
       if (fromOverlay) setServiceView(null);
+
+      // Immediately set local req state so all connected provider dashboards see the broadcast
+      const broadcastReqData = {
+        id: "req-" + Date.now(),
+        dbId: null,
+        spec: { ...spec, type: isPhysio ? "therapist" : (spec.type || "doctor"), name: specialtyName },
+        emergency: false,
+        scheduled: spec.scheduled,
+        area: area || "Kothrud",
+        fare: { total: fareAmount },
+        hub: { name: "MyDox Hub — Koregaon Park", address: "Nearby", type: "medconnect" },
+        routeMode: "open",
+        status: "broadcasting",
+        stage: "broadcast",
+        remaining: 30,
+        candidates: [{ id: "you", name: isPhysio ? "Dr. Kavita Deshmukh" : "Dr. Rahul Nair", spec: specialtyName, rating: 4.9, distanceKm: 1.2, etaMin: 8 }],
+        initiatedBy: "patient",
+      };
+      if (typeof setReq === "function") {
+        setReq(broadcastReqData);
+      } else if (actions && typeof actions.setReqState === "function") {
+        actions.setReqState(broadcastReqData);
+      }
 
       (async () => {
         try {
           const { data: { user } } = await supabase.auth.getUser();
-          if (!user) return;
-          if (visitMode === "home" || spec.visitMode === "home") return;
+          const uid = user?.id || null;
 
           let start;
           if (spec.scheduled.iso) {
@@ -14857,17 +14930,17 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
             const raw = `${spec.scheduled.date} ${spec.scheduled.time}`;
             start = new Date(raw);
           }
-          if (isNaN(start.getTime()) || start <= new Date()) return;
-          const end = new Date(start.getTime() + 30 * 60000); // 30 min appointment
+          const startIso = (!isNaN(start.getTime())) ? start.toISOString() : new Date().toISOString();
+          const end = new Date((!isNaN(start.getTime()) ? start.getTime() : Date.now()) + 30 * 60000);
 
           const isVideo = visitMode === "online" || spec.visitMode === "online";
-          if (spec.doctor?.userId) {
+          if (spec.doctor?.userId && uid) {
             const modeSuffix = isVideo ? " • Video" : " • MyDox Hub";
             const serviceTitle = spec.name ? (spec.name.includes("•") || spec.name.includes("·") ? spec.name : `${spec.name}${modeSuffix}`) : `Consultation${modeSuffix}`;
             const { data: bId, error } = await supabase.rpc("atomic_book_appointment", {
               p_provider_id: spec.doctor.userId,
-              p_patient_id: user.id,
-              p_start_time: start.toISOString(),
+              p_patient_id: uid,
+              p_start_time: startIso,
               p_end_time: end.toISOString(),
               p_service: serviceTitle,
               p_fee: spec.base || 500
@@ -14880,17 +14953,50 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
             }
           }
 
-          // Record non-emergency care request row so it appears under My Bookings
+          // Record broadcast care request row so it appears under My Bookings AND notifies medicos
+          let createdRow = null;
           try {
-            await createCareRequest({
-              specialty: spec.name || "Consultation",
+            createdRow = await createCareRequest({
+              specialty: specialtyName,
               emergency: false,
               notes: `Scheduled appointment for ${spec.scheduled.label}${spec.doctor ? ` with ${spec.doctor.name}` : ""}`,
-              fare: spec.base || (spec.doctor ? spec.doctor.fee : 500),
-              notification_stage: null,
+              fare: fareAmount,
+              notification_stage: "broadcast",
               my_doctor_id: spec.doctor?.userId || null,
             });
-          } catch (_) { }
+            if (createdRow?.id) {
+              setConfirmedBooking(cur => cur ? { ...cur, careRequestId: createdRow.id } : cur);
+              if (typeof setReq === "function") {
+                setReq(r => r ? { ...r, dbId: createdRow.id } : r);
+              } else if (actions && typeof actions.setReqState === "function") {
+                actions.setReqState(r => r ? { ...r, dbId: createdRow.id } : r);
+              }
+            }
+          } catch (crErr) {
+            console.warn("createCareRequest for scheduled booking warning:", crErr?.message);
+          }
+
+          // If it is a Physiotherapist booking, also record in physio_visits
+          if (isPhysio) {
+            try {
+              await supabase.from("physio_visits").insert({
+                patient_id: uid || "00000000-0000-0000-0000-000000000000",
+                patient_name: user?.user_metadata?.full_name || "Patient",
+                therapy_type: "orthopaedic",
+                area: area || "Kothrud",
+                city: "Pune",
+                scheduled_at: startIso,
+                duration_min: 45,
+                session_number: 1,
+                status: "requested",
+                urgency: "planned",
+                fee: fareAmount,
+                notes: `Scheduled appointment for ${spec.scheduled.label}`,
+              });
+            } catch (pvErr) {
+              console.warn("physio_visits insert warning:", pvErr?.message);
+            }
+          }
         } catch (e) {
           console.warn("Scheduled booking recording warning:", e?.message);
         }
@@ -15684,7 +15790,35 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
             )}
             {confirmedBooking.label && <div style={{ margin: "12px 0 0", display: "inline-flex", alignItems: "center", gap: 7, background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 12, padding: "9px 14px" }}><span style={{ fontSize: 16 }}>📅</span><span style={{ color: "#1D4ED8", fontWeight: 800, fontSize: 13 }}>{confirmedBooking.label}</span></div>}
             <p style={{ margin: "14px 0 0", color: C.faint, fontSize: 11.5, lineHeight: 1.4 }}>{confirmedBooking.doctor ? "Your appointment is booked with this doctor. You'll get a reminder ahead of your slot." : "Your appointment is booked. You'll get a reminder, and your medico will be assigned ahead of your slot."}</p>
-            <button onClick={() => setConfirmedBooking(null)} style={{ marginTop: 18, width: "100%", background: "linear-gradient(135deg,#0C9668,#059669)", color: "#fff", border: "none", borderRadius: 14, padding: "13px", fontWeight: 800, fontSize: 14.5, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Done</button>
+            <button onClick={() => {
+              const booking = confirmedBooking;
+              setConfirmedBooking(null);
+              toast && toast("Booking confirmed! Dispatched live broadcast to medicos.");
+              const isPhys = String(booking?.name || "").toLowerCase().includes("physio") || String(booking?.name || "").toLowerCase().includes("therap");
+              const fareAmt = isPhys ? 700 : 500;
+              const titleName = isPhys ? "Physiotherapist" : (booking?.name || "Consultation");
+              const bData = {
+                id: "req-" + Date.now(),
+                dbId: booking?.careRequestId || null,
+                spec: { ...(booking?.spec || {}), type: isPhys ? "therapist" : "doctor", name: titleName },
+                emergency: false,
+                scheduled: { label: booking?.label || "Scheduled" },
+                area: area || "Kothrud",
+                fare: { total: fareAmt },
+                hub: { name: "MyDox Hub — Koregaon Park", address: "Nearby", type: "medconnect" },
+                routeMode: "open",
+                status: "broadcasting",
+                stage: "broadcast",
+                remaining: 30,
+                candidates: [{ id: "you", name: isPhys ? "Dr. Kavita Deshmukh" : "Dr. Rahul Nair", spec: titleName, rating: 4.9, distanceKm: 1.2, etaMin: 8 }],
+                initiatedBy: "patient",
+              };
+              if (typeof setReq === "function") {
+                setReq(cur => (cur && cur.status === "broadcasting") ? cur : bData);
+              } else if (actions && typeof actions.setReqState === "function") {
+                actions.setReqState(cur => (cur && cur.status === "broadcasting") ? cur : bData);
+              }
+            }} style={{ marginTop: 18, width: "100%", background: "linear-gradient(135deg,#0C9668,#059669)", color: "#fff", border: "none", borderRadius: 14, padding: "13px", fontWeight: 800, fontSize: 14.5, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Done</button>
           </div>
         </div>
       )}
@@ -17946,7 +18080,25 @@ export default function MyDoxFull({ initialView } = {}) {
   const actions = {
     book: ({ spec, emergency, area, fare, hub, routeMode, radiusKm, specialization, myDoctorName, preferredName, myDoctorId, preferredId }) => {
       if (spec?.scheduled) {
-        proceedNormal(spec);
+        const isPhys = String(spec.name || "").toLowerCase().includes("physio") || String(spec.name || "").toLowerCase().includes("therap");
+        const fareAmt = spec.base || (spec.doctor ? spec.doctor.fee : (isPhys ? 700 : 500));
+        const specTitle = isPhys ? "Physiotherapist" : (spec.name || "Consultation");
+        setReq({
+          id: "req-" + Date.now(),
+          dbId: null,
+          spec: { ...spec, type: isPhys ? "therapist" : (spec.type || "doctor"), name: specTitle },
+          emergency: false,
+          scheduled: spec.scheduled,
+          area: area || "Kothrud",
+          fare: typeof fare === "object" && fare?.total ? fare : { total: fareAmt },
+          hub: hub || { name: "MyDox Hub — Koregaon Park", address: "Nearby", type: "medconnect" },
+          routeMode: routeMode || "open",
+          status: "broadcasting",
+          stage: "broadcast",
+          remaining: 30,
+          candidates: [{ id: "you", name: isPhys ? "Dr. Kavita Deshmukh" : "Dr. Rahul Nair", spec: specTitle, rating: 4.9, distanceKm: 1.2, etaMin: 8 }],
+          initiatedBy: "patient",
+        });
         return;
       }
       // Build the initial candidate list from whatever is in the live cache
@@ -18094,6 +18246,7 @@ export default function MyDoxFull({ initialView } = {}) {
         directProvider: provider,
       });
     },
+    setReqState: (data) => setReq(data),
     clearReq: () => setReq(null),
   };
 
@@ -18104,7 +18257,7 @@ export default function MyDoxFull({ initialView } = {}) {
   const _bookRaw = actions.book;
   actions.book = (args) => {
     if (args?.spec?.scheduled) {
-      proceedNormal(args.spec);
+      _bookRaw(args);
       return;
     }
     if (args?.hub?.type === "home" && args?.spec?.type === "doctor") {
@@ -18208,7 +18361,7 @@ export default function MyDoxFull({ initialView } = {}) {
             view === "admin" ? <AdminApp req={req} hubReq={hubReq} /> : <HubPortalApp req={req} hubReq={hubReq} hubActions={hubActions} scanDispatch={scanDispatch} scanDispatchActions={scanDispatchActions} />
           ) : (
             <div className="flex-1 min-h-0" style={{ overflowY: "auto", WebkitOverflowScrolling: "touch", paddingBottom: "env(safe-area-inset-bottom)" }}>
-              {view === "patient" ? <PatientApp onHomeVisit={setHomeVisitBooking} req={req} actions={actions} scanDispatch={scanDispatch} scanDispatchActions={scanDispatchActions} ambulanceActions={ambulanceActions} labOrder={labOrder} labActions={labActions} sevaActions={sevaActions} />
+              {view === "patient" ? <PatientApp onHomeVisit={setHomeVisitBooking} req={req} setReq={setReq} actions={actions} scanDispatch={scanDispatch} scanDispatchActions={scanDispatchActions} ambulanceActions={ambulanceActions} labOrder={labOrder} labActions={labActions} sevaActions={sevaActions} />
                 : view === "hub" ? <HubPortalApp req={req} hubReq={hubReq} hubActions={hubActions} scanDispatch={scanDispatch} scanDispatchActions={scanDispatchActions} sevaActions={sevaActions} />
                   : view === "diagnostic" ? <DiagnosticCentreApp scanDispatch={scanDispatch} scanDispatchActions={scanDispatchActions} />
                     : view === "ambulance" ? <AmbulanceApp ambulanceJob={ambulanceJob} ambulanceActions={ambulanceActions} scanDispatch={scanDispatch} />
