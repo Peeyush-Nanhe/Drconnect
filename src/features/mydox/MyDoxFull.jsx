@@ -577,8 +577,7 @@ function buildHubCandidates(hub, emergency, kind) {
               const fromLive = liveOnlineByView("medico").filter(p => (p.specialty || "").toLowerCase().includes("physio") || (p.specialty || "").toLowerCase().includes("therap") || (p.name || "").toLowerCase().includes("nair") || (p.name || "").toLowerCase().includes("kavita"));
               if (fromLive.length > 0) return fromLive;
               return [
-                { id: "th_rahul", name: "Rahul Nair", role: "provider", rating: 4.7, exp: 7, specialty: "Physiotherapy", distanceKm: 1.2, etaMin: 8, color: "#0EA5E9" },
-                { id: "th_kavita", name: "Dr. Kavita Deshmukh", role: "provider", rating: 4.8, exp: 9, specialty: "Physiotherapy", distanceKm: 2.1, etaMin: 12, color: "#0EA5E9" },
+                { id: "th_kavita", name: "Dr. Kavita Deshmukh", role: "provider", rating: 4.8, exp: 9, specialty: "Physiotherapy", distanceKm: 1.2, etaMin: 8, color: "#0EA5E9" },
               ];
             })()
           : [];
@@ -15102,11 +15101,13 @@ function PatientApp({ req, setReq, actions, scanDispatch, scanDispatchActions, a
     // doctors favourite per-specialty (2 cardiologists, 2 neurologists…); others per category
     const favKey = cat === "doctor" ? ("doctor:" + (spec.id || spec.name || "gp")) : cat;
     let prior = null;
-    if (cat === "doctor") {
+    if (cat === "doctor" || cat === "therapist") {
       // 1) DB-backed "My {specialty}" wins (auto-saved after last completed call in this specialty).
-      const dbMy = myMedicos.get(spec.id || spec.name || "", "my") || myMedicos.get(spec.name || "", "my");
+      const dbMy = myMedicos.get(spec.id || spec.name || "", "my") || myMedicos.get(spec.name || "", "my") || (cat === "therapist" ? myMedicos.get("therapist", "my") : null);
       if (dbMy && dbMy.medico_name) {
-        prior = { name: dbMy.medico_name, sub: "My " + (spec.name || "Doctor"), rating: 4.9, visits: 2, color: "#2563EB" };
+        prior = { name: dbMy.medico_name, sub: cat === "therapist" ? "Physiotherapist" : ("My " + (spec.name || "Doctor")), rating: 4.8, visits: 2, color: cat === "therapist" ? "#0EA5E9" : "#2563EB" };
+      } else if (cat === "therapist") {
+        prior = PRIOR_MEDICOS.therapist;
       } else {
         // Fallback: most recent chatted counterpart in this specialty
         const specName = (spec.name || "").toLowerCase();
@@ -15124,7 +15125,9 @@ function PatientApp({ req, setReq, actions, scanDispatch, scanDispatchActions, a
     }
     // Merge DB-backed "preferred" into local preferred list so it survives reloads.
     const localFavs = preferred[favKey] || [];
-    const dbPref = cat === "doctor" ? (myMedicos.get(spec.id || spec.name || "", "preferred") || myMedicos.get(spec.name || "", "preferred")) : null;
+    const dbPref = (cat === "doctor" || cat === "therapist")
+      ? (myMedicos.get(spec.id || spec.name || "", "preferred") || myMedicos.get(spec.name || "", "preferred") || (cat === "therapist" ? myMedicos.get("therapist", "preferred") : null))
+      : null;
     const favs = dbPref && dbPref.medico_name && !localFavs.includes(dbPref.medico_name)
       ? [dbPref.medico_name, ...localFavs] : localFavs;
     // Emergency + doctor: if a "My Doctor" exists, go straight to the emergency single-target flow.
@@ -16612,7 +16615,7 @@ function AmbulanceApp({ ambulanceJob, ambulanceActions, scanDispatch }) {
 /* Seeded "previously attended" provider per medico category (patient & hub share the concept) */
 const PRIOR_MEDICOS = {
   doctor: { name: "Dr. Anjali Sharma", sub: "General Physician", rating: 4.8, visits: 3, color: "#2563EB" },
-  therapist: { name: "Rahul Nair", sub: "Physiotherapist", rating: 4.7, visits: 2, color: "#0EA5E9" },
+  therapist: { name: "Dr. Kavita Deshmukh", sub: "Physiotherapist", rating: 4.8, visits: 2, color: "#0EA5E9" },
   diet: { name: "Sneha Kapoor", sub: "Dietitian", rating: 4.9, visits: 1, color: "#16A34A" },
   technician: { name: "Imran Shaikh", sub: "Lab Technician", rating: 4.6, visits: 2, color: "#F59E0B" },
   nurse: { name: "Mary Thomas", sub: "Home Nurse", rating: 4.8, visits: 4, color: "#DB2777" },
@@ -18306,7 +18309,7 @@ export default function MyDoxFull({ initialView } = {}) {
         const localId = Date.now();
         const svc = { ...(spec || {}), name: spec?.name || "Physiotherapy", type: spec?.type || "therapist" };
         const homeHub = { id: "home", name: "Your Home", type: "home", address: (area || "Koregaon Park") + ", Pune", patEtaMin: 0 };
-        const targetCandidate = { id: "you", name: provider?.name || "Rahul Nair", rating: provider?.rating || 4.7, distanceKm: 1.2, etaMin: 8, notified: true };
+        const targetCandidate = { id: "you", name: provider?.name || "Dr. Kavita Deshmukh", rating: provider?.rating || 4.8, distanceKm: 1.2, etaMin: 8, notified: true };
         return {
           id: localId,
           dbId: dbId || null,
