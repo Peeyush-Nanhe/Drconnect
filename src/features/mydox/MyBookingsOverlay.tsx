@@ -179,7 +179,7 @@ export default function MyBookingsOverlay({
         supabase.from("surgery_bookings").select("id, procedure, patient_name, mode, status, created_at").eq("facility_id", uid).order("created_at", { ascending: false }).limit(100),
         supabase.from("medicine_orders").select("id, pharmacy_name, delivery_speed, items, prescription_attached, total, status, created_at").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
         supabase.from("doctor_appointments").select("id, service, mode, status, start_time, end_time, created_at, provider_id, arrival_otp").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
-        supabase.from("physio_visits").select("id, therapy_type, area, city, session_number, status, created_at, therapist_id, scheduled_at, fee").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
+        supabase.from("physio_visits").select("id, therapy_type, area, city, session_number, status, created_at, therapist_id, scheduled_at, fee, otp").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
         supabase.from("specialty_care_bookings").select("id, specialty_label, concern, mode, provider_name, status, created_at").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
         supabase.from("community_requests").select("id, type, notes, status, created_at").eq("requester_id", uid).order("created_at", { ascending: false }).limit(100),
       ]);
@@ -188,18 +188,18 @@ export default function MyBookingsOverlay({
       const localReviews: Record<string, number> = {};
       const crRows = (cr.data as { id: string; specialty: string; status: string; notes: string | null; created_at: string; visit_type: string; accepted_by: string | null; rating_provider: number | null; otp: string | null }[] | null) ?? [];
       const daRows = (da.data as { id: string; service: string | null; mode: string | null; status: string; start_time: string; end_time: string; created_at: string; provider_id: string | null; arrival_otp: string | null }[] | null) ?? [];
-      const pvRows = (pv.data as { id: string; therapy_type: string; area: string; city: string; session_number: number; status: string; created_at: string; therapist_id: string | null; scheduled_at: string | null; fee: number | null }[] | null) ?? [];
+      const pvRows = (pv.data as { id: string; therapy_type: string; area: string; city: string; session_number: number; status: string; created_at: string; therapist_id: string | null; scheduled_at: string | null; fee: number | null; otp: string | null }[] | null) ?? [];
       const scRows = (sc.data as { id: string; specialty_label: string; concern: string; mode: string; provider_name: string; status: string; created_at: string }[] | null) ?? [];
       const commRows = (comm.data as { id: string; type: string; notes: string | null; status: string; created_at: string }[] | null) ?? [];
 
       const doctorIds = Array.from(new Set([
-        ...crRows.map((r) => r.accepted_by),
-        ...daRows.map((r) => r.provider_id),
-        ...pvRows.map((r) => r.therapist_id),
-      ].filter(Boolean) as string[]));
+        ...crRows.map((r) => r.accepted_by).filter((id): id is string => Boolean(id)),
+        ...daRows.map((r) => r.provider_id).filter((id): id is string => Boolean(id)),
+        ...pvRows.map((r) => r.therapist_id).filter((id): id is string => Boolean(id)),
+      ]));
 
       const doctorNames = new Map<string, string>();
-      if (doctorIds.length) {
+      if (doctorIds.length > 0) {
         const [{ data: profs }, { data: physioTherapists }] = await Promise.all([
           supabase.from("profiles").select("id, full_name").in("id", doctorIds),
           supabase.from("physio_therapists").select("id, full_name").in("id", doctorIds),
@@ -215,17 +215,13 @@ export default function MyBookingsOverlay({
       for (const r of crRows) {
         const docName = r.accepted_by ? (doctorNames.get(r.accepted_by) || (r.status === "completed" ? "Dr. Anita Rao" : undefined)) : (r.status === "completed" ? "Dr. Anita Rao" : undefined);
         const itemId = `cr:${r.id}`;
-        if (r.rating_provider) {
-          localReviews[itemId] = r.rating_provider;
-        } else {
-          const saved = readReview(itemId, docName);
-          if (saved?.stars) localReviews[itemId] = saved.stars;
-        }
+        const saved = readReview(itemId, docName);
+        if (saved?.stars) localReviews[itemId] = saved.stars;
         rows.push({
           id: itemId,
           module: classifyCareRequest(r.specialty),
           title: r.specialty,
-          subtitle: `${r.visit_type} visit${r.notes ? ` · ${r.notes.slice(0, 60)}` : ""}`,
+          subtitle: `${r.visit_type === "at_home" ? "Home visit" : "Clinic visit"}${r.notes ? ` · ${r.notes}` : ""}`,
           status: r.status,
           createdAt: r.created_at,
           doctorName: docName,
@@ -234,9 +230,9 @@ export default function MyBookingsOverlay({
       }
 
       for (const r of daRows) {
-        const isPhysio = r.service && /(physio|therap)/i.test(r.service);
-        const isHome = r.mode === "home_visit" || r.mode === "home" || (r.service && r.service.toLowerCase().includes("home"));
-        const baseTitle = r.service || "Doctor Appointment";
+        const baseTitle = r.service || "General Doctor Consultation";
+        const isHome = r.mode === "home_visit";
+        const isPhysio = /(physio|therap)/i.test(baseTitle);
         const title = isHome && !baseTitle.toLowerCase().includes("home") ? `${baseTitle} • Home visit` : baseTitle;
         const timeStr = `${new Date(r.start_time).toLocaleDateString("en-US", { month: "short", day: "numeric" })} at ${new Date(r.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
         const docName = r.provider_id ? (doctorNames.get(r.provider_id) || (r.status === "completed" ? "Dr. Anita Rao" : undefined)) : (r.status === "completed" ? "Dr. Anita Rao" : undefined);
@@ -271,6 +267,7 @@ export default function MyBookingsOverlay({
           status: r.status,
           createdAt: r.created_at,
           doctorName: therapistName || "Dr. Kavita Deshmukh",
+          otp: r.otp || undefined,
         });
       }
 
@@ -467,7 +464,7 @@ export default function MyBookingsOverlay({
                                     cursor: "pointer",
                                   }}
                                 >
-                                  🔑 Consultation OTP (tap to view)
+                                  🔑 {it.module === "Physiotherapy" ? "Session OTP (tap to view)" : "Consultation OTP (tap to view)"}
                                 </button>
                               </div>
                             )}
@@ -1701,7 +1698,9 @@ function BookingOtpModal({
               🔒
             </div>
             <div>
-              <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: "#0F172A" }}>Consultation Passcode</h2>
+              <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: "#0F172A" }}>
+                {target.item.module === "Physiotherapy" ? "Session Passcode" : "Consultation Passcode"}
+              </h2>
               <p style={{ margin: 0, fontSize: 12, color: "#64748B", fontWeight: 500 }}>
                 Verification code generated from Supabase
               </p>
@@ -1852,10 +1851,12 @@ function BookingOtpModal({
             <span style={{ fontSize: 22 }}>✅</span>
             <div>
               <div style={{ fontWeight: 800, fontSize: 13.5, color: "#065F46" }}>
-                Consultation Verified & Completed!
+                {target.item.module === "Physiotherapy" ? "Session Verified & Completed!" : "Consultation Verified & Completed!"}
               </div>
               <div style={{ fontSize: 11.5, color: "#047857", marginTop: 2 }}>
-                Your doctor has verified the OTP. Chat option is now enabled!
+                {target.item.module === "Physiotherapy"
+                  ? "Your therapist has verified the OTP. Session completed!"
+                  : "Your doctor has verified the OTP. Chat option is now enabled!"}
               </div>
             </div>
           </div>
@@ -1873,13 +1874,17 @@ function BookingOtpModal({
               gap: 10,
             }}
           >
-            <span style={{ fontSize: 18, lineHeight: 1 }}>🩺</span>
+            <span style={{ fontSize: 18, lineHeight: 1 }}>{target.item.module === "Physiotherapy" ? "🧘" : "🩺"}</span>
             <div>
               <div style={{ fontWeight: 800, fontSize: 13, color: "#92400E", lineHeight: 1.35 }}>
-                Share this OTP with {displayDocName} once your consultation is over
+                {target.item.module === "Physiotherapy"
+                  ? `Share this OTP with ${displayDocName} once your session is over`
+                  : `Share this OTP with ${displayDocName} once your consultation is over`}
               </div>
               <div style={{ fontSize: 11.5, color: "#78350F", marginTop: 4, lineHeight: 1.45 }}>
-                Please do not share this passcode beforehand. Your doctor inserts this 4-digit code in Patient Verification Code to verify and complete the session.
+                {target.item.module === "Physiotherapy"
+                  ? "Please do not share this passcode beforehand. Your physiotherapist inserts this 4-digit code in Patient Verification Code to verify and complete the session."
+                  : "Please do not share this passcode beforehand. Your doctor inserts this 4-digit code in Patient Verification Code to verify and complete the session."}
               </div>
             </div>
           </div>

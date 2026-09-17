@@ -23,6 +23,7 @@ export type TherapistVisit = {
   fromPack: boolean;
   notes: string | null;
   therapistNote: string | null;
+  otp?: string;
 };
 
 export type TherapistBoard = {
@@ -59,10 +60,11 @@ const mapVisit = (r: any): TherapistVisit => ({
   fromPack: !!r.pack_id,
   notes: r.notes ?? null,
   therapistNote: r.therapist_note ?? r.notes ?? null,
+  otp: r.otp ?? undefined,
 });
 
 const VISIT_COLUMNS =
-  "id, patient_name, therapy_type, area, city, address, scheduled_at, duration_min, session_number, status, urgency, confirmed_at, checked_in_at, checked_out_at, fee, notes, created_at";
+  "id, patient_name, therapy_type, area, city, address, scheduled_at, duration_min, session_number, status, urgency, confirmed_at, checked_in_at, checked_out_at, fee, notes, otp, created_at";
 
 const STAGES = ["confirmed", "en_route", "in_progress", "completed", "no_show", "cancelled"] as const;
 

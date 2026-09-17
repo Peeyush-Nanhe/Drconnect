@@ -14,7 +14,7 @@ import {
 } from "@/lib/physio-therapist.functions";
 import { listCareVenues, venueKindLabel } from "@/lib/care-venues.functions";
 import { UnifiedProviderOffers } from "@/features/bookings/UnifiedProviderOffers";
-import { useLiveCareRequests, acceptCareRequest, matchesDoctorSpecialty } from "@/features/mydox/backend";
+import { useLiveCareRequests, acceptCareRequest, matchesDoctorSpecialty, verifyAndCompleteConsultation } from "@/features/mydox/backend";
 import {
   LANGUAGES,
   PHYSIO_QUALIFICATIONS,
@@ -83,12 +83,209 @@ const STATUS_LABEL: Record<string, string> = {
   confirmed: "Confirmed",
   en_route: "On the way",
   in_progress: "In progress",
-  completed: "Completed",
+  completed: "Session over",
   cancelled: "Cancelled",
   no_show: "Patient absent",
 };
 
 const CLOSED = ["completed", "cancelled", "no_show"];
+
+/* ═══ Bottom Sheet: Session Over Dialog (matching doctor Consultation Over flow) ═══ */
+function SessionOverDialog({
+  visit,
+  onClose,
+  onConfirm,
+}: {
+  visit: TherapistVisit;
+  onClose: () => void;
+  onConfirm: (visit: TherapistVisit, notes: string) => void;
+}) {
+  const [notes, setNotes] = useState(visit.notes ?? "");
+  const [otp, setOtp] = useState("");
+  const [errorMsg, setErrorMsg] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const handleOtpChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value.replace(/\D/g, "").slice(0, 4);
+    setOtp(val);
+    if (errorMsg) setErrorMsg("");
+  };
+
+  const handleVerify = async () => {
+    if (otp.length !== 4 || busy) return;
+    setBusy(true);
+    setErrorMsg("");
+    try {
+      const res = await verifyAndCompleteConsultation(visit.id, otp, notes);
+      if (res.success) {
+        onConfirm(visit, notes);
+      } else {
+        setErrorMsg(res.error || "Incorrect OTP. Ask the patient to read the code shown in their app.");
+      }
+    } catch (e: unknown) {
+      setErrorMsg(e instanceof Error ? e.message : "Failed to verify session OTP.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 70,
+        background: "rgba(15,23,42,0.55)",
+        display: "flex",
+        alignItems: "flex-end",
+        justifyContent: "center",
+        fontFamily: "'Plus Jakarta Sans', sans-serif",
+      }}
+      onClick={onClose}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Session over"
+        style={{
+          background: "#ffffff",
+          width: "100%",
+          maxWidth: 540,
+          borderRadius: "24px 24px 0 0",
+          padding: "20px 20px calc(24px + env(safe-area-inset-bottom))",
+          boxShadow: "0 -10px 30px rgba(0,0,0,0.15)",
+          display: "flex",
+          flexDirection: "column",
+          gap: 16,
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div>
+            <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: "#0F172A" }}>
+              Session over
+            </h3>
+            <p style={{ margin: "2px 0 0", fontSize: 13, color: "#64748B" }}>
+              Patient: <strong style={{ color: "#0F172A" }}>{visit.patientName}</strong> · {visit.therapyLabel}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            style={{
+              background: "#F1F5F9",
+              border: "none",
+              borderRadius: "50%",
+              width: 32,
+              height: 32,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "#475569",
+              fontSize: 16,
+              fontWeight: 700,
+            }}
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Section A: Notes */}
+        <div>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+            <label style={{ fontSize: 12.5, fontWeight: 700, color: "#334155" }}>
+              Therapist's Instructions & Notes
+            </label>
+            <span style={{ fontSize: 11, color: "#94A3B8" }}>{notes.length}/1000</span>
+          </div>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value.slice(0, 1000))}
+            maxLength={1000}
+            rows={4}
+            placeholder="Advice, exercise plan, recovery observations, follow-up…"
+            style={{
+              width: "100%",
+              boxSizing: "border-box",
+              padding: "12px 14px",
+              borderRadius: 14,
+              border: "1.5px solid #E2E8F0",
+              fontSize: 13.5,
+              fontFamily: "inherit",
+              resize: "none",
+              outline: "none",
+              color: "#0F172A",
+              background: "#F8FAFC",
+            }}
+          />
+        </div>
+
+        {/* Section B: 4-digit OTP */}
+        <div>
+          <label style={{ display: "block", fontSize: 12.5, fontWeight: 700, color: "#334155", marginBottom: 6 }}>
+            Patient Verification Code
+          </label>
+          <input
+            type="text"
+            inputMode="numeric"
+            value={otp}
+            onChange={handleOtpChange}
+            placeholder="• • • •"
+            maxLength={4}
+            style={{
+              width: "100%",
+              boxSizing: "border-box",
+              padding: "12px 16px",
+              borderRadius: 14,
+              border: errorMsg ? "1.5px solid #EF4444" : "1.5px solid #E2E8F0",
+              fontSize: 24,
+              fontWeight: 800,
+              letterSpacing: "12px",
+              textAlign: "center",
+              fontFamily: "monospace",
+              outline: "none",
+              color: "#0F172A",
+              background: "#F8FAFC",
+            }}
+          />
+          <p style={{ margin: "6px 0 0", fontSize: 11.5, color: "#64748B", textAlign: "center" }}>
+            Ask the patient to read the 4-digit code shown in their app
+          </p>
+          {errorMsg && (
+            <p style={{ margin: "6px 0 0", fontSize: 12, color: "#DC2626", fontWeight: 600, textAlign: "center" }}>
+              {errorMsg}
+            </p>
+          )}
+        </div>
+
+        {/* Action Button */}
+        <button
+          type="button"
+          onClick={handleVerify}
+          disabled={otp.length !== 4 || busy}
+          style={{
+            width: "100%",
+            padding: "14px",
+            borderRadius: 14,
+            border: "none",
+            background: otp.length === 4 && !busy ? "#0D9488" : "#CBD5E1",
+            color: "#ffffff",
+            fontSize: 14.5,
+            fontWeight: 800,
+            cursor: otp.length === 4 && !busy ? "pointer" : "not-allowed",
+            transition: "all 0.15s",
+            boxShadow: otp.length === 4 && !busy ? "0 4px 12px rgba(13,148,136,0.3)" : "none",
+          }}
+        >
+          {busy ? "Verifying with backend…" : "Verify OTP & close"}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function VisitCard({
   v,
@@ -137,17 +334,13 @@ function VisitCard({
         </span>
       </div>
 
-      {v.notes ? <p className="mt-2 text-xs text-slate-600">Patient note: {v.notes}</p> : null}
-
-      {onStage && v.status === "in_progress" ? (
-        <textarea
-          rows={2}
-          maxLength={1000}
-          value={note ?? ""}
-          onChange={(e) => onNote?.(e.target.value)}
-          placeholder="Session notes for the patient's record (optional)"
-          className="mt-3 w-full rounded-xl border border-slate-200 p-2 text-xs"
-        />
+      {v.notes ? (
+        <div className="mt-2 rounded-xl bg-slate-50 p-2 text-xs text-slate-700">
+          <span className="font-semibold text-slate-500">
+            {v.status === "completed" ? "Session notes: " : "Note: "}
+          </span>
+          {v.notes}
+        </div>
       ) : null}
 
       <div className="mt-3 flex flex-wrap gap-2 border-t border-slate-100 pt-3">
@@ -337,16 +530,27 @@ function TherapistHome() {
   });
   const history = visits.filter((v) => CLOSED.includes(v.status));
   const openRequests = data?.openRequests ?? [];
+  const [sessionOverVisit, setSessionOverVisit] = useState<TherapistVisit | null>(null);
 
   const stageProps = (v: TherapistVisit) => ({
     note: notes[v.id],
     onNote: (val: string) => setNotes((n) => ({ ...n, [v.id]: val })),
     onStage: (id: string, s: string) => {
+      if (s === "completed") {
+        setSessionOverVisit(v);
+        return;
+      }
       setNotice("");
       stageMut.mutate({ visitId: id, stage: s, note: notes[id] ?? null });
     },
     busy: stageMut.isPending,
   });
+
+  const handleSessionOverConfirm = (_visit: TherapistVisit, _completionNotes: string) => {
+    setSessionOverVisit(null);
+    setNotice("Session completed — patient verified with OTP.");
+    qc.invalidateQueries({ queryKey: ["therapist-board"] });
+  };
 
   const isOnline = profile ? profile.isOnline : true;
   const { rows: liveCareRequests } = useLiveCareRequests(isOnline);
@@ -757,6 +961,14 @@ function TherapistHome() {
             </form>
           ) : null}
         </>
+      )}
+
+      {sessionOverVisit && (
+        <SessionOverDialog
+          visit={sessionOverVisit}
+          onClose={() => setSessionOverVisit(null)}
+          onConfirm={handleSessionOverConfirm}
+        />
       )}
     </StaffShell>
   );
