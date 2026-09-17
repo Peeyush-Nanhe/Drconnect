@@ -14672,7 +14672,7 @@ function PatientApp({ req, setReq, actions, scanDispatch, scanDispatchActions, a
         });
         setDirectReq(null);
         if (row.paid_at) actions?.markAcceptedCareRequestPaid?.({ row });
-        setScreen("track");
+        setScreen(row.paid_at ? "home" : "track");
       } catch (err) {
         console.warn("accepted-request recovery failed", err?.message);
       } finally {
@@ -14768,10 +14768,10 @@ function PatientApp({ req, setReq, actions, scanDispatch, scanDispatchActions, a
     if (req.status === "completed") { setScreen("rate"); return; }
     // Show tracking for the early phases. Once converging/at_hub, don't yank the screen —
     // the patient can browse home and return via the live banner.
-    if (!req.scheduled && ["broadcasting", "expired", "assigned", "converging", "at_hub"].includes(req.status)) {
-      setScreen(s => (s === "rate" ? s : "track"));
-    }
-  }, [req?.status, req?.id]);
+    if (!req.scheduled && ["broadcasting", "expired", "assigned"].includes(req.status)) setScreen("track");
+    // Referral review does not confirm an appointment. Booking association must
+    // be persisted by the authorised booking operation, never by local request state.
+  }, [req?.status]);
 
   // An authenticated referral ID opens the ordinary review and booking screen.
   useEffect(() => {
@@ -14898,7 +14898,6 @@ function PatientApp({ req, setReq, actions, scanDispatch, scanDispatchActions, a
     const myDoctorId = dbMy?.medico_id || null;
     const preferredId = (dbPref?.medico_id && dbPref.medico_id !== myDoctorId) ? dbPref.medico_id : null;
     if (actions && actions.book) actions.book({ spec: svc, emergency, area, fare: buildFare(svc, emergency), hub: homeHub, routeMode: "preferred", myDoctorName, preferredName, myDoctorId, preferredId });
-    setScreen("track");
   };
 
 
@@ -15033,7 +15032,6 @@ function PatientApp({ req, setReq, actions, scanDispatch, scanDispatchActions, a
     const svc = { ...spec, base: spec.base || basePrices[activeTab] || 500, type: activeTab };
     toast(`Broadcasting to nearby ${CAT_LABEL[activeTab] || "providers"}`);
     bookSvc(svc);
-    setScreen("track");
     if (fromOverlay) setServiceView(null);
   };
 
@@ -15090,7 +15088,7 @@ function PatientApp({ req, setReq, actions, scanDispatch, scanDispatchActions, a
     if (!spec) return;
     if ((visitMode === "home" || spec.visitMode === "home") && (spec.type || activeTab) === "doctor") { openDoctorHomeVisit(spec); return; }
     if (activeTab === "scan") { startScanDispatch(spec); if (fromOverlay) setServiceView(null); return; }
-    if (emergency || spec.doctor || spec.scheduled) { proceedNormal(spec, fromOverlay); return; } // urgent or named doctor or scheduled for later — no need to ask again
+    if (spec.doctor || spec.scheduled) { proceedNormal(spec, fromOverlay); return; } // already chose a named doctor or scheduled for later — no need to ask again
     const cat = activeTab;
     // doctors favourite per-specialty (2 cardiologists, 2 neurologists…); others per category
     const favKey = cat === "doctor" ? ("doctor:" + (spec.id || spec.name || "gp")) : cat;
@@ -16169,7 +16167,7 @@ function PatientApp({ req, setReq, actions, scanDispatch, scanDispatchActions, a
             <MapConverge req={req} />
             <div className="rounded-2xl p-4 mt-3" style={{ background: C.surface, border: `1px solid ${C.line}` }}>
               <div className="mb-3">
-                <div className="flex justify-between mb-1.5"><span className="font-bold" style={{ color: C.primaryDeep, fontSize: 12.5 }}><Stethoscope size={13} className="inline mr-1" style={{ color: C.primary }} />{(assigned?.name || "Medico").split(" ").slice(-2).join(" ")}</span><span className="font-extrabold" style={{ color: atHub || req.doctorEtaHub <= 0 ? C.primary : C.ink, fontSize: 12.5 }}>{atHub || req.doctorEtaHub <= 0 ? "Arrived ✓" : Math.ceil(req.doctorEtaHub / 60) + " min"}</span></div>
+                <div className="flex justify-between mb-1.5"><span className="font-bold" style={{ color: C.primaryDeep, fontSize: 12.5 }}><Stethoscope size={13} className="inline mr-1" style={{ color: C.primary }} />{assigned?.name.split(" ").slice(-2).join(" ")}</span><span className="font-extrabold" style={{ color: atHub || req.doctorEtaHub <= 0 ? C.primary : C.ink, fontSize: 12.5 }}>{atHub || req.doctorEtaHub <= 0 ? "Arrived ✓" : Math.ceil(req.doctorEtaHub / 60) + " min"}</span></div>
                 <ProgressBar progress={doctorPct} color={C.primary} />
               </div>
               <div>
@@ -16614,7 +16612,7 @@ function DirectRequestOverlay({ provider, spec, who, emergency, fallbackLabel, d
 
   // Synchronize when the provider accepts in-memory:
   useEffect(() => {
-    if (reqStatus === "assigned" || reqStatus === "accepted" || reqStatus === "converging" || reqStatus === "completed") {
+    if (reqStatus === "assigned" || reqStatus === "accepted" || reqStatus === "completed") {
       setPhase("accepted");
     }
   }, [reqStatus]);
@@ -16628,7 +16626,7 @@ function DirectRequestOverlay({ provider, spec, who, emergency, fallbackLabel, d
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "care_requests", filter: `id=eq.${dbId}` },
         (payload) => {
-          if (payload.new && (payload.new.status === "accepted" || payload.new.status === "assigned" || payload.new.status === "converging" || payload.new.status === "completed")) {
+          if (payload.new && (payload.new.status === "accepted" || payload.new.status === "assigned" || payload.new.status === "completed")) {
             setPhase("accepted");
           }
         }
@@ -18097,7 +18095,7 @@ export default function MyDoxFull({ initialView } = {}) {
       // Manual-escalation flow: booking parks at the "my_doctor" stage — the
       // radar only shows the patient's saved My Doctor. StageFlowOverlay drives
       // manual escalation to Preferred and then Broadcast.
-      const initialStage = emergency ? "broadcast" : (myDoctorCandidate ? "my_doctor" : preferredCandidate ? "preferred" : "broadcast");
+      const initialStage = myDoctorCandidate ? "my_doctor" : preferredCandidate ? "preferred" : "broadcast";
       const initialCandidates = initialStage === "my_doctor" ? [myDoctorCandidate]
         : initialStage === "preferred" ? [preferredCandidate]
           : candidates;
