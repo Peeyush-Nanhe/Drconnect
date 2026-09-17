@@ -577,7 +577,8 @@ function buildHubCandidates(hub, emergency, kind) {
               const fromLive = liveOnlineByView("medico").filter(p => (p.specialty || "").toLowerCase().includes("physio") || (p.specialty || "").toLowerCase().includes("therap") || (p.name || "").toLowerCase().includes("nair") || (p.name || "").toLowerCase().includes("kavita"));
               if (fromLive.length > 0) return fromLive;
               return [
-                { id: "th_kavita", name: "Dr. Kavita Deshmukh", role: "provider", rating: 4.8, exp: 9, specialty: "Physiotherapy", distanceKm: 1.2, etaMin: 8, color: "#0EA5E9" },
+                { id: "th_rahul", name: "Rahul Nair", role: "provider", rating: 4.7, exp: 7, specialty: "Physiotherapy", distanceKm: 1.2, etaMin: 8, color: "#0EA5E9" },
+                { id: "th_kavita", name: "Dr. Kavita Deshmukh", role: "provider", rating: 4.8, exp: 9, specialty: "Physiotherapy", distanceKm: 2.1, etaMin: 12, color: "#0EA5E9" },
               ];
             })()
           : [];
@@ -15741,7 +15742,7 @@ function PatientApp({ req, setReq, actions, scanDispatch, scanDispatchActions, a
           reqStatus={req?.status}
           emergency={!!directReq.emergency}
           durationSec={directReq.durationSec}
-          fallbackLabel={directReq.emergency ? (directReq.isMy ? (directReq.preferredName ? `Not accepting — try Preferred (${directReq.preferredName}) →` : "Not accepting — broadcast to any available →") : "Not accepting — broadcast to any available →") : undefined}
+          fallbackLabel={directReq.isPhysio ? "Skip the wait · broadcast to all now →" : (directReq.emergency ? (directReq.isMy ? (directReq.preferredName ? `Not accepting — try Preferred (${directReq.preferredName}) →` : "Not accepting — broadcast to any available →") : "Not accepting — broadcast to any available →") : undefined)}
           onConfirmed={() => {
             const dr = directReq;
             setDirectReq(null);
@@ -16618,7 +16619,7 @@ function AmbulanceApp({ ambulanceJob, ambulanceActions, scanDispatch }) {
 /* Seeded "previously attended" provider per medico category (patient & hub share the concept) */
 const PRIOR_MEDICOS = {
   doctor: { name: "Dr. Anjali Sharma", sub: "General Physician", rating: 4.8, visits: 3, color: "#2563EB" },
-  therapist: { name: "Dr. Kavita Deshmukh", sub: "Physiotherapist", rating: 4.8, visits: 2, color: "#0EA5E9" },
+  therapist: { name: "Rahul Nair", sub: "Physiotherapist", rating: 4.7, visits: 2, color: "#0EA5E9" },
   diet: { name: "Sneha Kapoor", sub: "Dietitian", rating: 4.9, visits: 1, color: "#16A34A" },
   technician: { name: "Imran Shaikh", sub: "Lab Technician", rating: 4.6, visits: 2, color: "#F59E0B" },
   nurse: { name: "Mary Thomas", sub: "Home Nurse", rating: 4.8, visits: 4, color: "#DB2777" },
@@ -16746,6 +16747,22 @@ function DirectRequestOverlay({ provider, spec, who, emergency, durationSec, fal
     return () => {
       supabase.removeChannel(ch);
     };
+  }, [dbId, handleAccepted]);
+
+  // Active polling fallback: ensures instant dismissal even if websocket event lags
+  useEffect(() => {
+    if (!dbId) return;
+    const checkStatus = async () => {
+      if (acceptedRef.current) return;
+      try {
+        const { data } = await supabase.from("care_requests").select("status").eq("id", dbId).maybeSingle();
+        if (data && (data.status === "accepted" || data.status === "assigned" || data.status === "completed")) {
+          handleAccepted();
+        }
+      } catch (_) {}
+    };
+    const poll = setInterval(checkStatus, 1500);
+    return () => clearInterval(poll);
   }, [dbId, handleAccepted]);
 
   useEffect(() => { fallbackCalledRef.current = false; }, [provider?.name, spec?.name, emergency]);
@@ -18315,7 +18332,7 @@ export default function MyDoxFull({ initialView } = {}) {
         const localId = Date.now();
         const svc = { ...(spec || {}), name: spec?.name || "Physiotherapy", type: spec?.type || "therapist" };
         const homeHub = { id: "home", name: "Your Home", type: "home", address: (area || "Koregaon Park") + ", Pune", patEtaMin: 0 };
-        const targetCandidate = { id: "you", name: provider?.name || "Dr. Kavita Deshmukh", rating: provider?.rating || 4.8, distanceKm: 1.2, etaMin: 8, notified: true };
+        const targetCandidate = { id: "you", name: provider?.name || "Rahul Nair", rating: provider?.rating || 4.7, distanceKm: 1.2, etaMin: 8, notified: true };
         return {
           id: localId,
           dbId: dbId || null,
