@@ -16536,25 +16536,26 @@ const Initials = ({ name, color }) => (
 
 /* Pop-up shown on a new enquiry when a prior/preferred provider exists for that category */
 function RepeatProviderModal({ cat, spec, prior, preferred, who, emergency, onRequest, onBroadcast, onTogglePreferred, onClose }) {
+  const isDoctorEmergency = emergency && (!cat || cat === "doctor");
   const catLabel = CAT_LABEL[cat] || "providers";
   const list = [];
   if (prior) list.push(prior);
   (preferred || []).forEach(nm => { if (!list.find(p => p.name === nm)) list.push({ name: nm, sub: "Preferred provider", color: "#0C9668" }); });
-  const emgList = emergency && prior ? [prior] : list;
+  const displayList = isDoctorEmergency && prior ? [prior] : list;
   const emgPrefName = (preferred || []).find(n => !prior || n !== prior.name) || null;
   return (
-    <div onClick={onClose} style={{ position: "absolute", inset: 0, zIndex: 130, background: "rgba(15,23,42,.55)", display: "flex", alignItems: emergency ? "flex-start" : "flex-end", justifyContent: "center", paddingTop: emergency ? "max(12px, env(safe-area-inset-top))" : 0 }}>
-      <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 380, background: "#fff", borderRadius: emergency ? "0 0 24px 24px" : "24px 24px 0 0", padding: "20px 18px 18px", maxHeight: "86%", overflowY: "auto" }}>
+    <div onClick={onClose} style={{ position: "absolute", inset: 0, zIndex: 130, background: "rgba(15,23,42,.55)", display: "flex", alignItems: isDoctorEmergency ? "flex-start" : "flex-end", justifyContent: "center", paddingTop: isDoctorEmergency ? "max(12px, env(safe-area-inset-top))" : 0 }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 380, background: "#fff", borderRadius: isDoctorEmergency ? "0 0 24px 24px" : "24px 24px 0 0", padding: "20px 18px 18px", maxHeight: "86%", overflowY: "auto" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
-          <p style={{ margin: 0, fontWeight: 900, color: C.ink, fontSize: 18 }}>{emergency && prior ? "Emergency · My " + (spec?.name || "Doctor") : "Same provider as before?"}</p>
+          <p style={{ margin: 0, fontWeight: 900, color: C.ink, fontSize: 18 }}>{isDoctorEmergency && prior ? "Emergency · My " + (spec?.name || "Doctor") : "Same provider as before?"}</p>
           <button onClick={onClose} style={{ border: "none", background: C.canvas, borderRadius: "50%", width: 30, height: 30, cursor: "pointer", color: C.faint, fontSize: 17, flexShrink: 0 }}>×</button>
         </div>
-        {emergency && prior ? (
+        {isDoctorEmergency && prior ? (
           <p style={{ margin: "0 0 14px", color: C.sub, fontSize: 12.5, lineHeight: 1.45 }}>Sending straight to your <b>My {spec?.name || "Doctor"}</b>. If they don't accept within 1 minute, we'll ask if you'd like to try your <b>Preferred</b> next.</p>
         ) : (
           <p style={{ margin: "0 0 14px", color: C.sub, fontSize: 12.5, lineHeight: 1.45 }}>Your <b>favourites</b> get the request first. We broadcast to all {catLabel} only if they don't take it within <b>10 minutes</b>. Tap the ♥ to favourite a provider for repeat visits.</p>
         )}
-        {emgList.map(p => {
+        {displayList.map(p => {
           const isPref = (preferred || []).includes(p.name);
           return (
             <div key={p.name} style={{ display: "flex", alignItems: "center", gap: 11, background: C.canvas, borderRadius: 14, padding: "11px 12px", marginBottom: 9 }}>
@@ -16563,12 +16564,12 @@ function RepeatProviderModal({ cat, spec, prior, preferred, who, emergency, onRe
                 <p style={{ margin: 0, fontWeight: 800, color: C.ink, fontSize: 13.5 }}>{p.name}</p>
                 <p style={{ margin: "1px 0 0", color: C.sub, fontSize: 11 }}>{p.sub}{p.rating ? ` · ★ ${p.rating}` : ""}{p.visits ? ` · ${p.visits} past visits` : ""}</p>
               </div>
-              {!emergency && (<button onClick={() => onTogglePreferred(p.name)} title="Add to favourites" style={{ border: "none", background: "transparent", cursor: "pointer", flexShrink: 0, padding: 4 }}><Heart size={20} color={isPref ? "#EF4444" : C.line} fill={isPref ? "#EF4444" : "none"} /></button>)}
-              <button onClick={() => onRequest(p)} style={{ flexShrink: 0, border: "none", background: emergency ? C.emerg : (p.color || C.primary), color: "#fff", borderRadius: 99, padding: "9px 14px", fontWeight: 800, fontSize: 12, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>{emergency ? "Call now" : "Request"}</button>
+              {!isDoctorEmergency && (<button onClick={() => onTogglePreferred(p.name)} title="Add to favourites" style={{ border: "none", background: "transparent", cursor: "pointer", flexShrink: 0, padding: 4 }}><Heart size={20} color={isPref ? "#EF4444" : C.line} fill={isPref ? "#EF4444" : "none"} /></button>)}
+              <button onClick={() => onRequest(p)} style={{ flexShrink: 0, border: "none", background: isDoctorEmergency ? C.emerg : (p.color || C.primary), color: "#fff", borderRadius: 99, padding: "9px 14px", fontWeight: 800, fontSize: 12, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>{isDoctorEmergency ? "Call now" : "Request"}</button>
             </div>
           );
         })}
-        {emergency && prior ? (
+        {isDoctorEmergency && prior ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 4 }}>
             {emgPrefName && (
               <button onClick={() => onRequest({ name: emgPrefName, sub: "Preferred " + (spec?.name || "Doctor"), color: "#0C9668" })} style={{ width: "100%", borderRadius: 12, padding: "11px", border: `1.5px solid ${C.line}`, background: C.surface, color: C.ink, fontWeight: 700, fontSize: 12.5, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Skip · call Preferred ({emgPrefName}) instead</button>
