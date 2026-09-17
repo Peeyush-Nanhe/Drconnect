@@ -572,12 +572,21 @@ function buildHubCandidates(hub, emergency, kind) {
     ? liveOnlineByView("medico")
     : (kind === "nurse" || kind === "rmo") ? liveOnlineByView("medico")
       : (kind === "tech") ? liveOnlineByView("diagnostic")
-        : [];
+        : (kind === "therapist" || kind === "physio")
+          ? (() => {
+              const fromLive = liveOnlineByView("medico").filter(p => (p.specialty || "").toLowerCase().includes("physio") || (p.specialty || "").toLowerCase().includes("therap") || (p.name || "").toLowerCase().includes("nair") || (p.name || "").toLowerCase().includes("kavita"));
+              if (fromLive.length > 0) return fromLive;
+              return [
+                { id: "th_rahul", name: "Rahul Nair", role: "provider", rating: 4.7, exp: 7, specialty: "Physiotherapy", distanceKm: 1.2, etaMin: 8, color: "#0EA5E9" },
+                { id: "th_kavita", name: "Dr. Kavita Deshmukh", role: "provider", rating: 4.8, exp: 9, specialty: "Physiotherapy", distanceKm: 2.1, etaMin: 12, color: "#0EA5E9" },
+              ];
+            })()
+          : [];
   const live = pool
     .filter(p => p.name !== YOU.name) // exclude self
     .map((p, i) => ({
       ...p,
-      area: hub?.area,
+      area: p.area || hub?.area || "Koregaon Park",
       notifyAt: 500 + i * 400,
       acceptAt: 999999, // never auto-accept — only the real medico can accept
     }));
@@ -8059,7 +8068,7 @@ function DoctorApp({ req, hubReq, online, setOnline, onAccept, sevaActions }) {
     const lower = currentName.toLowerCase();
     if (lower.includes("anita")) return "Cardiology";
     if (lower.includes("vikram")) return "Neurology";
-    if (lower.includes("kavita") || lower.includes("therapist") || lower.includes("physio")) return "Physiotherapy";
+    if (lower.includes("kavita") || lower.includes("therapist") || lower.includes("physio") || lower.includes("rahul")) return "Physiotherapy";
     if (lower.includes("leela")) return "Child Specialist";
     return "General Physician";
   }, [profileSpecialty, currentName]);
@@ -15120,7 +15129,7 @@ function PatientApp({ req, setReq, actions, scanDispatch, scanDispatchActions, a
       ? [dbPref.medico_name, ...localFavs] : localFavs;
     // Emergency + doctor: if a "My Doctor" exists, go straight to the emergency single-target flow.
     if (emergency && cat === "doctor" && prior) { setRepeatModal({ cat, favKey, prior, spec, fromOverlay, emergency: true, favs }); return; }
-    if (PREF_CATS.includes(cat) && (prior || favs.length)) { setRepeatModal({ cat, favKey, prior, spec, fromOverlay, favs }); return; }
+    if (PREF_CATS.includes(cat) && (prior || favs.length)) { setRepeatModal({ cat, favKey, prior, spec, fromOverlay, emergency: false, isUrgent: !!emergency, favs }); return; }
     proceedNormal(spec, fromOverlay);
   };
 
@@ -15643,10 +15652,26 @@ function PatientApp({ req, setReq, actions, scanDispatch, scanDispatchActions, a
             if (rm.fromOverlay) setServiceView(null);
             const isMy = rm.prior && p.name === rm.prior.name;
             const prefName = (rm.favs || []).find(n => !rm.prior || n !== rm.prior.name) || null;
-            setDirectReq({ provider: p, spec: rm.spec, fromOverlay: rm.fromOverlay, emergency: !!rm.emergency, isMy, myName: rm.prior?.name || null, preferredName: prefName });
-            if (rm.emergency) {
+            const isUrgent = !!(rm.emergency || rm.isUrgent);
+            const isPhysio = rm.cat === "therapist" || String(rm.spec?.name || "").toLowerCase().includes("physio");
+            const durationSec = (rm.emergency && !isPhysio) ? 60 : 600;
+            setDirectReq({
+              provider: p,
+              spec: rm.spec,
+              fromOverlay: rm.fromOverlay,
+              emergency: !!rm.emergency,
+              isUrgent,
+              isPhysio,
+              isMy,
+              myName: rm.prior?.name || null,
+              preferredName: prefName,
+              durationSec,
+            });
+            if (isUrgent || rm.emergency) {
+              const baseFare = rm.spec?.base || (isPhysio ? 700 : 500);
+              const fareAmt = isUrgent ? Math.round(baseFare * 1.2) : baseFare;
               if (actions && actions.directRequest) {
-                actions.directRequest({ provider: p, spec: rm.spec, emergency: true, fare: rm.spec?.base || 700, area, dbId: null });
+                actions.directRequest({ provider: p, spec: rm.spec, emergency: isUrgent, fare: fareAmt, area, dbId: null });
               }
               (async () => {
                 try {
@@ -15656,18 +15681,19 @@ function PatientApp({ req, setReq, actions, scanDispatch, scanDispatchActions, a
                   if (!targetId) {
                     try { targetId = await myMedicos.lookupMedicoIdByName(p.name); } catch (_) { }
                   }
-                  const specialtyName = rm.spec?.name || (rm.cat === "therapist" ? "Physiotherapy" : "General");
+                  const specialtyName = isPhysio ? "Physiotherapy" : (rm.spec?.name || "General");
                   const row = await createCareRequest({
                     specialty: specialtyName,
-                    emergency: true,
-                    notes: `Direct call to ${p.name}${isMy ? " (My Doctor)" : " (Preferred)"}`,
+                    emergency: isUrgent,
+                    notes: `Direct urgent request to ${p.name}${isMy ? " (My Doctor/Therapist)" : " (Preferred)"}`,
                     notification_stage: isMy ? "my_doctor" : "preferred",
                     my_doctor_id: isMy ? targetId : null,
-                    preferred_id: isMy ? null : targetId
+                    preferred_id: isMy ? null : targetId,
+                    fare: fareAmt,
                   });
                   setDirectReq(cur => cur && cur.provider?.name === p.name ? { ...cur, dbId: row.id } : cur);
                   if (actions && actions.directRequest) {
-                    actions.directRequest({ provider: p, spec: rm.spec, emergency: true, fare: rm.spec?.base || 700, area, dbId: row.id });
+                    actions.directRequest({ provider: p, spec: rm.spec, emergency: isUrgent, fare: fareAmt, area, dbId: row.id });
                   }
                 } catch (err) {
                   console.warn("direct request insert failed", err?.message);
@@ -15675,7 +15701,34 @@ function PatientApp({ req, setReq, actions, scanDispatch, scanDispatchActions, a
               })();
             }
           }}
-          onBroadcast={() => { const rm = repeatModal; setRepeatModal(null); proceedNormal(rm.spec, rm.fromOverlay); }}
+          onBroadcast={() => {
+            const rm = repeatModal;
+            setRepeatModal(null);
+            const isPhysio = rm.cat === "therapist" || String(rm.spec?.name || "").toLowerCase().includes("physio");
+            if (isPhysio) {
+              const baseFare = rm.spec?.base || 700;
+              const fareAmt = Math.round(baseFare * 1.2);
+              const svc = { ...rm.spec, type: "therapist", name: "Physiotherapy", base: baseFare };
+              const hubType = visitMode === "home" ? "home" : (visitMode === "online" ? "online" : "clinic");
+              const hubName = visitMode === "home" ? "Your Home" : (visitMode === "online" ? "Online consult" : "MyDox Hub — Koregaon Park");
+              const homeHub = { id: "home", name: hubName, type: hubType, address: (area || "Kothrud") + ", Pune", patEtaMin: visitMode === "home" ? 0 : 8, specialities: [], amenities: [] };
+              if (actions && actions.book) {
+                actions.book({
+                  spec: svc,
+                  emergency: true,
+                  area: area || "Kothrud",
+                  fare: { total: fareAmt },
+                  hub: homeHub,
+                  routeMode: "open",
+                  bypassConsent: true,
+                });
+              }
+              toast("Broadcasting to all available physiotherapists");
+              if (rm.fromOverlay) setServiceView(null);
+              return;
+            }
+            proceedNormal(rm.spec, rm.fromOverlay);
+          }}
           onClose={() => setRepeatModal(null)} />
       )}
       {directReq && (
@@ -15684,17 +15737,61 @@ function PatientApp({ req, setReq, actions, scanDispatch, scanDispatchActions, a
           dbId={directReq.dbId}
           reqStatus={req?.status}
           emergency={!!directReq.emergency}
+          durationSec={directReq.durationSec}
           fallbackLabel={directReq.emergency ? (directReq.isMy ? (directReq.preferredName ? `Not accepting — try Preferred (${directReq.preferredName}) →` : "Not accepting — broadcast to any available →") : "Not accepting — broadcast to any available →") : undefined}
-          onConfirmed={() => { const dr = directReq; setDirectReq(null); if (actions && actions.clearReq) actions.clearReq(); setConfirmedBooking({ name: dr.provider.name + " · " + (dr.spec?.name || "Visit"), label: "Repeat visit · same provider" }); }}
+          onConfirmed={() => {
+            const dr = directReq;
+            setDirectReq(null);
+            if (req?.status === "converging" || req?.status === "assigned" || req?.status === "at_hub") {
+              return;
+            }
+            if (actions && actions.clearReq) actions.clearReq();
+            setConfirmedBooking({ name: dr.provider.name + " · " + (dr.spec?.name || "Visit"), label: "Repeat visit · same provider" });
+          }}
           onFallback={() => {
             const dr = directReq;
             setDirectReq(null);
             if (actions && actions.clearReq) actions.clearReq();
             if (dr.dbId) {
-              try { cancelCareRequest(dr.dbId); } catch (_) { }
+              try {
+                if (dr.isPhysio) {
+                  supabase.from("care_requests").update({
+                    notification_stage: "broadcast",
+                    my_doctor_id: null,
+                    preferred_id: null,
+                    status: "open",
+                    notes: "Broadcast to all available physiotherapists"
+                  }).eq("id", dr.dbId).then(() => {}).catch(() => {});
+                } else {
+                  cancelCareRequest(dr.dbId);
+                }
+              } catch (_) { }
             }
-            if (dr.emergency && dr.isMy) {
+            if (dr.emergency && dr.isMy && !dr.isPhysio) {
               setEmgFallback({ spec: dr.spec, myName: dr.myName, preferredName: dr.preferredName, fromOverlay: dr.fromOverlay });
+              return;
+            }
+            if (dr.isPhysio) {
+              const baseFare = dr.spec?.base || 700;
+              const fareAmt = Math.round(baseFare * 1.2);
+              const svc = { ...dr.spec, type: "therapist", name: "Physiotherapy", base: baseFare };
+              const hubType = visitMode === "home" ? "home" : (visitMode === "online" ? "online" : "clinic");
+              const hubName = visitMode === "home" ? "Your Home" : (visitMode === "online" ? "Online consult" : "MyDox Hub — Koregaon Park");
+              const homeHub = { id: "home", name: hubName, type: hubType, address: (area || "Kothrud") + ", Pune", patEtaMin: visitMode === "home" ? 0 : 8, specialities: [], amenities: [] };
+              if (actions && actions.book) {
+                actions.book({
+                  spec: svc,
+                  emergency: true,
+                  area: area || "Kothrud",
+                  fare: { total: fareAmt },
+                  hub: homeHub,
+                  routeMode: "open",
+                  existingDbId: dr.dbId,
+                  bypassConsent: true,
+                });
+              }
+              toast("Broadcasting to all available physiotherapists");
+              if (dr.fromOverlay) setServiceView(null);
               return;
             }
             proceedNormal(dr.spec, dr.fromOverlay);
@@ -16515,7 +16612,7 @@ function AmbulanceApp({ ambulanceJob, ambulanceActions, scanDispatch }) {
 /* Seeded "previously attended" provider per medico category (patient & hub share the concept) */
 const PRIOR_MEDICOS = {
   doctor: { name: "Dr. Anjali Sharma", sub: "General Physician", rating: 4.8, visits: 3, color: "#2563EB" },
-  therapist: { name: "Kavita Deshmukh", sub: "Physiotherapist", rating: 4.8, visits: 2, color: "#0EA5E9" },
+  therapist: { name: "Rahul Nair", sub: "Physiotherapist", rating: 4.7, visits: 2, color: "#0EA5E9" },
   diet: { name: "Sneha Kapoor", sub: "Dietitian", rating: 4.9, visits: 1, color: "#16A34A" },
   technician: { name: "Imran Shaikh", sub: "Lab Technician", rating: 4.6, visits: 2, color: "#F59E0B" },
   nurse: { name: "Mary Thomas", sub: "Home Nurse", rating: 4.8, visits: 4, color: "#DB2777" },
@@ -16540,16 +16637,17 @@ function RepeatProviderModal({ cat, spec, prior, preferred, who, emergency, onRe
   const list = [];
   if (prior) list.push(prior);
   (preferred || []).forEach(nm => { if (!list.find(p => p.name === nm)) list.push({ name: nm, sub: "Preferred provider", color: "#0C9668" }); });
-  const emgList = emergency && prior ? [prior] : list;
+  const isDoctorEmergency = emergency && cat === "doctor";
+  const emgList = isDoctorEmergency && prior ? [prior] : list;
   const emgPrefName = (preferred || []).find(n => !prior || n !== prior.name) || null;
   return (
-    <div onClick={onClose} style={{ position: "absolute", inset: 0, zIndex: 130, background: "rgba(15,23,42,.55)", display: "flex", alignItems: emergency ? "flex-start" : "flex-end", justifyContent: "center", paddingTop: emergency ? "max(12px, env(safe-area-inset-top))" : 0 }}>
-      <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 380, background: "#fff", borderRadius: emergency ? "0 0 24px 24px" : "24px 24px 0 0", padding: "20px 18px 18px", maxHeight: "86%", overflowY: "auto" }}>
+    <div onClick={onClose} style={{ position: "absolute", inset: 0, zIndex: 130, background: "rgba(15,23,42,.55)", display: "flex", alignItems: isDoctorEmergency ? "flex-start" : "flex-end", justifyContent: "center", paddingTop: isDoctorEmergency ? "max(12px, env(safe-area-inset-top))" : 0 }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 380, background: "#fff", borderRadius: isDoctorEmergency ? "0 0 24px 24px" : "24px 24px 0 0", padding: "20px 18px 18px", maxHeight: "86%", overflowY: "auto" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
-          <p style={{ margin: 0, fontWeight: 900, color: C.ink, fontSize: 18 }}>{emergency && prior ? "Emergency · My " + (spec?.name || "Doctor") : "Same provider as before?"}</p>
+          <p style={{ margin: 0, fontWeight: 900, color: C.ink, fontSize: 18 }}>{isDoctorEmergency && prior ? "Emergency · My " + (spec?.name || "Doctor") : "Same provider as before?"}</p>
           <button onClick={onClose} style={{ border: "none", background: C.canvas, borderRadius: "50%", width: 30, height: 30, cursor: "pointer", color: C.faint, fontSize: 17, flexShrink: 0 }}>×</button>
         </div>
-        {emergency && prior ? (
+        {isDoctorEmergency && prior ? (
           <p style={{ margin: "0 0 14px", color: C.sub, fontSize: 12.5, lineHeight: 1.45 }}>Sending straight to your <b>My {spec?.name || "Doctor"}</b>. If they don't accept within 1 minute, we'll ask if you'd like to try your <b>Preferred</b> next.</p>
         ) : (
           <p style={{ margin: "0 0 14px", color: C.sub, fontSize: 12.5, lineHeight: 1.45 }}>Your <b>favourites</b> get the request first. We broadcast to all {catLabel} only if they don't take it within <b>10 minutes</b>. Tap the ♥ to favourite a provider for repeat visits.</p>
@@ -16563,12 +16661,12 @@ function RepeatProviderModal({ cat, spec, prior, preferred, who, emergency, onRe
                 <p style={{ margin: 0, fontWeight: 800, color: C.ink, fontSize: 13.5 }}>{p.name}</p>
                 <p style={{ margin: "1px 0 0", color: C.sub, fontSize: 11 }}>{p.sub}{p.rating ? ` · ★ ${p.rating}` : ""}{p.visits ? ` · ${p.visits} past visits` : ""}</p>
               </div>
-              {!emergency && (<button onClick={() => onTogglePreferred(p.name)} title="Add to favourites" style={{ border: "none", background: "transparent", cursor: "pointer", flexShrink: 0, padding: 4 }}><Heart size={20} color={isPref ? "#EF4444" : C.line} fill={isPref ? "#EF4444" : "none"} /></button>)}
-              <button onClick={() => onRequest(p)} style={{ flexShrink: 0, border: "none", background: emergency ? C.emerg : (p.color || C.primary), color: "#fff", borderRadius: 99, padding: "9px 14px", fontWeight: 800, fontSize: 12, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>{emergency ? "Call now" : "Request"}</button>
+              {!isDoctorEmergency && (<button onClick={() => onTogglePreferred(p.name)} title="Add to favourites" style={{ border: "none", background: "transparent", cursor: "pointer", flexShrink: 0, padding: 4 }}><Heart size={20} color={isPref ? "#EF4444" : C.line} fill={isPref ? "#EF4444" : "none"} /></button>)}
+              <button onClick={() => onRequest(p)} style={{ flexShrink: 0, border: "none", background: isDoctorEmergency ? C.emerg : (p.color || C.primary), color: "#fff", borderRadius: 99, padding: "9px 14px", fontWeight: 800, fontSize: 12, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>{isDoctorEmergency ? "Call now" : "Request"}</button>
             </div>
           );
         })}
-        {emergency && prior ? (
+        {isDoctorEmergency && prior ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 4 }}>
             {emgPrefName && (
               <button onClick={() => onRequest({ name: emgPrefName, sub: "Preferred " + (spec?.name || "Doctor"), color: "#0C9668" })} style={{ width: "100%", borderRadius: 12, padding: "11px", border: `1.5px solid ${C.line}`, background: C.surface, color: C.ink, fontWeight: 700, fontSize: 12.5, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Skip · call Preferred ({emgPrefName}) instead</button>
@@ -16605,14 +16703,15 @@ function EmergencyPreferredPromptModal({ myName, preferredName, spec, onTryPrefe
 }
 
 /* Direct request to one provider — they accept, else fall back to a full broadcast */
-function DirectRequestOverlay({ provider, spec, who, emergency, fallbackLabel, dbId, reqStatus, onConfirmed, onFallback, onClose }) {
+function DirectRequestOverlay({ provider, spec, who, emergency, durationSec, fallbackLabel, dbId, reqStatus, onConfirmed, onFallback, onClose }) {
   const [phase, setPhase] = useState("contacting"); // contacting → accepted
-  const [left, setLeft] = useState(emergency ? 60 : 600); // emergency = 1-minute window, else 10 minutes
+  const isDoctorEmergency = emergency && (spec?.type === "doctor" || !spec?.type);
+  const [left, setLeft] = useState(durationSec || (isDoctorEmergency ? 60 : 600)); // emergency doctor = 1-minute window, else 10 minutes
   const fallbackCalledRef = useRef(false);
 
   // Synchronize when the provider accepts in-memory:
   useEffect(() => {
-    if (reqStatus === "assigned" || reqStatus === "accepted" || reqStatus === "completed") {
+    if (reqStatus === "assigned" || reqStatus === "accepted" || reqStatus === "completed" || reqStatus === "converging") {
       setPhase("accepted");
     }
   }, [reqStatus]);
@@ -16637,19 +16736,11 @@ function DirectRequestOverlay({ provider, spec, who, emergency, fallbackLabel, d
     };
   }, [dbId, phase]);
 
-  // If there's NO dbId (e.g. offline/mock demo mode without backend), fall back to 3.2s simulation:
-  useEffect(() => {
-    if (phase !== "contacting" || dbId) return;
-    if (emergency) return;
-    const t = setTimeout(() => setPhase("accepted"), 3200);
-    return () => clearTimeout(t);
-  }, [phase, emergency, dbId]);
-
   useEffect(() => { fallbackCalledRef.current = false; }, [provider?.name, spec?.name, emergency]);
   useEffect(() => { if (phase !== "contacting") return; const iv = setInterval(() => setLeft(s => Math.max(0, s - 1)), 1000); return () => clearInterval(iv); }, [phase]);
   useEffect(() => { if (phase !== "contacting" || left > 0 || fallbackCalledRef.current) return; fallbackCalledRef.current = true; onFallback && onFallback(); }, [phase, left, onFallback]);
   const mmss = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
-  const fbLabel = fallbackLabel || (emergency ? "Not accepting — try Preferred instead →" : "Skip the wait · broadcast to all now →");
+  const fbLabel = fallbackLabel || (isDoctorEmergency ? "Not accepting — try Preferred instead →" : "Skip the wait · broadcast to all now →");
   return (
     <div style={{ position: "absolute", inset: 0, zIndex: 135, background: "rgba(15,23,42,.6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
       <div style={{ width: "100%", maxWidth: 300, background: "#fff", borderRadius: 22, padding: "26px 22px", textAlign: "center", boxShadow: "0 24px 60px rgba(0,0,0,.3)" }}>
@@ -16660,8 +16751,8 @@ function DirectRequestOverlay({ provider, spec, who, emergency, fallbackLabel, d
               <Initials name={provider?.name} color={provider?.color} />
             </div>
             <p style={{ margin: 0, fontWeight: 900, color: C.ink, fontSize: 17 }}>Notifying {provider?.name || "your doctor"}…</p>
-            <p style={{ margin: "6px 0 0", color: C.sub, fontSize: 12, lineHeight: 1.4 }}>{emergency ? "Emergency request sent only to them. If no response in 60s, we'll ask what to do next." : "Your favourite gets the request first. They can accept or decline."}</p>
-            <div style={{ margin: "14px 0 0", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, color: "#DC2626", fontWeight: 800, fontSize: 13 }}><Clock size={14} /> {emergency ? `Ask next step in ${mmss}` : `Broadcasts to all in ${mmss}`}</div>
+            <p style={{ margin: "6px 0 0", color: C.sub, fontSize: 12, lineHeight: 1.4 }}>{isDoctorEmergency ? "Emergency request sent only to them. If no response in 60s, we'll ask what to do next." : "Your favourite gets the request first. They can accept or decline."}</p>
+            <div style={{ margin: "14px 0 0", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, color: "#DC2626", fontWeight: 800, fontSize: 13 }}><Clock size={14} /> {isDoctorEmergency ? `Ask next step in ${mmss}` : `Broadcasts to all in ${mmss}`}</div>
             <button onClick={onFallback} style={{ marginTop: 14, width: "100%", background: C.canvas, color: C.sub, border: "none", borderRadius: 12, padding: "11px", fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>{fbLabel}</button>
           </>
 
@@ -18057,7 +18148,7 @@ export default function MyDoxFull({ initialView } = {}) {
   }, [req?.dbId]);
 
   const actions = {
-    book: ({ spec, emergency, area, fare, hub, routeMode, radiusKm, specialization, myDoctorName, preferredName, myDoctorId, preferredId }) => {
+    book: ({ spec, emergency, area, fare, hub, routeMode, radiusKm, specialization, myDoctorName, preferredName, myDoctorId, preferredId, existingDbId }) => {
       if (spec?.scheduled) {
         const isPhys = String(spec.name || "").toLowerCase().includes("physio") || String(spec.name || "").toLowerCase().includes("therap");
         const fareAmt = spec.base || (spec.doctor ? spec.doctor.fee : (isPhys ? 700 : 500));
@@ -18090,16 +18181,17 @@ export default function MyDoxFull({ initialView } = {}) {
         ? buildLiveCategory("diagnostic", scanSeed, scanFilters)
         : buildHubCandidates(hub, emergency, spec.type);
       const localId = Date.now();
-      const myDoctorCandidate = spec.type !== "scan" ? deterministicDoctorCandidate(myDoctorName, spec, "my_doctor") : null;
-      const preferredCandidate = spec.type !== "scan" ? deterministicDoctorCandidate(preferredName, spec, "preferred") : null;
+      const isBroadcast = routeMode === "open";
+      const myDoctorCandidate = (!isBroadcast && spec.type !== "scan") ? deterministicDoctorCandidate(myDoctorName, spec, "my_doctor") : null;
+      const preferredCandidate = (!isBroadcast && spec.type !== "scan") ? deterministicDoctorCandidate(preferredName, spec, "preferred") : null;
       // Manual-escalation flow: booking parks at the "my_doctor" stage — the
       // radar only shows the patient's saved My Doctor. StageFlowOverlay drives
       // manual escalation to Preferred and then Broadcast.
-      const initialStage = myDoctorCandidate ? "my_doctor" : preferredCandidate ? "preferred" : "broadcast";
+      const initialStage = isBroadcast ? "broadcast" : (myDoctorCandidate ? "my_doctor" : preferredCandidate ? "preferred" : "broadcast");
       const initialCandidates = initialStage === "my_doctor" ? [myDoctorCandidate]
         : initialStage === "preferred" ? [preferredCandidate]
           : candidates;
-      setReq({ id: localId, spec, emergency, area, fare, hub, routeMode: routeMode || "open", filters: scanFilters, otp: "0000", status: "broadcasting", stage: initialStage, elapsed: 0, remaining: 60, coverageKm: scanFilters.radiusKm || 4, candidates: initialCandidates, myDoctorCandidate, preferredCandidate, _broadcastPool: candidates, assignedId: null, doctorEtaHub: 0, doctorInitEta: 0, patientEtaHub: hub?.patEtaMin * 60 || 0, patInitEta: hub?.patEtaMin * 60 || 0, initiatedBy: "patient" });
+      setReq({ id: localId, dbId: existingDbId || null, spec, emergency, area, fare, hub, routeMode: routeMode || "open", filters: scanFilters, otp: "0000", status: "broadcasting", stage: initialStage, elapsed: 0, remaining: 60, coverageKm: scanFilters.radiusKm || 4, candidates: initialCandidates, myDoctorCandidate, preferredCandidate, _broadcastPool: candidates, assignedId: null, doctorEtaHub: 0, doctorInitEta: 0, patientEtaHub: hub?.patEtaMin * 60 || 0, patInitEta: hub?.patEtaMin * 60 || 0, initiatedBy: "patient" });
       // Refresh the live directory in the background — cache the fresh pool
       // for use if/when the patient manually chooses to broadcast.
       refreshLiveProviders().then(() => {
@@ -18113,20 +18205,26 @@ export default function MyDoxFull({ initialView } = {}) {
       // For doctor-type bookings (not scans), insert a real care_requests row so a
       // logged-in medico can accept it from /map and drive the "assigned" state.
       if (spec.type !== "scan") {
-        createCareRequest({
-          specialty: spec.name || spec.type || "general",
-          emergency: !!emergency,
-          notes: hub?.name ? `Hub: ${hub.name}` : null,
-          fare: typeof fare === "number" ? fare : null,
-          notification_stage: initialStage,
-          my_doctor_id: myDoctorId || null,
-          preferred_id: preferredId || null,
-        }).then(row => {
-          setReq(r => (r && r.id === localId) ? { ...r, dbId: row.id } : r);
-          logRequestEvent(row.id, "patient_booked", { stage: initialStage, note: `Patient booked ${spec.name || spec.type}${emergency ? " (emergency)" : ""}${myDoctorCandidate ? ` — notifying My Doctor ${myDoctorCandidate.name}` : ""}` });
-        }).catch(err => {
-          console.warn("createCareRequest failed — falling back to simulated flow", err?.message);
-        });
+        const fareAmt = typeof fare === "number" ? fare : (fare?.total ?? null);
+        if (existingDbId) {
+          setRequestStage(existingDbId, initialStage).catch(() => {});
+          logRequestEvent(existingDbId, "escalate_to_broadcast", { stage: initialStage, note: `Patient escalated to broadcast: ${spec.name || spec.type}` }).catch(() => {});
+        } else {
+          createCareRequest({
+            specialty: spec.name || spec.type || "general",
+            emergency: !!emergency,
+            notes: hub?.name ? `Hub: ${hub.name}` : null,
+            fare: fareAmt,
+            notification_stage: initialStage,
+            my_doctor_id: isBroadcast ? null : (myDoctorId || null),
+            preferred_id: isBroadcast ? null : (preferredId || null),
+          }).then(row => {
+            setReq(r => (r && r.id === localId) ? { ...r, dbId: row.id } : r);
+            logRequestEvent(row.id, "patient_booked", { stage: initialStage, note: `Patient booked ${spec.name || spec.type}${emergency ? " (emergency)" : ""}${myDoctorCandidate ? ` — notifying My Doctor ${myDoctorCandidate.name}` : ""}` });
+          }).catch(err => {
+            console.warn("createCareRequest failed — falling back to simulated flow", err?.message);
+          });
+        }
       }
     },
 
@@ -18201,31 +18299,36 @@ export default function MyDoxFull({ initialView } = {}) {
     cancel: (reason) => setReq(r => { if (r?.dbId) cancelCareRequest(r.dbId, reason || null).catch(() => { }); return null; }),
     reset: (reason) => setReq(r => { if (r?.dbId && r.status !== "completed") cancelCareRequest(r.dbId, reason || null).catch(() => { }); return null; }),
     directRequest: ({ provider, spec, emergency, fare, dbId, area }) => {
-      const localId = Date.now();
-      const svc = { ...(spec || {}), name: spec?.name || "Physiotherapy", type: spec?.type || "therapist" };
-      const homeHub = { id: "home", name: "Your Home", type: "home", address: (area || "Koregaon Park") + ", Pune", patEtaMin: 0 };
-      const targetCandidate = { id: "you", name: provider?.name || "Kavita Deshmukh", rating: provider?.rating || 4.8, distanceKm: 1.2, etaMin: 8, notified: true };
-      setReq({
-        id: localId,
-        dbId: dbId || null,
-        spec: svc,
-        emergency: !!emergency,
-        area: area || "Koregaon Park",
-        fare: typeof fare === "object" && fare?.total ? fare : { total: typeof fare === "number" ? fare : (svc.base || 700) },
-        hub: homeHub,
-        status: "broadcasting",
-        stage: "my_doctor",
-        elapsed: 0,
-        remaining: 600,
-        coverageKm: 4,
-        candidates: [targetCandidate],
-        assignedId: null,
-        doctorEtaHub: 0,
-        doctorInitEta: 0,
-        patientEtaHub: 0,
-        patInitEta: 0,
-        initiatedBy: "patient",
-        directProvider: provider,
+      setReq(cur => {
+        if (cur && dbId && !cur.dbId) {
+          return { ...cur, dbId };
+        }
+        const localId = Date.now();
+        const svc = { ...(spec || {}), name: spec?.name || "Physiotherapy", type: spec?.type || "therapist" };
+        const homeHub = { id: "home", name: "Your Home", type: "home", address: (area || "Koregaon Park") + ", Pune", patEtaMin: 0 };
+        const targetCandidate = { id: "you", name: provider?.name || "Rahul Nair", rating: provider?.rating || 4.7, distanceKm: 1.2, etaMin: 8, notified: true };
+        return {
+          id: localId,
+          dbId: dbId || null,
+          spec: svc,
+          emergency: !!emergency,
+          area: area || "Koregaon Park",
+          fare: typeof fare === "object" && fare?.total ? fare : { total: typeof fare === "number" ? fare : (svc.base || 700) },
+          hub: homeHub,
+          status: "broadcasting",
+          stage: "my_doctor",
+          elapsed: 0,
+          remaining: 600,
+          coverageKm: 4,
+          candidates: [targetCandidate],
+          assignedId: null,
+          doctorEtaHub: 0,
+          doctorInitEta: 0,
+          patientEtaHub: 0,
+          patInitEta: 0,
+          initiatedBy: "patient",
+          directProvider: provider,
+        };
       });
     },
     setReqState: (data) => setReq(data),
@@ -18248,7 +18351,7 @@ export default function MyDoxFull({ initialView } = {}) {
       setHomeVisitBooking({ initialProviderId: namedId || (requestedNamed ? "unavailable-provider" : undefined), initialMode: args.spec.scheduled ? "later" : "now" });
       return;
     }
-    if (args?.hub?.type === "home") {
+    if (args?.hub?.type === "home" && !args?.bypassConsent) {
       setHomeConsentGate({
         run: () => {
           pendingConsentRef.current = true;
