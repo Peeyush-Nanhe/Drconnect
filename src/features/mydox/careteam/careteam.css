@@ -1,0 +1,212 @@
+/* ===========================================================================
+   Care staff shell — nurse, technician, physiotherapist, care physician.
+
+   This is deliberately not the doctor's console. A doctor sits at a desk with
+   a patient list; care staff stand in a corridor holding a phone, deciding in
+   seconds whether to take a job. So the screen is built around two things:
+   whether you are on duty, and what is being offered to you right now.
+
+   Duty state is the page, not a switch. Off duty, the bar is large and says
+   what to do. On duty, it shrinks to a live strip and gets out of the way.
+
+   Everything is quiet except the offer card, which is the only element with a
+   heavy border and its own colour. Numbers are tabular so money and distances
+   line up when they stack.
+
+   390px first. Every tap target is at least 44px.
+   =========================================================================== */
+
+.ct {
+  --ct-ink: #0F172A;
+  --ct-muted: #64748B;
+  --ct-hairline: #E2E8F0;
+  --ct-page: #F8FAFC;
+
+  --ct-duty: #047857;         /* on duty */
+  --ct-duty-wash: #ECFDF5;
+  --ct-off: #475569;          /* off duty */
+  --ct-off-wash: #F1F5F9;
+
+  --ct-offer: #B45309;        /* an offer waiting for you */
+  --ct-offer-wash: #FFFBEB;
+  --ct-offer-edge: #FCD34D;
+
+  --ct-urgent: #B91C1C;
+  --ct-urgent-wash: #FEF2F2;
+  --ct-urgent-edge: #FCA5A5;
+
+  font-family: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+  color: var(--ct-ink);
+  background: var(--ct-page);
+  min-height: 100%;
+  padding: 14px 14px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 480px;
+  margin: 0 auto;
+}
+
+/* --- who you are ---------------------------------------------------------- */
+.ct-id { display: flex; align-items: baseline; gap: 8px; }
+.ct-id h1 { margin: 0; font-size: 19px; font-weight: 800; letter-spacing: -0.01em; }
+.ct-id p { margin: 0; font-size: 12px; color: var(--ct-muted); flex: 1; }
+.ct-id button {
+  background: none; border: none; color: var(--ct-muted);
+  font: inherit; font-size: 12px; font-weight: 600;
+  padding: 8px 4px; cursor: pointer; min-height: 44px;
+}
+.ct-id button:hover { color: var(--ct-ink); }
+
+/* --- duty state ----------------------------------------------------------- */
+.ct-duty {
+  border-radius: 16px; padding: 14px 16px;
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+}
+.ct-duty-off {
+  background: var(--ct-off-wash);
+  border: 1px solid var(--ct-hairline);
+  flex-direction: column; align-items: stretch; text-align: left;
+}
+.ct-duty-on {
+  background: var(--ct-duty-wash);
+  border: 1px solid #A7F3D0;
+  padding: 10px 14px;
+}
+.ct-duty h2 { margin: 0; font-size: 15px; font-weight: 700; }
+.ct-duty p { margin: 2px 0 0; font-size: 12.5px; color: var(--ct-muted); line-height: 1.45; }
+.ct-duty-on h2 { font-size: 13.5px; color: var(--ct-duty); }
+.ct-duty-dot {
+  width: 9px; height: 9px; border-radius: 99px;
+  background: var(--ct-duty); flex: none;
+}
+.ct-duty-on .ct-duty-body { flex: 1; min-width: 0; }
+
+.ct-duty button {
+  font: inherit; font-weight: 700; font-size: 14px;
+  border-radius: 12px; border: none; cursor: pointer;
+  min-height: 46px; padding: 0 18px;
+}
+.ct-duty-off button { background: var(--ct-duty); color: #fff; width: 100%; margin-top: 12px; }
+.ct-duty-on button {
+  background: transparent; color: var(--ct-off);
+  border: 1px solid #A7F3D0; min-height: 40px; font-size: 12.5px; padding: 0 12px;
+}
+.ct-duty button:disabled { opacity: .55; cursor: wait; }
+
+/* --- the numbers ---------------------------------------------------------- */
+.ct-stats {
+  display: flex; gap: 20px; padding: 2px 4px;
+  font-variant-numeric: tabular-nums;
+}
+.ct-stats div { min-width: 0; }
+.ct-stats b { display: block; font-size: 20px; font-weight: 800; letter-spacing: -0.02em; }
+.ct-stats span { font-size: 11.5px; color: var(--ct-muted); }
+
+/* --- alerts --------------------------------------------------------------- */
+.ct-alert {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--ct-offer-wash); border: 1px solid var(--ct-offer-edge);
+  border-radius: 12px; padding: 10px 12px;
+  font-size: 13px; font-weight: 700; color: #92400E;
+}
+.ct-alert-urgent {
+  background: var(--ct-urgent-wash); border-color: var(--ct-urgent-edge); color: var(--ct-urgent);
+}
+
+/* --- the offer card: the one loud thing ----------------------------------- */
+.ct-offer {
+  border: 2px solid var(--ct-offer-edge);
+  background: var(--ct-offer-wash);
+  border-radius: 16px; padding: 14px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.ct-offer-urgent { border-color: var(--ct-urgent-edge); background: var(--ct-urgent-wash); }
+.ct-offer-kind {
+  font-size: 11px; font-weight: 800; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--ct-offer);
+}
+.ct-offer-urgent .ct-offer-kind { color: var(--ct-urgent); }
+.ct-offer h3 { margin: 0; font-size: 16px; font-weight: 800; letter-spacing: -0.01em; }
+.ct-offer-facts {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.ct-offer-facts span {
+  background: #fff; border: 1px solid var(--ct-hairline);
+  border-radius: 99px; padding: 4px 10px; font-size: 12px; font-weight: 600;
+}
+.ct-offer-deadline { font-size: 12px; color: var(--ct-muted); font-variant-numeric: tabular-nums; }
+.ct-offer-private { font-size: 12px; color: var(--ct-muted); line-height: 1.45; }
+.ct-offer-actions { display: flex; gap: 8px; }
+.ct-offer-actions button {
+  font: inherit; font-weight: 700; font-size: 14px;
+  border-radius: 12px; min-height: 46px; cursor: pointer; border: none; flex: 1;
+}
+.ct-accept { background: var(--ct-duty); color: #fff; }
+.ct-decline { background: #fff; color: var(--ct-off); border: 1px solid var(--ct-hairline) !important; }
+.ct-offer-actions button:disabled { opacity: .55; cursor: wait; }
+
+/* --- everything else is quiet --------------------------------------------- */
+.ct-panel {
+  background: #fff; border: 1px solid var(--ct-hairline);
+  border-radius: 14px; padding: 13px;
+}
+.ct-panel-active { border-color: #A7F3D0; background: #F7FEF9; }
+.ct-panel h3 { margin: 0 0 6px; font-size: 14px; font-weight: 700; }
+
+.ct-tabs {
+  display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none;
+  border-bottom: 1px solid var(--ct-hairline); margin-top: 4px;
+}
+.ct-tabs::-webkit-scrollbar { display: none; }
+.ct-tabs button {
+  font: inherit; font-size: 13px; font-weight: 600; color: var(--ct-muted);
+  background: none; border: none; border-bottom: 2px solid transparent;
+  padding: 10px 12px; min-height: 44px; white-space: nowrap; cursor: pointer;
+}
+.ct-tabs button[aria-selected="true"] { color: var(--ct-ink); border-bottom-color: var(--ct-duty); }
+.ct-tabs em {
+  font-style: normal; font-weight: 800; color: var(--ct-offer);
+  font-variant-numeric: tabular-nums;
+}
+
+.ct-empty {
+  padding: 26px 16px; text-align: center;
+  font-size: 13px; color: var(--ct-muted); line-height: 1.5;
+}
+
+/* --- profile completeness ------------------------------------------------- */
+.ct-meter { display: flex; flex-direction: column; gap: 6px; }
+.ct-meter-head {
+  display: flex; justify-content: space-between; align-items: baseline;
+  font-size: 12.5px; font-variant-numeric: tabular-nums;
+}
+.ct-meter-head b { font-weight: 700; }
+.ct-meter-head span { color: var(--ct-muted); }
+.ct-meter-track { height: 6px; border-radius: 99px; background: var(--ct-off-wash); overflow: hidden; }
+.ct-meter-fill { height: 100%; background: var(--ct-duty); border-radius: 99px; }
+
+/* --- device actions ------------------------------------------------------- */
+.ct-device { display: flex; gap: 8px; }
+.ct-device button {
+  flex: 1; font: inherit; font-size: 12.5px; font-weight: 600;
+  background: #fff; color: var(--ct-off);
+  border: 1px solid var(--ct-hairline); border-radius: 12px;
+  min-height: 44px; cursor: pointer; padding: 0 10px;
+}
+.ct-device button[data-on="true"] { border-color: #A7F3D0; background: var(--ct-duty-wash); color: var(--ct-duty); }
+
+.ct-error {
+  background: var(--ct-urgent-wash); border: 1px solid var(--ct-urgent-edge);
+  border-radius: 12px; padding: 10px 12px; font-size: 13px; color: var(--ct-urgent);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .ct-duty-dot { animation: ct-pulse 2.4s ease-in-out infinite; }
+}
+@keyframes ct-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+
+.ct button:focus-visible, .ct [tabindex]:focus-visible {
+  outline: 2px solid var(--ct-duty); outline-offset: 2px;
+}

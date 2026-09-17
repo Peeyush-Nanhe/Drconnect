@@ -38,15 +38,15 @@ function MapPage() {
     setBusy(true);
     setMsg(null);
     try {
-      const coords = await new Promise<GeolocationPosition | null>((resolve) => {
-        if (!("geolocation" in navigator)) return resolve(null);
-        navigator.geolocation.getCurrentPosition(resolve, () => resolve(null), { timeout: 5000 });
-      });
+      // Hardcoded to Koregaon Park for testing
+      const lat = 18.5362;
+      const lng = 73.8930;
+
       await createCareRequest({
         specialty: spec,
         emergency,
-        lat: coords?.coords.latitude ?? null,
-        lng: coords?.coords.longitude ?? null,
+        lat,
+        lng,
       } as never);
       setMsg("Broadcast sent — providers can see it now.");
     } catch (e: unknown) {

@@ -9,6 +9,7 @@ import {
   type ChatMessage
 } from "@/features/mydox/backend";
 import { getTodayVisitForEngagement, issueArrivalCode } from "./nursing/nursing-client";
+import { getMyTechnicianVisits } from "@/lib/technician-patient.functions";
 import { SlotPickerCalendarStandalone } from "./SlotPickerCalendar";
 import { TwoWayChatModal } from "@/features/mydox/TwoWayChatModal";
 import type { ChatReference } from "@/features/mydox/post-consultation-chat/types";
@@ -197,7 +198,7 @@ export default function MyBookingsOverlay({
     let mounted = true;
     (async () => {
       setLoading(true);
-      const [cr, cp, pr, sn, bb, sb, mo, da, ne, pv, sc, comm] = await Promise.all([
+      const [cr, cp, pr, sn, bb, sb, mo, da, ne, pv, sc, comm, tv] = await Promise.all([
         supabase.from("care_requests").select("id, specialty, status, notes, created_at, visit_type, accepted_by, rating_provider, otp").eq("patient_id", uid).order("created_at", { ascending: false }).limit(200),
         supabase.from("care_program_bookings").select("id, program, tier, summary, status, created_at").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
         supabase.from("prosthetics_bookings").select("id, category, subtype, provider_name, status, created_at").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
@@ -210,6 +211,7 @@ export default function MyBookingsOverlay({
         supabase.from("physio_visits").select("id, therapy_type, area, city, session_number, status, created_at, therapist_id").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
         supabase.from("specialty_care_bookings").select("id, specialty_label, concern, mode, provider_name, status, created_at").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
         supabase.from("community_requests").select("id, type, notes, status, created_at").eq("requester_id", uid).order("created_at", { ascending: false }).limit(100),
+        getMyTechnicianVisits({}).catch(() => [] as any[]),
       ]);
 
       const rows: Item[] = [];
@@ -352,6 +354,20 @@ export default function MyBookingsOverlay({
         rows.push({ id: `mo:${r.id}`, module: "Medicines", title: `Medicine delivery${Array.isArray(r.items) && r.items.length ? ` · ${r.items.length} item${r.items.length !== 1 ? "s" : ""}` : r.prescription_attached ? " · prescription" : ""}`, subtitle: `${r.pharmacy_name} · ${r.delivery_speed}${r.total ? ` · ₹${Math.round(Number(r.total)).toLocaleString("en-IN")}` : ""}`, status: r.status, createdAt: r.created_at });
       }
 
+      for (const r of tv || []) {
+        const itemId = `tv:${r.id}`;
+        rows.push({
+          id: itemId,
+          module: "Lab / Scan",
+          title: `${r.test_type.toUpperCase()} Visit`,
+          subtitle: `${r.area}, ${r.city}`,
+          status: r.status,
+          createdAt: r.created_at,
+          doctorName: "Technician",
+          raw: r,
+        });
+      }
+
       rows.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
       if (mounted) {
         setItems(rows);
@@ -443,7 +459,7 @@ export default function MyBookingsOverlay({
                       const docName = it.doctorName || (/nurse/i.test(it.title) ? "Nurse Specialist" : /physio/i.test(it.title) ? "Dr. Rajesh K (PT)" : "Dr. Anita Rao");
                       const userRating = reviewsMap[it.id] ?? (readReview(it.id, docName)?.stars ?? null);
                       const isConsultationOver = ["completed", "delivered", "closed", "finished"].includes((it.status || "").toLowerCase());
-                      const showOtpOption = tab !== "previous" && !isConsultationOver && (it.id.startsWith("da:") || it.id.startsWith("cr:") || it.id.startsWith("ne:"));
+                      const showOtpOption = tab !== "previous" && !isConsultationOver && (it.id.startsWith("da:") || it.id.startsWith("cr:") || it.id.startsWith("ne:") || it.id.startsWith("tv:"));
 
                       return (
                         <li

@@ -16,8 +16,10 @@ import { Route as DesignPreviewRouteImport } from './routes/design-preview'
 import { Route as HomeVisitsRouteImport } from './routes/home-visits'
 import { Route as MapRouteImport } from './routes/map'
 import { Route as McpRouteImport } from './routes/mcp'
+import { Route as NurseRouteImport } from './routes/nurse'
 import { Route as StitchPreviewRouteImport } from './routes/stitch-preview'
 import { Route as SurgeryRouteImport } from './routes/surgery'
+import { Route as TechnicianRouteImport } from './routes/technician'
 import { Route as Char91DotmcpChar93ListToolsRouteImport } from './routes/[.mcp]/list-tools'
 import { Route as Char91DotwellKnownChar93OauthProtectedResourceRouteImport } from './routes/[.well-known]/oauth-protected-resource'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
@@ -79,6 +81,11 @@ const McpRoute = McpRouteImport.update({
   path: '/mcp',
   getParentRoute: () => rootRouteImport,
 } as any)
+const NurseRoute = NurseRouteImport.update({
+  id: '/nurse',
+  path: '/nurse',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const StitchPreviewRoute = StitchPreviewRouteImport.update({
   id: '/stitch-preview',
   path: '/stitch-preview',
@@ -87,6 +94,11 @@ const StitchPreviewRoute = StitchPreviewRouteImport.update({
 const SurgeryRoute = SurgeryRouteImport.update({
   id: '/surgery',
   path: '/surgery',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TechnicianRoute = TechnicianRouteImport.update({
+  id: '/technician',
+  path: '/technician',
   getParentRoute: () => rootRouteImport,
 } as any)
 const Char91DotmcpChar93ListToolsRoute =
@@ -227,8 +239,10 @@ export interface FileRoutesByFullPath {
   '/home-visits': typeof HomeVisitsRoute
   '/map': typeof MapRoute
   '/mcp': typeof McpRoute
+  '/nurse': typeof NurseRoute
   '/stitch-preview': typeof StitchPreviewRoute
   '/surgery': typeof SurgeryRoute
+  '/technician': typeof TechnicianRoute
   '/.mcp/list-tools': typeof Char91DotmcpChar93ListToolsRoute
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/admin/credentials': typeof AdminCredentialsRoute
@@ -263,8 +277,10 @@ export interface FileRoutesByTo {
   '/home-visits': typeof HomeVisitsRoute
   '/map': typeof MapRoute
   '/mcp': typeof McpRoute
+  '/nurse': typeof NurseRoute
   '/stitch-preview': typeof StitchPreviewRoute
   '/surgery': typeof SurgeryRoute
+  '/technician': typeof TechnicianRoute
   '/.mcp/list-tools': typeof Char91DotmcpChar93ListToolsRoute
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/admin/credentials': typeof AdminCredentialsRoute
@@ -300,8 +316,10 @@ export interface FileRoutesById {
   '/home-visits': typeof HomeVisitsRoute
   '/map': typeof MapRoute
   '/mcp': typeof McpRoute
+  '/nurse': typeof NurseRoute
   '/stitch-preview': typeof StitchPreviewRoute
   '/surgery': typeof SurgeryRoute
+  '/technician': typeof TechnicianRoute
   '/.mcp/list-tools': typeof Char91DotmcpChar93ListToolsRoute
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/admin/credentials': typeof AdminCredentialsRoute
@@ -338,8 +356,10 @@ export interface FileRouteTypes {
     | '/home-visits'
     | '/map'
     | '/mcp'
+    | '/nurse'
     | '/stitch-preview'
     | '/surgery'
+    | '/technician'
     | '/.mcp/list-tools'
     | '/.well-known/oauth-protected-resource'
     | '/admin/credentials'
@@ -374,8 +394,10 @@ export interface FileRouteTypes {
     | '/home-visits'
     | '/map'
     | '/mcp'
+    | '/nurse'
     | '/stitch-preview'
     | '/surgery'
+    | '/technician'
     | '/.mcp/list-tools'
     | '/.well-known/oauth-protected-resource'
     | '/admin/credentials'
@@ -410,8 +432,10 @@ export interface FileRouteTypes {
     | '/home-visits'
     | '/map'
     | '/mcp'
+    | '/nurse'
     | '/stitch-preview'
     | '/surgery'
+    | '/technician'
     | '/.mcp/list-tools'
     | '/.well-known/oauth-protected-resource'
     | '/admin/credentials'
@@ -447,8 +471,10 @@ export interface RootRouteChildren {
   HomeVisitsRoute: typeof HomeVisitsRoute
   MapRoute: typeof MapRoute
   McpRoute: typeof McpRoute
+  NurseRoute: typeof NurseRoute
   StitchPreviewRoute: typeof StitchPreviewRoute
   SurgeryRoute: typeof SurgeryRoute
+  TechnicianRoute: typeof TechnicianRoute
   Char91DotmcpChar93ListToolsRoute: typeof Char91DotmcpChar93ListToolsRoute
   Char91DotwellKnownChar93OauthProtectedResourceRoute: typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   AdminCredentialsRoute: typeof AdminCredentialsRoute
@@ -527,6 +553,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof McpRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/nurse': {
+      id: '/nurse'
+      path: '/nurse'
+      fullPath: '/nurse'
+      preLoaderRoute: typeof NurseRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/stitch-preview': {
       id: '/stitch-preview'
       path: '/stitch-preview'
@@ -539,6 +572,13 @@ declare module '@tanstack/react-router' {
       path: '/surgery'
       fullPath: '/surgery'
       preLoaderRoute: typeof SurgeryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/technician': {
+      id: '/technician'
+      path: '/technician'
+      fullPath: '/technician'
+      preLoaderRoute: typeof TechnicianRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/.mcp/list-tools': {
@@ -727,8 +767,10 @@ const rootRouteChildren: RootRouteChildren = {
   HomeVisitsRoute: HomeVisitsRoute,
   MapRoute: MapRoute,
   McpRoute: McpRoute,
+  NurseRoute: NurseRoute,
   StitchPreviewRoute: StitchPreviewRoute,
   SurgeryRoute: SurgeryRoute,
+  TechnicianRoute: TechnicianRoute,
   Char91DotmcpChar93ListToolsRoute: Char91DotmcpChar93ListToolsRoute,
   Char91DotwellKnownChar93OauthProtectedResourceRoute:
     Char91DotwellKnownChar93OauthProtectedResourceRoute,
