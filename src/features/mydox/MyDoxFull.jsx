@@ -15745,7 +15745,10 @@ function PatientApp({ req, setReq, actions, scanDispatch, scanDispatchActions, a
           onConfirmed={() => {
             const dr = directReq;
             setDirectReq(null);
-            if (req?.status === "converging" || req?.status === "assigned" || req?.status === "at_hub") {
+            if (dr?.emergency || dr?.isUrgent || dr?.dbId || req?.status === "converging" || req?.status === "assigned" || req?.status === "at_hub") {
+              if (req && req.status !== "converging" && req.status !== "assigned" && req.status !== "at_hub") {
+                setReq(r => r ? { ...r, status: "converging", paid: true } : r);
+              }
               return;
             }
             if (actions && actions.clearReq) actions.clearReq();
@@ -16707,21 +16710,27 @@ function EmergencyPreferredPromptModal({ myName, preferredName, spec, onTryPrefe
 
 /* Direct request to one provider — they accept, else fall back to a full broadcast */
 function DirectRequestOverlay({ provider, spec, who, emergency, durationSec, fallbackLabel, dbId, reqStatus, onConfirmed, onFallback, onClose }) {
-  const [phase, setPhase] = useState("contacting"); // contacting → accepted
   const isDoctorEmergency = emergency && (spec?.type === "doctor" || !spec?.type);
   const [left, setLeft] = useState(durationSec || (isDoctorEmergency ? 60 : 600)); // emergency doctor = 1-minute window, else 10 minutes
   const fallbackCalledRef = useRef(false);
+  const acceptedRef = useRef(false);
+
+  const handleAccepted = useCallback(() => {
+    if (acceptedRef.current) return;
+    acceptedRef.current = true;
+    onConfirmed && onConfirmed();
+  }, [onConfirmed]);
 
   // Synchronize when the provider accepts in-memory:
   useEffect(() => {
     if (reqStatus === "assigned" || reqStatus === "accepted" || reqStatus === "completed" || reqStatus === "converging") {
-      setPhase("accepted");
+      handleAccepted();
     }
-  }, [reqStatus]);
+  }, [reqStatus, handleAccepted]);
 
   // Live Realtime subscription to care_requests row if dbId exists:
   useEffect(() => {
-    if (!dbId || phase !== "contacting") return;
+    if (!dbId) return;
     const ch = supabase
       .channel(`care_req_direct_${dbId}_${Math.random().toString(36).slice(2)}`)
       .on(
@@ -16729,7 +16738,7 @@ function DirectRequestOverlay({ provider, spec, who, emergency, durationSec, fal
         { event: "UPDATE", schema: "public", table: "care_requests", filter: `id=eq.${dbId}` },
         (payload) => {
           if (payload.new && (payload.new.status === "accepted" || payload.new.status === "assigned" || payload.new.status === "completed")) {
-            setPhase("accepted");
+            handleAccepted();
           }
         }
       )
@@ -16737,36 +16746,33 @@ function DirectRequestOverlay({ provider, spec, who, emergency, durationSec, fal
     return () => {
       supabase.removeChannel(ch);
     };
-  }, [dbId, phase]);
+  }, [dbId, handleAccepted]);
 
   useEffect(() => { fallbackCalledRef.current = false; }, [provider?.name, spec?.name, emergency]);
-  useEffect(() => { if (phase !== "contacting") return; const iv = setInterval(() => setLeft(s => Math.max(0, s - 1)), 1000); return () => clearInterval(iv); }, [phase]);
-  useEffect(() => { if (phase !== "contacting" || left > 0 || fallbackCalledRef.current) return; fallbackCalledRef.current = true; onFallback && onFallback(); }, [phase, left, onFallback]);
+  useEffect(() => { const iv = setInterval(() => setLeft(s => Math.max(0, s - 1)), 1000); return () => clearInterval(iv); }, []);
+  useEffect(() => { if (left > 0 || fallbackCalledRef.current) return; fallbackCalledRef.current = true; onFallback && onFallback(); }, [left, onFallback]);
   const mmss = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
   const fbLabel = fallbackLabel || (isDoctorEmergency ? "Not accepting — try Preferred instead →" : "Skip the wait · broadcast to all now →");
-  return (
-    <div style={{ position: "absolute", inset: 0, zIndex: 135, background: "rgba(15,23,42,.6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
-      <div style={{ width: "100%", maxWidth: 300, background: "#fff", borderRadius: 22, padding: "26px 22px", textAlign: "center", boxShadow: "0 24px 60px rgba(0,0,0,.3)" }}>
-        {phase === "contacting" ? (
-          <>
-            <div style={{ position: "relative", width: 84, height: 84, margin: "0 auto 16px", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              {[1, 2].map(n => (<div key={n} style={{ position: "absolute", inset: 0, borderRadius: "50%", border: `2px solid ${(provider?.color || "#2563EB")}`, animation: `voicePulse 1.6s ${(n - 1) * 0.4}s ease-out infinite` }} />))}
-              <Initials name={provider?.name} color={provider?.color} />
-            </div>
-            <p style={{ margin: 0, fontWeight: 900, color: C.ink, fontSize: 17 }}>Notifying {provider?.name || "your doctor"}…</p>
-            <p style={{ margin: "6px 0 0", color: C.sub, fontSize: 12, lineHeight: 1.4 }}>{isDoctorEmergency ? "Emergency request sent only to them. If no response in 60s, we'll ask what to do next." : "Your favourite gets the request first. They can accept or decline."}</p>
-            <div style={{ margin: "14px 0 0", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, color: "#DC2626", fontWeight: 800, fontSize: 13 }}><Clock size={14} /> {isDoctorEmergency ? `Ask next step in ${mmss}` : `Broadcasts to all in ${mmss}`}</div>
-            <button onClick={onFallback} style={{ marginTop: 14, width: "100%", background: C.canvas, color: C.sub, border: "none", borderRadius: 12, padding: "11px", fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>{fbLabel}</button>
-          </>
 
-        ) : (
-          <>
-            <div style={{ width: 64, height: 64, borderRadius: "50%", background: "linear-gradient(135deg,#0C9668,#059669)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}><Check size={34} color="#fff" strokeWidth={3} /></div>
-            <p style={{ margin: 0, fontWeight: 900, color: C.ink, fontSize: 19 }}>{provider?.name} accepted</p>
-            <p style={{ margin: "6px 0 0", color: C.sub, fontSize: 12.5 }}>Your favourite took the job — confirmed.</p>
-            <button onClick={onConfirmed} style={{ marginTop: 18, width: "100%", background: "linear-gradient(135deg,#0C9668,#059669)", color: "#fff", border: "none", borderRadius: 14, padding: "13px", fontWeight: 800, fontSize: 14.5, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Done</button>
-          </>
-        )}
+  const pName = provider?.name || "Rahul Nair";
+  const initials = (pName || "?").split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase();
+
+  return (
+    <div style={{ position: "absolute", inset: 0, zIndex: 135, background: "rgba(15,23,42,.6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <div style={{ width: "100%", maxWidth: 310, background: "#fff", borderRadius: 24, padding: "28px 22px 24px", textAlign: "center", boxShadow: "0 24px 60px rgba(0,0,0,.3)" }}>
+        <div style={{ position: "relative", width: 140, height: 140, margin: "0 auto 14px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          {[1, 2].map(n => (
+            <div key={n} style={{ position: "absolute", width: 56 + n * 36, height: 56 + n * 36, borderRadius: "50%", border: "2px solid #BAE6FD", opacity: 0.85 - n * 0.25, pointerEvents: "none" }} />
+          ))}
+          <div style={{ position: "absolute", width: 130, height: 130, borderRadius: "50%", border: "2.5px solid #7DD3FC", animation: "voicePulse 1.8s ease-out infinite" }} />
+          <div style={{ width: 54, height: 54, borderRadius: "50%", background: "#E0F2FE", color: "#0284C7", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 18, zIndex: 2, position: "relative" }}>
+            {initials}
+          </div>
+        </div>
+        <p style={{ margin: "0 0 6px", fontWeight: 900, color: C.ink, fontSize: 18.5 }}>Notifying {pName}…</p>
+        <p style={{ margin: "0 0 16px", color: C.sub, fontSize: 12.8, lineHeight: 1.45 }}>{isDoctorEmergency ? "Emergency request sent only to them. If no response in 60s, we'll ask what to do next." : "Your favourite gets the request first. They can accept or decline."}</p>
+        <div style={{ margin: "0 0 16px", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, color: "#DC2626", fontWeight: 800, fontSize: 13.5 }}><Clock size={15} /> {isDoctorEmergency ? `Ask next step in ${mmss}` : `Broadcasts to all in ${mmss}`}</div>
+        <button onClick={onFallback} style={{ width: "100%", background: "#EEF3F0", color: "#1E293B", border: "none", borderRadius: 16, padding: "13px 16px", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>{fbLabel}</button>
       </div>
     </div>
   );
