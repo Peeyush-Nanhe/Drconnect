@@ -62,7 +62,7 @@ const mapVisit = (r: any): TherapistVisit => ({
 });
 
 const VISIT_COLUMNS =
-  "id, patient_name, therapy_type, area, city, address, scheduled_at, duration_min, session_number, status, urgency, checked_in_at, checked_out_at, fee, notes, created_at";
+  "id, patient_name, therapy_type, area, city, address, scheduled_at, duration_min, session_number, status, urgency, confirmed_at, checked_in_at, checked_out_at, fee, notes, created_at";
 
 const STAGES = ["confirmed", "en_route", "in_progress", "completed", "no_show", "cancelled"] as const;
 
@@ -199,7 +199,9 @@ export const setPhysioVisitStage = createServerFn({ method: "POST" })
         status: data.stage,
         updated_at: new Date().toISOString(),
       };
-      if (data.stage === "in_progress") {
+      if (data.stage === "confirmed") {
+        updates.confirmed_at = new Date().toISOString();
+      } else if (data.stage === "in_progress") {
         updates.checked_in_at = new Date().toISOString();
       } else if (data.stage === "completed") {
         updates.checked_out_at = new Date().toISOString();

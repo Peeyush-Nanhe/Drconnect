@@ -240,6 +240,22 @@ test("Phase 3 · partner assigns verified+active therapist → status=assigned",
   assert.equal(r.therapist_id, IDS.therapist1);
 });
 
+test("Phase 3 · set_physio_visit_stage confirmed sets status and confirmed_at", async () => {
+  const res = await actor(IDS.partnerUser, `
+    select public.set_physio_visit_stage($1, 'confirmed', 'Confirmed by partner/therapist') as result
+  `, [assignedVisitId]);
+  assert.equal(res.rows[0].result.ok, true);
+  assert.equal(res.rows[0].result.stage, "confirmed");
+
+  const r = (await actor(null,
+    "select status, confirmed_at, notes from public.physio_visits where id=$1",
+    [assignedVisitId], "service_role"
+  )).rows[0];
+  assert.equal(r.status, "confirmed");
+  assert.ok(r.confirmed_at, "confirmed_at must be set");
+  assert.equal(r.notes, "Confirmed by partner/therapist");
+});
+
 test("Phase 3 · en_route — checked_in_at still null", async () => {
   await actor(IDS.partnerUser,
     "update public.physio_visits set status='en_route' where id=$1",
