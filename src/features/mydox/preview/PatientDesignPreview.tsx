@@ -34,7 +34,8 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
-import { PATIENT_SERVICE_GROUPS } from "../patient-services";
+import { PATIENT_SERVICE_GROUPS, HEALTH_CARE_SERVICES } from "../patient-services";
+import { HealthCareServicesBanner } from "../PatientDashboard";
 import "./patient-design-preview.css";
 
 // This review route is entirely local state: no Auth, API, storage, payments or bookings.
@@ -793,6 +794,7 @@ export default function PatientDesignPreview() {
                   onChange={(e) => setQuery(e.target.value)}
                 />
               </label>
+              <HealthCareServicesBanner onAction={(id) => openService(id, HEALTH_CARE_SERVICES.find((h) => h.id === id)?.label || id)} />
               <div className="mp-groups">
                 {filteredGroups.map((g) => {
                   const open = Boolean(query) || group === g.id;

@@ -3,6 +3,7 @@ import { useState } from "react";
 import { ShieldCheck } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import type { AppRole } from "@/features/mydox/backend";
+import { DEMO_ACCOUNTS } from "@/features/medconnect/demo-accounts";
 
 export const Route = createFileRoute("/auth")({
   validateSearch: (s: Record<string, unknown>) => ({
@@ -44,17 +45,20 @@ const KIND_TO_ROLE: Record<SignupKind, AppRole> = {
 // "view" is what we store in localStorage.mc_view and drives the dashboard shown.
 const SUBTYPES: Record<"provider" | "facility", { view: string; label: string; desc: string }[]> = {
   provider: [
-    { view: "ambulance", label: "Ambulance",   desc: "Emergency transport crew" },
-    { view: "seva",      label: "Seva", desc: "Charitable and community care" },
+    { view: "nurse", label: "Nurse", desc: "Home nursing & hospital duty shifts" },
+    { view: "technician", label: "Diagnostic Technician", desc: "Sample collection & diagnostics" },
+    { view: "physio_staff", label: "Physiotherapist", desc: "Rehabilitation & physio sessions" },
+    { view: "ambulance", label: "Ambulance", desc: "Emergency transport crew" },
+    { view: "seva", label: "Seva", desc: "Charitable and community care" },
     { view: "coordinator", label: "Health Coordinator", desc: "Patient cases, referrals and care navigation" },
     { view: "care_physician", label: "Care Physician / RMO", desc: "Hospital shifts, locum and full-time roles" },
-    { view: "medico",    label: "Other medico staff", desc: "Nurse, technician, allied" },
+    { view: "medico", label: "Other medico staff", desc: "Doctor, clinic, allied" },
   ],
   facility: [
-    { view: "hub",        label: "Hospital / Hub",  desc: "Beds, admissions, ER" },
+    { view: "hub", label: "Hospital / Hub", desc: "Beds, admissions, ER" },
     { view: "diagnostic", label: "Diagnostic centre", desc: "Imaging & scans" },
-    { view: "pharmacy",   label: "Pharmacy",        desc: "Medicines & fulfilment" },
-    { view: "labs",       label: "Lab",             desc: "Pathology & samples" },
+    { view: "pharmacy", label: "Pharmacy", desc: "Medicines & fulfilment" },
+    { view: "labs", label: "Lab", desc: "Pathology & samples" },
   ],
 };
 
@@ -68,16 +72,26 @@ interface DemoAccountItem {
 }
 
 const DEMO_BUTTONS: DemoAccountItem[] = [
-  { label: "Patient 1", email: "patient1@demo.med", defaultPass: "demo123456", testNote: "One-Click Demo Patient Access" },
-  { label: "Patient 2", email: "patient2@demo.med", defaultPass: "demo123456" },
-  { label: "Doctor", email: "medico1@demo.med", defaultPass: "demo123456" },
-  { label: "Nurse (Demo)", email: "medico2@demo.med", defaultPass: "demo123456" },
-  { label: "Technician (Demo)", email: "labs1@demo.med", defaultPass: "demo123456" },
-  { label: "Hub 1", email: "hub1@demo.med", defaultPass: "demo123456" },
-  { label: "Scan 1", email: "scan1@demo.med", defaultPass: "demo123456" },
-  { label: "Ambulance 1", email: "ambulance1@demo.med", defaultPass: "demo123456" },
-  { label: "Pharmacy 1", email: "pharmacy1@demo.med", defaultPass: "demo123456" },
-  { label: "Seva 1", email: "seva1@demo.med", defaultPass: "demo123456" },
+  { label: "Patient 1", email: "patient1@demo.med", defaultPass: "CareDemo!2026", testNote: "One-Click Demo Patient Access" },
+  { label: "Patient 2", email: "patient2@demo.med", defaultPass: "CareDemo!2026" },
+  { label: "Medico 1 (Dr. Anita Rao - Cardiology)", email: "medico1@demo.med", defaultPass: "CareDemo!2026" },
+  { label: "Medico 2 (Dr. Vikram Iyer - Neurology)", email: "medico2@demo.med", defaultPass: "CareDemo!2026" },
+  { label: "Dr. Rahul Nair", email: "rahul.nair@demo.med", defaultPass: "CareDemo!2026" },
+  { label: "Nurse (Sister Asha)", email: "nurse1@demo.med", defaultPass: "CareDemo!2026" },
+  { label: "Technician (Rohit Kale)", email: "tech1@demo.med", defaultPass: "CareDemo!2026" },
+  { label: "Physio (Dr. Kavita Deshmukh - Physiotherapy)", email: "physio1@demo.med", defaultPass: "CareDemo!2026" },
+  { label: "Hub 1", email: "hub1@demo.med", defaultPass: "CareDemo!2026" },
+  { label: "Hub 2", email: "hub2@demo.med", defaultPass: "CareDemo!2026" },
+  { label: "Scan 1", email: "scan1@demo.med", defaultPass: "CareDemo!2026" },
+  { label: "Scan 2", email: "scan2@demo.med", defaultPass: "CareDemo!2026" },
+  { label: "Ambulance 1", email: "ambulance1@demo.med", defaultPass: "CareDemo!2026" },
+  { label: "Ambulance 2", email: "ambulance2@demo.med", defaultPass: "CareDemo!2026" },
+  { label: "Pharmacy 1", email: "pharmacy1@demo.med", defaultPass: "CareDemo!2026" },
+  { label: "Pharmacy 2", email: "pharmacy2@demo.med", defaultPass: "CareDemo!2026" },
+  { label: "Labs 1", email: "labs1@demo.med", defaultPass: "CareDemo!2026" },
+  { label: "Labs 2", email: "labs2@demo.med", defaultPass: "CareDemo!2026" },
+  { label: "Seva 1", email: "seva1@demo.med", defaultPass: "CareDemo!2026" },
+  { label: "Seva 2", email: "seva2@demo.med", defaultPass: "CareDemo!2026" },
   { label: "Coordinator", email: "coordinator1@demo.med", defaultPass: "CareDemo!2026" },
   { label: "Care Physician", email: "carephysician1@demo.med", defaultPass: "CareDemo!2026" },
   { label: "Admin console", email: "admin.demo@careconnect.health", defaultPass: "CareDemo!2026", fallbackEmail: "admin1@demo.med", isAdmin: true },
@@ -107,22 +121,32 @@ function AuthPage() {
   } | null>(null);
   const role: AppRole = KIND_TO_ROLE[kind];
 
-  async function afterLogin(userId: string, viewOverride?: string) {
+  async function afterLogin(userId: string, viewOverride?: string, nameOverride?: string) {
     const [rolesRes, profileRes, authRes, requestRes] = await Promise.all([
       supabase.from("user_roles").select("role").eq("user_id", userId),
-      supabase.from("profiles").select("full_name, view").eq("id", userId).maybeSingle(),
+      supabase.from("profiles").select("full_name, view, specialty").eq("id", userId).maybeSingle(),
       supabase.auth.getUser(),
       supabase.from("account_role_requests").select("requested_role, requested_view, status").eq("user_id", userId).maybeSingle(),
     ]);
     const roles = (rolesRes.data ?? []).map((r) => r.role as AppRole);
     const order: AppRole[] = ["super_admin", "admin", "facility", "provider", "patient"];
     const primary = order.find((r) => roles.includes(r)) ?? "patient";
-    const fullName = profileRes.data?.full_name || name || email.split("@")[0] || "You";
+    const fullName = nameOverride || profileRes.data?.full_name || name || email.split("@")[0] || "You";
     const metadata = authRes.data.user?.user_metadata ?? {};
     const storedSubtype = typeof metadata.subtype === "string" ? metadata.subtype : undefined;
     const request = requestRes.data;
 
-    const providerViews = new Set(["medico", "ambulance", "seva", "coordinator", "care_physician", "nurse", "technician", "diagnostic", "labs"]);
+    const providerViews = new Set([
+      "medico",
+      "ambulance",
+      "seva",
+      "coordinator",
+      "care_physician",
+      "nurse",
+      "technician",
+      "physio_staff",
+      "therapist",
+    ]);
     const facilityViews = new Set(["hub", "diagnostic", "pharmacy", "labs"]);
     const requestedView = viewOverride || storedSubtype || request?.requested_view || profileRes.data?.view || undefined;
     let derivedView = ROLE_TO_VIEW[primary];
@@ -134,6 +158,11 @@ function AuthPage() {
       localStorage.setItem("mc_user_name", fullName);
       localStorage.setItem("mc_user_role", primary);
       localStorage.setItem("mc_profile_id", userId);
+      if (profileRes.data?.specialty) {
+        localStorage.setItem("mc_user_specialty", profileRes.data.specialty);
+      } else {
+        localStorage.removeItem("mc_user_specialty");
+      }
     }
 
     // Provider/facility claims are requests, not privileges. Keep the user on
@@ -150,6 +179,18 @@ function AuthPage() {
 
     if (search.next) {
       window.location.assign(search.next);
+      return;
+    }
+    if (derivedView === "nurse") {
+      navigate({ to: "/nurse" });
+      return;
+    }
+    if (derivedView === "technician") {
+      navigate({ to: "/technician" });
+      return;
+    }
+    if (derivedView === "physio_staff" || derivedView === "therapist") {
+      navigate({ to: "/physio/therapist" });
       return;
     }
     navigate({ to: "/" });
@@ -172,7 +213,8 @@ function AuthPage() {
   async function handleQuickDemoLogin(demoEmail: string, preferredPass = "CareDemo!2026", fallbackEmail?: string) {
     setBusy(true);
     setMsg(null);
-    const emails = fallbackEmail ? [demoEmail, fallbackEmail] : [demoEmail];
+    const primaryEmail = fallbackEmail || demoEmail;
+    const emails = Array.from(new Set([primaryEmail, demoEmail]));
     const passwords = Array.from(new Set([preferredPass, "CareDemo!2026", "demo123456"]));
     let lastError: unknown = null;
     for (const em of emails) {
@@ -183,7 +225,13 @@ function AuthPage() {
             password: pwd,
           });
           if (!error && data.user) {
-            await afterLogin(data.user.id);
+            const isTherapist = demoEmail.toLowerCase().includes("therapist");
+            const demoAccount = DEMO_ACCOUNTS.find(
+              (a) => a.email.toLowerCase() === demoEmail.toLowerCase() || a.email.toLowerCase() === em.toLowerCase()
+            );
+            const targetView = demoAccount?.view || (isTherapist ? "therapist" : undefined);
+            const targetName = demoAccount?.name || (isTherapist ? "Therapist" : undefined);
+            await afterLogin(data.user.id, targetView, targetName);
             return;
           }
           if (error) lastError = error;
@@ -215,9 +263,38 @@ function AuthPage() {
           if (data.user) await handleSignupSuccess(data.user.id, Boolean(data.session));
           else setMsg("Check your email to confirm your account.");
         } else {
-          const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+          let targetEmail = email.trim();
+          const normalizedEmail = targetEmail.toLowerCase();
+          const isRahulNair = normalizedEmail === "rahul.nair@demo.med" || normalizedEmail === "therapist1@demo.med";
+          const demoAccount = DEMO_ACCOUNTS.find((a) => a.email.toLowerCase() === normalizedEmail);
+
+          let { data, error } = await supabase.auth.signInWithPassword({ email: targetEmail, password });
+          if (error && (password === "demo123456" || password === "CareDemo!2026")) {
+            const altPass = password === "demo123456" ? "CareDemo!2026" : "demo123456";
+            const retry = await supabase.auth.signInWithPassword({ email: targetEmail, password: altPass });
+            if (!retry.error && retry.data) {
+              data = retry.data;
+              error = null;
+            }
+          }
+          if (error && isRahulNair) {
+            targetEmail = "medico1@demo.med";
+            let retry = await supabase.auth.signInWithPassword({ email: targetEmail, password });
+            if (retry.error && (password === "demo123456" || password === "CareDemo!2026")) {
+              const altPass = password === "demo123456" ? "CareDemo!2026" : "demo123456";
+              retry = await supabase.auth.signInWithPassword({ email: targetEmail, password: altPass });
+            }
+            if (!retry.error && retry.data) {
+              data = retry.data;
+              error = null;
+            }
+          }
           if (error) throw error;
-          if (data.user) await afterLogin(data.user.id);
+          if (data?.user) {
+            const targetView = demoAccount?.view || (isRahulNair ? "medico" : undefined);
+            const targetName = demoAccount?.name || (isRahulNair ? "Dr. Rahul Nair" : undefined);
+            await afterLogin(data.user.id, targetView, targetName);
+          }
         }
       } else if (mode === "email-otp") {
         if (!otpSent) {
@@ -289,9 +366,8 @@ function AuthPage() {
         setOtpSent(false);
         setMsg(null);
       }}
-      className={`flex-1 rounded-full px-3 py-2 text-xs font-bold transition ${
-        mode === k ? "bg-slate-900 text-white" : "text-slate-600"
-      }`}
+      className={`flex-1 rounded-full px-3 py-2 text-xs font-bold transition ${mode === k ? "bg-slate-900 text-white" : "text-slate-600"
+        }`}
     >
       {label}
     </button>
@@ -423,9 +499,8 @@ function AuthPage() {
                       key={k}
                       type="button"
                       onClick={() => setKind(k)}
-                      className={`rounded-full px-1 py-1.5 text-[10px] font-bold capitalize transition ${
-                        kind === k ? "bg-teal-600 text-white" : "text-slate-600"
-                      }`}
+                      className={`rounded-full px-1 py-1.5 text-[10px] font-bold capitalize transition ${kind === k ? "bg-teal-600 text-white" : "text-slate-600"
+                        }`}
                     >
                       {k}
                     </button>

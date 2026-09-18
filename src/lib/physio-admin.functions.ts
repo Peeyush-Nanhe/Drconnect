@@ -17,7 +17,7 @@ export const THERAPY_LABEL: Record<string, string> = {
 
 type Scope = { isAdmin: boolean; partnerId: string | null; partnerName: string | null; areas: string[] };
 
-async function resolveScope(ctx: { supabase: any; userId: string }): Promise<Scope> {
+export async function resolveScope(ctx: { supabase: any; userId: string }): Promise<Scope> {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const sb = supabaseAdmin as any;
 
@@ -156,6 +156,9 @@ async function buildOverview(days: number, scope: Scope) {
         therapist: v.therapist_id ? thById.get(v.therapist_id)?.full_name ?? "Therapist" : null,
         partner: v.partner_id ? partnerById.get(v.partner_id)?.name ?? null : null,
         state,
+        status: v.status,
+        therapistId: v.therapist_id ?? null,
+        preferredTherapistId: v.preferred_therapist_id ?? null,
         minutesLate: state === "late" && sched != null ? Math.round((now - sched) / 60000) : null,
         fee: v.fee,
       });
@@ -384,6 +387,13 @@ async function buildOverview(days: number, scope: Scope) {
     board: board.slice(0, 40),
     hotspots,
     therapists: therapistRows,
+    roster: therapists.map((t) => ({
+      id: t.id,
+      name: t.full_name,
+      verified: !!t.verified,
+      active: !!t.active,
+      area: t.area ?? null,
+    })),
     idleTherapists,
     partners: partnerRows,
     feedback: {
@@ -411,6 +421,103 @@ export const getPhysioAdminOverview = createServerFn({ method: "GET" })
     return buildOverview(data.days, scope);
   });
 
+async function loadVisitForMutation(sb: any, visitId: string) {
+  const { data, error } = await sb
+    .from("physio_visits")
+    .select("id, status, area, therapist_id, partner_id")
+    .eq("id", visitId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error("Visit not found or outside your service area");
+  return data;
+}
+
+export const assignPhysioVisitTherapist = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { visitId: string; therapistId: string }) => {
+    if (!input?.visitId || !input?.therapistId) throw new Error("visitId and therapistId are required");
+    return { visitId: String(input.visitId), therapistId: String(input.therapistId) };
+  })
+  .handler(async ({ data, context }) => {
+    await resolveScope(context);
+    const sb = context.supabase as any;
+
+    const visit = await loadVisitForMutation(sb, data.visitId);
+    if (!["requested", "assigned"].includes(visit.status)) {
+      throw new Error("This visit can no longer be (re)assigned");
+    }
+
+    const { data: therapist, error: tErr } = await sb
+      .from("physio_therapists")
+      .select("id, verified, active, partner_id")
+      .eq("id", data.therapistId)
+      .maybeSingle();
+    if (tErr) throw new Error(tErr.message);
+    if (!therapist) throw new Error("Therapist not found or not on your roster");
+    if (!therapist.verified || !therapist.active) {
+      throw new Error("Only verified, active therapists can be assigned");
+    }
+
+    const { error } = await sb
+      .from("physio_visits")
+      .update({
+        therapist_id: therapist.id,
+        partner_id: therapist.partner_id ?? visit.partner_id,
+        status: "assigned",
+      })
+      .eq("id", data.visitId);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+const VISIT_TRANSITIONS: Record<string, string[]> = {
+  requested: ["cancelled"],
+  assigned: ["en_route", "cancelled"],
+  en_route: ["in_progress", "no_show", "cancelled"],
+  in_progress: ["completed", "no_show"],
+};
+
+export const updatePhysioVisitStatus = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { visitId: string; action: string; reason?: string | null }) => {
+    if (!input?.visitId) throw new Error("visitId is required");
+    const action = String(input.action ?? "");
+    if (!["en_route", "in_progress", "completed", "no_show", "cancelled"].includes(action)) {
+      throw new Error("Unknown action");
+    }
+    if (action === "cancelled" && !input.reason?.trim()) {
+      throw new Error("A cancellation reason is required");
+    }
+    return { visitId: String(input.visitId), action, reason: input.reason?.trim() || null };
+  })
+  .handler(async ({ data, context }) => {
+    await resolveScope(context);
+    const sb = context.supabase as any;
+
+    const visit = await loadVisitForMutation(sb, data.visitId);
+    const allowed = VISIT_TRANSITIONS[visit.status] ?? [];
+    if (!allowed.includes(data.action)) {
+      throw new Error(`Cannot move a "${visit.status}" visit to "${data.action}"`);
+    }
+    if (["en_route", "in_progress", "completed", "no_show"].includes(data.action) && !visit.therapist_id) {
+      throw new Error("Assign a therapist before updating this visit");
+    }
+
+    const now = new Date().toISOString();
+    const patch: Record<string, unknown> = { status: data.action };
+    if (data.action === "in_progress") patch.checked_in_at = now;
+    if (data.action === "completed") patch.checked_out_at = now;
+    if (data.action === "no_show") patch.no_show = true;
+    if (data.action === "cancelled") {
+      patch.cancelled_at = now;
+      patch.cancel_reason = data.reason;
+    }
+
+    const { error } = await sb.from("physio_visits").update(patch).eq("id", data.visitId);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
 /** Admin-only: grant an existing signed-up account access to a partner console. */
 export const linkPhysioPartnerUser = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -435,6 +542,46 @@ export const linkPhysioPartnerUser = createServerFn({ method: "POST" })
     if (!userId) throw new Error("No account found with that email. Ask them to sign up first.");
 
     const { error } = await sb.from("physio_partners").update({ user_id: userId }).eq("id", data.partnerId);
+    if (error) throw new Error(error.message);
+    return { ok: true, userId };
+  });
+
+/** Admin or the owning partner: link a therapist row to an existing signed-up account
+ *  so they have a real auth.uid() for /provider/availability + direct slot booking. */
+export const linkPhysioTherapistUser = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { therapistId: string; email: string }) => ({
+    therapistId: String(d.therapistId),
+    email: String(d.email).trim().toLowerCase(),
+  }))
+  .handler(async ({ data, context }) => {
+    const scope = await resolveScope(context);
+    const client = context.supabase as any;
+
+    const { data: therapist, error: tErr } = await client
+      .from("physio_therapists")
+      .select("id, partner_id")
+      .eq("id", data.therapistId)
+      .maybeSingle();
+    if (tErr) throw new Error(tErr.message);
+    if (!therapist) throw new Error("Therapist not found or outside your roster");
+    if (!scope.isAdmin && therapist.partner_id !== scope.partnerId) {
+      throw new Error("Forbidden: this therapist is not on your roster");
+    }
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const sb = supabaseAdmin as any;
+    let userId: string | null = null;
+    for (let page = 1; page <= 10 && !userId; page++) {
+      const { data: list, error } = await sb.auth.admin.listUsers({ page, perPage: 200 });
+      if (error) throw new Error(error.message);
+      const hit = (list?.users ?? []).find((u: any) => (u.email ?? "").toLowerCase() === data.email);
+      if (hit) userId = hit.id;
+      if ((list?.users ?? []).length < 200) break;
+    }
+    if (!userId) throw new Error("No account found with that email. Ask them to sign up first.");
+
+    const { error } = await client.from("physio_therapists").update({ user_id: userId }).eq("id", data.therapistId);
     if (error) throw new Error(error.message);
     return { ok: true, userId };
   });

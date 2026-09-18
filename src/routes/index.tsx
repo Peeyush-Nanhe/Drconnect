@@ -35,6 +35,7 @@ export const Route = createFileRoute("/")({
 function Home() {
   const { user, role, loading } = useSession();
   const [profileView, setProfileView] = useState<string | null>(null);
+  const viewQuery = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("view") : null;
 
   useEffect(() => {
     let active = true;
@@ -52,11 +53,13 @@ function Home() {
       if (!active) return;
 
       const fallbackView = role === "provider" ? "medico" : role === "facility" ? "hub" : role === "admin" || role === "super_admin" ? "admin" : "patient";
-      const nextView = data?.view || fallbackView;
+      const nextView = viewQuery || data?.view || fallbackView;
       setProfileView(nextView);
       if (typeof window !== "undefined") {
         localStorage.setItem("mc_view", nextView);
-        if (data?.full_name) localStorage.setItem("mc_user_name", data.full_name);
+        const existingName = localStorage.getItem("mc_user_name");
+        const effectiveName = existingName && existingName !== "You" ? existingName : (data?.full_name || "You");
+        localStorage.setItem("mc_user_name", effectiveName);
         if (role) localStorage.setItem("mc_user_role", role);
         localStorage.setItem("mc_profile_id", user.id);
       }
@@ -65,7 +68,7 @@ function Home() {
     return () => {
       active = false;
     };
-  }, [user, role]);
+  }, [user, role, viewQuery]);
 
   if (!loading && !user) return <Navigate to="/auth" search={{ admin: undefined, next: undefined }} />;
   if (loading || (user && !profileView)) {
@@ -74,6 +77,11 @@ function Home() {
         Loading MyDox…
       </div>
     );
+  }
+  if (!viewQuery) {
+    if (profileView === "nurse") return <Navigate to="/nurse" />;
+    if (profileView === "technician") return <Navigate to="/technician" />;
+    if (profileView === "physio_staff" || profileView === "therapist") return <Navigate to="/physio/therapist" />;
   }
   return (
     <div>

@@ -1,8 +1,12 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
-import { useQuery } from "@tanstack/react-query";
-import { getPhysioAdminOverview } from "@/lib/physio-admin.functions";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import {
+  assignPhysioVisitTherapist,
+  getPhysioAdminOverview,
+  updatePhysioVisitStatus,
+} from "@/lib/physio-admin.functions";
 
 export const Route = createFileRoute("/admin/physio")({
   head: () => ({
@@ -79,11 +83,40 @@ function when(iso: string | null) {
 function PhysioControlRoom() {
   const [days, setDays] = useState(30);
   const fetchOverview = useServerFn(getPhysioAdminOverview);
+  const assignFn = useServerFn(assignPhysioVisitTherapist);
+  const statusFn = useServerFn(updatePhysioVisitStatus);
   const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ["physio-admin-overview", days],
     queryFn: () => fetchOverview({ data: { days } }),
     retry: false,
     refetchInterval: 60_000,
+  });
+
+  const [assignChoice, setAssignChoice] = useState<Record<string, string>>({});
+  const [cancelingRow, setCancelingRow] = useState<string | null>(null);
+  const [cancelReasonInput, setCancelReasonInput] = useState("");
+  const [rowError, setRowError] = useState<{ id: string; message: string } | null>(null);
+
+  const assignMutation = useMutation({
+    mutationFn: (vars: { visitId: string; therapistId: string }) => assignFn({ data: vars }),
+    onSuccess: () => {
+      setRowError(null);
+      refetch();
+    },
+    onError: (e: unknown, vars) =>
+      setRowError({ id: vars.visitId, message: e instanceof Error ? e.message : "Could not assign therapist" }),
+  });
+
+  const statusMutation = useMutation({
+    mutationFn: (vars: { visitId: string; action: string; reason?: string | null }) => statusFn({ data: vars }),
+    onSuccess: () => {
+      setRowError(null);
+      setCancelingRow(null);
+      setCancelReasonInput("");
+      refetch();
+    },
+    onError: (e: unknown, vars) =>
+      setRowError({ id: vars.visitId, message: e instanceof Error ? e.message : "Could not update visit" }),
   });
 
   const mixTotal = data ? Object.values(data.totals.therapyMix).reduce((a, b) => a + b, 0) : 0;
@@ -210,7 +243,7 @@ function PhysioControlRoom() {
 
             <Section title="Visit board" note="Late and unassigned visits float to the top.">
               <Card className="overflow-x-auto p-0">
-                <table className="w-full min-w-[820px] text-left text-xs">
+                <table className="w-full min-w-[980px] text-left text-xs">
                   <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
                     <tr>
                       <th className="px-3 py-2">Status</th>
@@ -220,18 +253,23 @@ function PhysioControlRoom() {
                       <th className="px-3 py-2">Therapist</th>
                       <th className="px-3 py-2">Scheduled</th>
                       <th className="px-3 py-2">Partner</th>
+                      <th className="px-3 py-2">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {data.board.length === 0 ? (
                       <tr>
-                        <td colSpan={7} className="px-3 py-6 text-center text-slate-500">
+                        <td colSpan={8} className="px-3 py-6 text-center text-slate-500">
                           Nothing on the board right now.
                         </td>
                       </tr>
                     ) : (
                       data.board.map((b) => {
                         const meta = STATE_META[b.state] ?? { label: b.state, color: "#64748B" };
+                        const cancellable = ["requested", "assigned", "en_route"].includes(b.status);
+                        const rowBusy =
+                          (assignMutation.isPending && assignMutation.variables?.visitId === b.id) ||
+                          (statusMutation.isPending && statusMutation.variables?.visitId === b.id);
                         return (
                           <tr key={b.id} className="border-t border-slate-100">
                             <td className="px-3 py-2">
@@ -260,6 +298,154 @@ function PhysioControlRoom() {
                             <td className="px-3 py-2 text-slate-700">{b.therapist ?? "— not assigned —"}</td>
                             <td className="px-3 py-2 text-slate-500">{when(b.scheduledAt)}</td>
                             <td className="px-3 py-2 text-slate-500">{b.partner ?? "—"}</td>
+                            <td className="px-3 py-2">
+                              {cancelingRow === b.id ? (
+                                <div className="flex flex-col gap-1">
+                                  <input
+                                    autoFocus
+                                    value={cancelReasonInput}
+                                    onChange={(e) => setCancelReasonInput(e.target.value)}
+                                    placeholder="Cancellation reason"
+                                    maxLength={300}
+                                    className="w-40 rounded-lg border border-slate-200 px-2 py-1 text-[11px]"
+                                  />
+                                  <div className="flex gap-1">
+                                    <button
+                                      type="button"
+                                      disabled={!cancelReasonInput.trim() || rowBusy}
+                                      onClick={() =>
+                                        statusMutation.mutate({ visitId: b.id, action: "cancelled", reason: cancelReasonInput })
+                                      }
+                                      className="rounded-full bg-rose-600 px-2 py-1 text-[11px] font-bold text-white disabled:opacity-50"
+                                    >
+                                      Confirm
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setCancelingRow(null);
+                                        setCancelReasonInput("");
+                                      }}
+                                      className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600"
+                                    >
+                                      Back
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="flex flex-wrap items-center gap-1">
+                                  {b.status === "requested" ? (
+                                    <>
+                                      {(() => {
+                                        const availableRoster = data.roster.filter((t) => t.verified && t.active);
+                                        const preferred = b.preferredTherapistId
+                                          ? availableRoster.find((t) => t.id === b.preferredTherapistId)
+                                          : null;
+                                        const chosen = assignChoice[b.id] ?? (preferred ? preferred.id : "");
+                                        return (
+                                          <div className="flex flex-col gap-1">
+                                            {preferred ? (
+                                              <div className="text-[10px] font-semibold text-teal-700">
+                                                Requested: {preferred.name}
+                                              </div>
+                                            ) : null}
+                                            <div className="flex items-center gap-1">
+                                              <select
+                                                value={chosen}
+                                                onChange={(e) => setAssignChoice((m) => ({ ...m, [b.id]: e.target.value }))}
+                                                className="rounded-lg border border-slate-200 px-1.5 py-1 text-[11px]"
+                                              >
+                                                <option value="">Pick therapist…</option>
+                                                {availableRoster.map((t) => (
+                                                  <option key={t.id} value={t.id}>
+                                                    {t.name}
+                                                    {t.area ? ` (${t.area})` : ""}
+                                                  </option>
+                                                ))}
+                                              </select>
+                                              <button
+                                                type="button"
+                                                disabled={!chosen || rowBusy}
+                                                onClick={() => assignMutation.mutate({ visitId: b.id, therapistId: chosen })}
+                                                className="rounded-full bg-teal-700 px-2 py-1 text-[11px] font-bold text-white disabled:opacity-50"
+                                              >
+                                                Assign
+                                              </button>
+                                            </div>
+                                          </div>
+                                        );
+                                      })()}
+                                    </>
+                                  ) : b.status === "assigned" ? (
+                                    <button
+                                      type="button"
+                                      disabled={rowBusy}
+                                      onClick={() => statusMutation.mutate({ visitId: b.id, action: "en_route" })}
+                                      className="rounded-full bg-sky-600 px-2 py-1 text-[11px] font-bold text-white disabled:opacity-50"
+                                    >
+                                      Send en route
+                                    </button>
+                                  ) : b.status === "en_route" ? (
+                                    <>
+                                      <button
+                                        type="button"
+                                        disabled={rowBusy}
+                                        onClick={() => statusMutation.mutate({ visitId: b.id, action: "in_progress" })}
+                                        className="rounded-full bg-emerald-600 px-2 py-1 text-[11px] font-bold text-white disabled:opacity-50"
+                                      >
+                                        Check in
+                                      </button>
+                                      <button
+                                        type="button"
+                                        disabled={rowBusy}
+                                        onClick={() => statusMutation.mutate({ visitId: b.id, action: "no_show" })}
+                                        className="rounded-full bg-rose-100 px-2 py-1 text-[11px] font-bold text-rose-700 disabled:opacity-50"
+                                      >
+                                        No-show
+                                      </button>
+                                    </>
+                                  ) : b.status === "in_progress" ? (
+                                    <>
+                                      <button
+                                        type="button"
+                                        disabled={rowBusy}
+                                        onClick={() => statusMutation.mutate({ visitId: b.id, action: "completed" })}
+                                        className="rounded-full bg-emerald-700 px-2 py-1 text-[11px] font-bold text-white disabled:opacity-50"
+                                      >
+                                        Complete
+                                      </button>
+                                      <button
+                                        type="button"
+                                        disabled={rowBusy}
+                                        onClick={() => statusMutation.mutate({ visitId: b.id, action: "no_show" })}
+                                        className="rounded-full bg-rose-100 px-2 py-1 text-[11px] font-bold text-rose-700 disabled:opacity-50"
+                                      >
+                                        No-show
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <span className="text-slate-400">—</span>
+                                  )}
+                                  {cancellable ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setCancelingRow(b.id);
+                                        setCancelReasonInput("");
+                                      }}
+                                      className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600"
+                                    >
+                                      Cancel
+                                    </button>
+                                  ) : null}
+                                </div>
+                              )}
+                              {rowError && rowError.id === b.id ? (
+                                <div className="mt-1 max-w-[200px] text-[10px] font-semibold text-rose-600">
+                                  {rowError.message}
+                                </div>
+                              ) : null}
+                            </td>
                           </tr>
                         );
                       })

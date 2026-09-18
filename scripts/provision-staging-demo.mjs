@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 const ref = 'pyrlvjeectjikvfksukb';
 const url = `https://${ref}.supabase.co`;
 if (!process.argv.includes('--run') || process.env.SUPABASE_URL !== url ||
-    process.env.VITE_SUPABASE_URL !== url) {
+  process.env.VITE_SUPABASE_URL !== url) {
   throw new Error('Use --run with the exact MyDox Staging .env.');
 }
 const password = process.env.MYDOX_DEMO_PASSWORD;
@@ -21,6 +21,7 @@ const accounts = [
   ['patient2@demo.med', 'Rahul Verma', 'patient', 'patient'],
   ['medico1@demo.med', 'Dr. Anita Rao', 'provider', 'medico'],
   ['medico2@demo.med', 'Dr. Vikram Iyer', 'provider', 'medico'],
+  ['rahul.nair@demo.med', 'Rahul Nair', 'provider', 'therapist'],
   ['hub1@demo.med', 'Demo Hub 1', 'facility', 'hub'],
   ['hub2@demo.med', 'Demo Hub 2', 'facility', 'hub'],
   ['scan1@demo.med', 'Demo Scan Centre 1', 'facility', 'diagnostic'],
@@ -56,7 +57,7 @@ try {
   for (const account of accounts) {
     const user = existing.get(account.email);
     if (user && (user.app_metadata?.careconnect_demo !== true ||
-        user.app_metadata?.staging_project !== ref)) {
+      user.app_metadata?.staging_project !== ref)) {
       throw new Error(`Existing account is not a marked staging fixture: ${account.email}`);
     }
     if (user) {
@@ -70,7 +71,7 @@ try {
     const user = existing.get(account.email);
     const values = {
       password, email_confirm: true,
-      user_metadata: { full_name: account.name, role: ['provider','facility'].includes(account.role) ? account.role : 'patient', subtype: account.view },
+      user_metadata: { full_name: account.name, role: ['provider', 'facility'].includes(account.role) ? account.role : 'patient', subtype: account.view },
       app_metadata: { careconnect_demo: true, staging_project: ref },
     };
     const data = user
@@ -81,7 +82,7 @@ try {
     ok(await admin.from('user_roles').upsert(expectedRoles(account).map(role => ({ user_id: account.id, role })), { onConflict: 'user_id,role', ignoreDuplicates: true }), 'grant requested demo roles');
   }
   const reviewer = accounts.find(account => account.role === 'super_admin');
-  for (const account of accounts.filter(account => ['provider','facility'].includes(account.role))) {
+  for (const account of accounts.filter(account => ['provider', 'facility'].includes(account.role))) {
     ok(await admin.from('account_role_requests').upsert({
       user_id: account.id, requested_role: account.role, requested_view: account.view,
       status: 'approved', reviewed_by: reviewer.id, reviewed_at: new Date().toISOString(),
@@ -111,7 +112,7 @@ try {
       assert.equal(profile.full_name, account.name); assert.equal(profile.view, account.view);
       const isSuper = ok(await client.rpc('has_role', { _user_id: account.id, _role: 'super_admin' }), 'verify super-admin boundary');
       assert.equal(isSuper, account.role === 'super_admin');
-      if (['provider','facility'].includes(account.role)) {
+      if (['provider', 'facility'].includes(account.role)) {
         const request = ok(await client.from('account_role_requests').select('status,requested_view').eq('user_id', account.id).single(), 'verify approved request');
         assert.equal(request.status, 'approved'); assert.equal(request.requested_view, account.view);
       }

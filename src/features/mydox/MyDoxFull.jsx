@@ -1,7 +1,5 @@
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import { EMERGENCY_V2, EmergencyPatient, EmergencyResponderPanel } from "./emergency/DispatchScreens";
-import { NurseRequestsPanel } from "./nursing/NurseRequestsPanel";
 import { Link } from "@tanstack/react-router";
 import PatientDashboard, { PatientHeader, PatientBottomNav } from "@/features/mydox/PatientDashboard";
 import MyBookingsOverlay from "@/features/mydox/MyBookingsOverlay";
@@ -20,8 +18,6 @@ import { analyzeReport } from "@/lib/report-analyzer.functions";
 import { transcribeAudio } from "@/lib/transcribe.functions";
 import { saveAiHistory, listAiHistory, getAiHistoryItem, toggleShareAiHistory, deleteAiHistory } from "@/lib/ai-history.functions";
 import { createCareRequest, cancelCareRequest, acceptCareRequest, completeCareRequest, failCareRequest, useLiveCareRequests, useRecentChatCounterparts, useMyMedicos, logRequestEvent, setRequestStage, useRequestAuditLog, useAdminAuditFeed, payAndGenerateOtp, verifyOtpAndStart, confirmOtpExchanged, TEST_DEFAULT_OTP, rateCareRequest, createCareProgramBooking, createCommunityRequest, useServiceReferrals, createServiceReferral, updateServiceReferralStatus, useRecentPatientsForDoctor, useSession, useLiveDoctorAppointments, useRealtimeChat, verifyAndCompleteConsultation } from "@/features/mydox/backend";
-import { bookTechnicianVisit } from "@/lib/technician-patient.functions";
-import { TechnicianRequestsPanel } from "./technician/TechnicianRequestsPanel";
 import { SURGERY_ROLE_LABELS } from "@/features/mydox/surgery";
 import { SlotPickerCalendar } from "@/features/mydox/SlotPickerCalendar";
 import CancellationDialog from "@/features/mydox/CancellationDialog";
@@ -152,7 +148,7 @@ const C = {
   gold: "#F4A52A", clinic: "#D97706", clinicSoft: "#FEF3C7",
   hub: "#7C3AED", hubSoft: "#F5F3FF",
 };
-const grad = `linear-gradient(135deg,#059669 0%,#10B981 100%)`; // Rich emerald gradient
+const grad = `linear-gradient(135deg,${C.primary} 0%,#0FB58A 100%)`;
 const gradE = `linear-gradient(135deg,${C.emerg} 0%,#FF8466 100%)`;
 const gradHub = `linear-gradient(135deg,${C.hub} 0%,#9F67FA 100%)`;
 const inr = n => "₹" + Math.round(n).toLocaleString("en-IN");
@@ -404,20 +400,12 @@ function _medicoMatchesSpec(medico, spec) {
   // Exclude non-doctor roles regardless of specialty field value
   const nameLower  = (medico.name     || "").toLowerCase().trim();
   const specField  = (medico.specialty || "").toLowerCase().trim();
-
-  // If the target specialty itself includes one of the "non-doctor" roles,
-  // then we are explicitly looking for that role.
-  const targets = [spec.name, spec.shortName, spec.id].filter(Boolean).map(s => String(s).toLowerCase());
-  const isExplicitlyLookingForNonDoctor = _NON_DOCTOR_ROLES.some(r => targets.some(t => t.includes(r)));
-
-  if (!isExplicitlyLookingForNonDoctor) {
-    if (_NON_DOCTOR_ROLES.some(r =>
-      nameLower === r || nameLower.startsWith(r + " ") || specField === r
-    )) return false;
-  }
-
+  if (_NON_DOCTOR_ROLES.some(r =>
+    nameLower === r || nameLower.startsWith(r + " ") || specField === r
+  )) return false;
   // No specialty on file → show in all specialty panels as a general-fallback doctor
   if (!specField) return true;
+  const targets = [spec.name, spec.shortName, spec.id].filter(Boolean).map(s => String(s).toLowerCase());
   return targets.some(t => specField.includes(t) || t.includes(specField));
 }
 function _stableSeed(str) {
@@ -1441,7 +1429,7 @@ function SpecialtyPickerModern({
   const selected = providers.find(p => p.val === providerType);
   const sc = selected?.color || C.primary;
   const hub = initiatedBy === "hub";
-  const needsDoctor = providerType === "doctor" || providerType === "technician"; // doctors and technicians get the score/preferred panel
+  const needsDoctor = providerType === "doctor"; // only doctors get the score/preferred panel
   const docOk = !needsDoctor || !!selectedDoctor;
   React.useEffect(() => { setSelectedDoctor(null); }, [providerType, selectedSpec?.id]);
 
@@ -1550,7 +1538,7 @@ function SpecialtyPickerModern({
           disabled={!selectedSpec || (!emergency && (!docOk || !schedConfirmed))}
           style={{ width: "100%", padding: "13px", borderRadius: 13, border: "none", background: (selectedSpec && (emergency || (docOk && schedConfirmed))) ? `linear-gradient(135deg,${sc},${sc}cc)` : C.canvas, color: (selectedSpec && (emergency || (docOk && schedConfirmed))) ? "#fff" : C.faint, fontSize: 13.5, fontWeight: 800, cursor: (selectedSpec && (emergency || (docOk && schedConfirmed))) ? "pointer" : "not-allowed", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, fontFamily: "'Plus Jakarta Sans',sans-serif" }}
         >
-          <span>{!selectedSpec ? `Select a ${selected?.label || "service"}` : (emergency ? (ctaMode === "continue" ? `Continue · ${selectedSpec.name}` : `Book ${selectedSpec.name}`) : ((needsDoctor && !selectedDoctor) ? `Choose a ${providerType === "technician" ? "technician" : "doctor"} above` : (!schedConfirmed ? "Pick date & time" : (ctaMode === "continue" ? `Continue · ${schedLabel}` : `Confirm Appointment · ${schedLabel}`))))}</span>
+          <span>{!selectedSpec ? `Select a ${selected?.label || "service"}` : (emergency ? (ctaMode === "continue" ? `Continue · ${selectedSpec.name}` : `Book ${selectedSpec.name}`) : ((needsDoctor && !selectedDoctor) ? "Choose a doctor above" : (!schedConfirmed ? "Pick date & time" : (ctaMode === "continue" ? `Continue · ${schedLabel}` : `Confirm Appointment · ${schedLabel}`))))}</span>
           {selectedSpec && (emergency || (docOk && schedConfirmed)) && <span style={{ background: "rgba(255,255,255,.22)", borderRadius: 8, padding: "2px 8px", fontSize: 12, fontWeight: 800 }}>₹{selectedDoctor ? selectedDoctor.fee : selectedSpec.base}{emergency ? "+20%" : ""}</span>}
         </button>
       </div>
@@ -1633,7 +1621,7 @@ function SpecialtyPickerSimple({ providerType, selectedSpec, setSelectedSpec, em
   const schedConfirmed = schedDate != null && schedTime != null;
   const schedLabel = schedConfirmed ? `${dayLabel(schedDates[schedDate], schedDate)}, ${schedDates[schedDate].getDate()} ${schedDates[schedDate].toLocaleDateString("en-US", { month: "short" })} · ${fmtTime(schedTimes[schedTime])}` : null;
   const panelDoctors = React.useMemo(() => panelDoctorsForSpec(selectedSpec), [selectedSpec?.id]);
-  const needsDoctor = providerType === "doctor" || providerType === "technician"; // doctors and technicians get the professional-score panel
+  const needsDoctor = providerType === "doctor"; // only doctors get the professional-score panel; therapist/nurse/scan etc. stay on the simpler model
   const docOk = !needsDoctor || !!selectedDoctor;
 
   React.useEffect(() => {
@@ -1976,6 +1964,7 @@ function PatientBookingSheet({
 // Nurse kinds - available to all portals
 const NURSE_KINDS = [
   { id: "n_gen", name: "General Duty Nurse", Icon: Heart, desc: "Day / night home care", avail: 10, base: 800, color: "#DB2777" },
+  { id: "n_baby", name: "Mother & Baby Nurse", Icon: Baby, desc: "Newborn & postnatal", avail: 5, base: 1100, color: "#DB2777" },
 ];
 
 // Care procedures - available to all portals
@@ -7879,22 +7868,6 @@ function DoctorReferralsTracker({ onClose }) {
 
 
 function DoctorApp({ req, hubReq, online, setOnline, onAccept, sevaActions }) {
-  // Signed-in provider id and profile, used by the nursing and provider queue.
-  const [nurseUid, setNurseUid] = React.useState(null);
-  const [providerProfile, setProviderProfile] = React.useState(null);
-  React.useEffect(() => {
-    let alive = true;
-    supabase.auth.getSession().then(({ data }) => {
-      const id = data.session?.user?.id || null;
-      if (alive) setNurseUid(id);
-      if (id) {
-        supabase.from("profiles").select("full_name, specialty, view").eq("id", id).maybeSingle().then(({ data: prof }) => {
-          if (alive && prof) setProviderProfile(prof);
-        });
-      }
-    });
-    return () => { alive = false; };
-  }, []);
 
 
   const [acted, setActed] = useState(false);
@@ -8009,48 +7982,34 @@ function DoctorApp({ req, hubReq, online, setOnline, onAccept, sevaActions }) {
   const youCand = activeIncoming?.r?.candidates?.find(c => c.id === "you") || (activeIncoming ? { id: "you", distanceKm: 1.4, etaMin: 8 } : null);
   const broadcastType = activeIncoming?.r?.spec?.name || "providers";
 
-  const displayName = providerProfile?.full_name || YOU.name;
-  const displaySpec = providerProfile?.specialty || (providerProfile?.view === "nurse" ? "Nurse" : providerProfile?.view === "technician" ? "Technician" : "General Physician");
-
   return (
     <Screen>
       <div className="px-5 pt-4 pb-4" style={{ background: online ? grad : "#3A4A45" }}>
         <div className="flex items-center justify-between text-white">
           <div className="flex items-center gap-2.5">
-            <Avatar name={displayName} size={40} />
-            <div><p className="font-extrabold leading-tight" style={{ fontSize: 15 }}>{displayName}</p><p className="text-xs opacity-85">{displaySpec} · ★ {YOU.rating}</p></div>
+            <Avatar name={YOU.name} size={40} />
+            <div><p className="font-extrabold leading-tight" style={{ fontSize: 15 }}>{YOU.name}</p><p className="text-xs opacity-85">General Physician · ★ {YOU.rating}</p></div>
           </div>
           <div className="flex items-center gap-2">
             <button onClick={() => setShowCal(true)} className="rounded-full flex items-center justify-center" style={{ width: 34, height: 34, background: "rgba(255,255,255,.22)", border: "none", cursor: "pointer", color: "#fff" }} aria-label="My schedule"><Calendar size={15} /></button>
             <a href="/provider/availability" title="Availability & DND windows" aria-label="Availability" className="rounded-full flex items-center justify-center" style={{ width: 34, height: 34, background: "rgba(255,255,255,.22)", border: "none", cursor: "pointer", color: "#fff", textDecoration: "none", fontSize: 15 }}>🌙</a>
-            <button onClick={() => setOnline(o => !o)} className="flex items-center gap-1.5 rounded-full px-3 py-1.5 font-bold" style={{ background: online ? "#D1FAE5" : "rgba(255,255,255,.22)", fontSize: 11.5, color: online ? "#065F46" : "#fff", border: "none", cursor: "pointer", transition: "all .2s" }}>
-              <Power size={12} strokeWidth={3} /> {online ? "Online" : "Offline"}
+            <button onClick={() => setOnline(o => !o)} className="flex items-center gap-1.5 rounded-full px-3 py-1.5 font-bold" style={{ background: "rgba(255,255,255,.22)", fontSize: 12, color: "#fff", border: "none", cursor: "pointer" }}>
+              <Power size={13} /> {online ? "Online" : "Offline"}
             </button>
             <ModuleProfilePill />
           </div>
         </div>
         {showCal && <BookingCalendar title="My Schedule" subtitle="Your patient appointments" accent={C.primary} bookings={DOC_BOOKINGS} onClose={() => setShowCal(false)} />}
-        <div className="grid grid-cols-3 gap-3 mt-5">
+        <div className="grid grid-cols-3 gap-2 mt-4">
           {[["Today", "₹6,400"], ["Visits", "7"], ["Score", "94%"]].map(([l, v]) => (
-            <div key={l} className="rounded-2xl py-3 text-center text-white shadow-sm" style={{ background: "rgba(255,255,255,.12)", border: "1px solid rgba(255,255,255,.1)" }}>
-              <p className="font-black" style={{ fontSize: 18, margin: 0, lineHeight: 1.1 }}>{v}</p>
-              <p className="font-bold opacity-80" style={{ fontSize: 11, margin: "2px 0 0", textTransform: "uppercase", letterSpacing: ".02em" }}>{l}</p>
+            <div key={l} className="rounded-xl py-2 text-center text-white" style={{ background: "rgba(255,255,255,.16)" }}>
+              <p className="font-extrabold" style={{ fontSize: 16 }}>{v}</p><p className="opacity-80" style={{ fontSize: 10 }}>{l}</p>
             </div>
           ))}
         </div>
       </div>
       <div className="flex-1 overflow-y-auto px-5 py-4">
-        {/* Priority Responder Panels: Nurse & Tech pings come first */}
-        {online && !wonReq && (
-          <div className="mb-4 space-y-4">
-            {providerProfile?.view === "nurse" && <NurseRequestsPanel userId={nurseUid} />}
-            {(providerProfile?.view === "medico" || providerProfile?.specialty?.toLowerCase().includes("tech")) && (
-              <TechnicianRequestsPanel userId={nurseUid} />
-            )}
-          </div>
-        )}
-
-        {/* Incoming alert — doctor specific */}
+        {/* Incoming alert — now at the top of the doctor view */}
         {online && activeIncoming && !acted && youCand && (
           <div className="rounded-2xl p-4 mb-4" style={{ background: C.surface, border: `1.5px solid ${activeIncoming.r.emergency ? C.emerg : activeIncoming.src === "hub" ? C.hub : C.primary}`, boxShadow: "0 8px 28px rgba(0,0,0,.12)", animation: "slidedown .35s cubic-bezier(.2,.8,.2,1)" }}>
             {activeIncoming.r.emergency && (
@@ -8114,7 +8073,7 @@ function DoctorApp({ req, hubReq, online, setOnline, onAccept, sevaActions }) {
         {online && <AcceptedPatientsCard rows={liveRows} onOpenHistory={() => setShowHistory(true)} />}
         {showHistory && <HistoryPanel onClose={() => setShowHistory(false)} />}
         {online && wonReq && (
-          <div className="rounded-2xl p-4 mb-4" style={{ background: wonReq.initiatedBy === "hub" ? C.hubSoft : C.primarySoft, border: `1.5px solid ${wonReq.initiatedBy === "hub" ? C.hub : C.primary}` }}>
+          <div className="rounded-2xl p-4" style={{ background: wonReq.initiatedBy === "hub" ? C.hubSoft : C.primarySoft, border: `1.5px solid ${wonReq.initiatedBy === "hub" ? C.hub : C.primary}` }}>
             <div className="flex items-center gap-2 mb-3">
               <CircleCheck size={18} style={{ color: wonReq.initiatedBy === "hub" ? C.hub : C.primary }} />
               <p className="font-extrabold" style={{ color: wonReq.initiatedBy === "hub" ? C.hub : C.primaryDeep, fontSize: 14 }}>
@@ -8134,9 +8093,7 @@ function DoctorApp({ req, hubReq, online, setOnline, onAccept, sevaActions }) {
         )}
         {online && !activeIncoming && !wonReq && (
           <div>
-            {!wonReq && !activeIncoming && providerProfile?.view !== "nurse" && !(providerProfile?.view === "medico" || providerProfile?.specialty?.toLowerCase().includes("tech")) && (
-              <Empty Icon={Radio} title="Waiting for requests" desc="You'll be pinged when a patient or health hub needs your speciality nearby." />
-            )}
+            <Empty Icon={Radio} title="Waiting for requests" desc="You'll be pinged when a patient or health hub needs your speciality nearby." />
             <div className="rounded-2xl p-3 mt-2" style={{ background: C.canvas }}>
               <p className="font-bold mb-2" style={{ color: C.ink, fontSize: 12.5 }}>Your hubs</p>
               {HUBS.filter(h => h.type === "medconnect").map((h, i) => (
@@ -10007,9 +9964,6 @@ function HubLocumCard() {
 
 
 function SOSOverlay({ onClose, onDispatch }) {
-  // EMERGENCY_V2 is the master switch in emergency/DispatchScreens.
-  // Set it to false there and the old SOS screen comes back.
-  if (EMERGENCY_V2) return <EmergencyPatient variant="sos" onClose={onClose} />;
   const [dispatched, setDispatched] = useState(false);
   useEffect(() => {
     if (!dispatched) return;
@@ -11934,11 +11888,6 @@ function DispatchRow({ icon, title, waiting, doneText, done, R, C }) {
 }
 
 function EmergencyPathwayFlow({ onClose }) {
-  // Everything below this line is a scripted demo: fixed timers mark the
-  // ambulance, hospital and specialist "done" after a few seconds with no
-  // responder involved, and the names are hardcoded. Route to the real
-  // dispatch flow instead.
-  if (EMERGENCY_V2) return <EmergencyPatient variant="guided" onClose={onClose} />;
   const C = { ink: "#1F2937", sub: "#6B7280", faint: "#9CA3AF", line: "#E5E7EB", canvas: "#F9FAFB", surface: "#fff" };
   const R = "#DC2626", RD = "#B91C1C";
   const [stage, setStage] = React.useState("entry");
@@ -14100,12 +14049,6 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
   const [selTh, setSelTh] = useState(null);
   const [selTest, setSelTest] = useState(null);
   const [selectedSpec, setSelectedSpec] = useState(null); // unified for all provider types
-  // The chosen nursing package is a spec like any other, so the date/time
-  // picker treats a 7-day package exactly as it treats a single service.
-  const nursingSpecs = React.useMemo(
-    () => (selectedSpec && selectedSpec.id === "n_pkg" ? [selectedSpec, ...NURSE_KINDS] : NURSE_KINDS),
-    [selectedSpec]
-  );
   const [visitMode, setVisitMode] = useState("hub"); // hub | online | home
   // Nurse is home-only; care/technician/scan have no online consult — keep visitMode valid
   React.useEffect(() => {
@@ -14400,140 +14343,6 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
     return () => { cancelled = true; clearInterval(poll); supabase.removeChannel(channel); };
   }, [directReq?.dbId, directReq?.provider?.name, directReq?.spec?.name, directReq?.emergency, actions]);
 
-  // Live Nursing Engagement Sync:
-  // When a nurse accepts, immediately update confirmedBooking popup to confirmed and set activeNursing
-  const [activeNursing, setActiveNursing] = useState(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    const syncNursing = async () => {
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user || cancelled) return;
-        const { data: engs } = await supabase
-          .from("nursing_engagements")
-          .select("id, kind, days_scheduled, start_date, slot_time, assignment_state, primary_nurse_id, total_amount, address_snapshot")
-          .eq("patient_id", user.id)
-          .eq("status", "active")
-          .order("created_at", { ascending: false })
-          .limit(3);
-        if (cancelled || !engs || !engs.length) return;
-
-        const latest = engs[0];
-        if (latest.assignment_state === "assigned" && latest.primary_nurse_id) {
-          const { data: nurseProf } = await supabase
-            .from("profiles")
-            .select("full_name, specialty")
-            .eq("id", latest.primary_nurse_id)
-            .maybeSingle();
-          if (cancelled) return;
-          const nurseName = nurseProf?.full_name || "Pooja (Nurse)";
-          setActiveNursing({
-            id: latest.id,
-            nurseName,
-            kind: latest.kind,
-            startDate: latest.start_date,
-            slotTime: latest.slot_time,
-            days: latest.days_scheduled,
-          });
-
-          setConfirmedBooking(cur => {
-            const confirmedData = {
-              pending: false,
-              name: (latest.days_scheduled > 1 ? latest.days_scheduled + " days of home nursing" : "Home nursing visit"),
-              doctor: { name: nurseName, spec: "Nurse", rating: 4.9 },
-              label: `Starts ${new Date(latest.start_date + "T00:00:00").toDateString()}${latest.slot_time ? ` at ${latest.slot_time.slice(0, 5)}` : ""} · Confirmed`,
-            };
-
-            if (!cur) return confirmedData; // Pop it up even if closed
-            if (cur.pending || cur.engagementId === latest.id) {
-              if (cur.pending) toast && toast(`${nurseName} accepted your home nursing request!`);
-              return confirmedData;
-            }
-            return cur;
-          });
-        }
-      } catch (_err) {
-        // silent
-      }
-    };
-
-    syncNursing();
-    const poll = setInterval(syncNursing, 2500);
-    const channel = supabase
-      .channel(`patient_nursing_sync_${Math.random().toString(36).slice(2)}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "nursing_engagements" }, () => {
-        syncNursing();
-      })
-      .subscribe();
-
-    return () => {
-      cancelled = true;
-      clearInterval(poll);
-      supabase.removeChannel(channel);
-    };
-  }, []);
-
-  // Live Technician Visit Sync (for scheduled bookings):
-  useEffect(() => {
-    let cancelled = false;
-    const syncTechnician = async () => {
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user || cancelled) return;
-        const { data: visits } = await supabase
-          .from("technician_visits")
-          .select("id, test_type, status, technician_id")
-          .eq("patient_id", user.id)
-          .in("status", ["assigned", "en_route", "arrived"])
-          .order("created_at", { ascending: false })
-          .limit(2);
-        if (cancelled || !visits || !visits.length) return;
-
-        const latest = visits[0];
-        if (latest.status === "assigned" && latest.technician_id) {
-          const { data: techProf } = await supabase
-            .from("profiles")
-            .select("full_name")
-            .eq("id", latest.technician_id)
-            .maybeSingle();
-          if (cancelled) return;
-          const techName = techProf?.full_name || "Technician";
-
-          setConfirmedBooking(cur => {
-            const confirmedData = {
-              pending: false,
-              name: `${latest.test_type.toUpperCase()} Visit`,
-              doctor: { name: techName, spec: "Technician", rating: 4.8 },
-              label: `Status: ${latest.status} · Confirmed`,
-            };
-
-            if (!cur) return confirmedData; // Pop it up even if closed
-            if (cur.pending || cur.visitId === latest.id) {
-              if (cur.pending) toast && toast(`${techName} accepted your technician request!`);
-              return confirmedData;
-            }
-            return cur;
-          });
-        }
-      } catch (_err) {}
-    };
-
-    syncTechnician();
-    const poll = setInterval(syncTechnician, 2500);
-    const channel = supabase
-      .channel(`patient_tech_sync_${Math.random().toString(36).slice(2)}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "technician_visits" }, () => {
-        syncTechnician();
-      })
-      .subscribe();
-
-    return () => {
-      cancelled = true;
-      clearInterval(poll);
-      supabase.removeChannel(channel);
-    };
-  }, []);
 
   // Normalised selected service (drives dispatch)
   const selectedService = useMemo(() => {
@@ -14699,60 +14508,6 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
         try {
           const { data: { user } } = await supabase.auth.getUser();
           if (!user) throw new Error("Please log in to book appointments");
-
-          // Home nursing logic
-          if ((spec.type || activeTab) === "nurse") {
-            const startAt = new Date(`${spec.scheduled.date} ${spec.scheduled.time}`);
-            if (isNaN(startAt.getTime())) throw new Error("Invalid date selected");
-            const iso = `${startAt.getFullYear()}-${String(startAt.getMonth() + 1).padStart(2, "0")}-${String(startAt.getDate()).padStart(2, "0")}`;
-            const chosenNurse = spec.doctor?.userId || null;
-            const { data: eng, error: engErr } = await supabase.rpc("create_nursing_engagement", {
-              p_days: spec.days || 1,
-              p_start_date: iso,
-              p_slot_time: spec.scheduled.time,
-              p_kind: spec.name || "General Duty Nurse",
-              p_address: (area || "Koregaon Park") + ", Pune",
-              p_lat: 18.5362,
-              p_lng: 73.8930,
-              p_nurse_id: chosenNurse,
-            });
-            if (engErr) throw new Error(engErr.message.replace(/^NURSING_[A-Z_]+:\s*/, ""));
-            const row = Array.isArray(eng) ? eng[0] : eng;
-            setConfirmedBooking({
-              pending: true,
-              engagementId: row?.id,
-              name: (spec.days > 1 ? spec.days + " days of home nursing" : "Home nursing visit"),
-              doctor: chosenNurse ? spec.doctor : null,
-              label: "Starts " + startAt.toDateString() + " · " + (chosenNurse ? (spec.doctor?.name || "Your nurse") + " has been asked first." : "waiting for a nurse to accept."),
-            });
-            setSelectedSpec(null);
-            return;
-          }
-
-          // Technician scheduled logic
-          if (["technician", "test"].includes(spec.type || activeTab)) {
-            const startAt = spec.scheduled.iso ? new Date(spec.scheduled.iso) : new Date(`${spec.scheduled.date} ${spec.scheduled.time}`);
-            const { data: res, error: techErr } = await bookTechnicianVisit({
-              data: {
-                testType: spec.name || spec.type || "general",
-                scheduledAt: startAt.toISOString(),
-                fee: spec.base || 600,
-                notes: `Scheduled visit · Koregaon Park`,
-              }
-            });
-            if (techErr) throw techErr;
-            setConfirmedBooking({
-              pending: true,
-              visitId: res.visitId,
-              name: spec.name || "Technician Visit",
-              label: spec.scheduled.label,
-              doctor: spec.doctor || null,
-            });
-            setSelectedSpec(null);
-            if (fromOverlay) setServiceView(null);
-            return;
-          }
-
           if (!spec.doctor?.userId) throw new Error("Invalid provider selected");
           if (visitMode === "home" || spec.visitMode === "home") throw new Error("Scheduled home visits for this service are unavailable. Please use its existing service booking option.");
 
@@ -15264,17 +15019,8 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
         <div className="mdx-scroll" ref={dashboardScrollRef}>
           <div hidden={bookingOpen}>
             <PatientDashboard tab={dashboardTab} onTabChange={changeDashboardTab} onAction={handleDashboardAction} name={patientName}
-              activeRequest={
-                req && ["broadcasting", "assigned", "converging", "at_hub"].includes(req.status)
-                  ? { title: assigned?.name || "Finding your care provider", detail: req.spec?.name || "Care request in progress" }
-                  : activeNursing
-                  ? { title: `${activeNursing.nurseName} accepted`, detail: `${activeNursing.kind} · Starts ${new Date(activeNursing.startDate + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" })}` }
-                  : null
-              }
-              onTrack={() => {
-                if (req) setScreen("track");
-                else setShowMyBookings(true);
-              }}
+              activeRequest={req && ["broadcasting", "assigned", "converging", "at_hub"].includes(req.status) ? { title: assigned?.name || "Finding your care provider", detail: req.spec?.name || "Care request in progress" } : null}
+              onTrack={() => setScreen("track")}
               mapContent={<LiveMap selectedHub={mapHub} onHubClick={h => setMapHub(h?.id === mapHub?.id ? null : h)} emergency={emergency} request={req} />}
               doctorsContent={<MyDoctorsCard
                 onBook={(d) => {
@@ -15352,15 +15098,9 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
               {/* UNIFIED BOOKING INTERFACE — large-target, elderly-friendly version */}
               {activeTab === "nurse" && (
                 <NursingCareCard onBook={(days, total) => {
-                  // Choosing a package no longer books on the spot. It selects a
-                  // spec so SpecialtyPickerSimple shows the same date and time
-                  // grid the per-service path uses; booking happens from there.
-                  setSelectedSpec({
-                    id: "n_pkg", name: days + "-day Home Nursing", Icon: Heart,
-                    desc: days === 1 ? "One home visit" : days + " daily visits at home",
-                    avail: 10, base: total, color: "#DB2777", type: "nurse",
-                    shortName: "Nurse", days,
-                  });
+                  const svc = { id: "nursing", name: days + "-day Home Nursing", base: total, color: "#DB2777", type: "nurse", shortName: "Nurse" };
+                  const homeHub = { id: "home", name: "Your Home", type: "home", address: area + ", Pune", patEtaMin: 0, specialities: [], amenities: [] };
+                  actions.book({ spec: svc, emergency: false, area, fare: buildFare(svc, false), hub: homeHub });
                 }} />
               )}
               <div style={{ padding: "10px 14px 0" }}>
@@ -15376,7 +15116,7 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
                     therapist: THERAPISTS,
                     test: TECHNICIANS,
                     technician: TECHNICIANS,
-                    nurse: nursingSpecs,
+                    nurse: NURSE_KINDS,
                     care: CARE_PROCS,
                     scan: SCANS,
                     diet: DIETITIANS
@@ -15527,8 +15267,8 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
       {confirmedBooking && (
         <div onClick={() => setConfirmedBooking(null)} style={{ position: "absolute", inset: 0, zIndex: 120, background: "rgba(15,23,42,.55)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
           <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 300, background: "#fff", borderRadius: 22, padding: "26px 22px", textAlign: "center", boxShadow: "0 24px 60px rgba(0,0,0,.3)" }}>
-            <div style={{ width: 64, height: 64, borderRadius: "50%", background: confirmedBooking.pending ? "linear-gradient(135deg,#F59E0B,#D97706)" : "linear-gradient(135deg,#0C9668,#059669)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px", boxShadow: confirmedBooking.pending ? "0 8px 22px -6px rgba(217,119,6,.6)" : "0 8px 22px -6px rgba(12,150,104,.6)" }}>{confirmedBooking.pending ? <Clock size={32} color="#fff" strokeWidth={2.6} /> : <Check size={34} color="#fff" strokeWidth={3} />}</div>
-            <p style={{ margin: 0, fontWeight: 900, color: C.ink, fontSize: 19 }}>{confirmedBooking.pending ? "Request sent" : "Booking Confirmed"}</p>
+            <div style={{ width: 64, height: 64, borderRadius: "50%", background: "linear-gradient(135deg,#0C9668,#059669)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px", boxShadow: "0 8px 22px -6px rgba(12,150,104,.6)" }}><Check size={34} color="#fff" strokeWidth={3} /></div>
+            <p style={{ margin: 0, fontWeight: 900, color: C.ink, fontSize: 19 }}>Booking Confirmed</p>
             <p style={{ margin: "6px 0 0", color: C.sub, fontSize: 13, fontWeight: 600 }}>{confirmedBooking.name}</p>
             {confirmedBooking.doctor && (
               <div style={{ margin: "12px 0 0", background: C.canvas, borderRadius: 14, padding: "12px 14px", textAlign: "left", display: "flex", alignItems: "center", gap: 10 }}>
@@ -15541,7 +15281,7 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
               </div>
             )}
             {confirmedBooking.label && <div style={{ margin: "12px 0 0", display: "inline-flex", alignItems: "center", gap: 7, background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 12, padding: "9px 14px" }}><span style={{ fontSize: 16 }}>📅</span><span style={{ color: "#1D4ED8", fontWeight: 800, fontSize: 13 }}>{confirmedBooking.label}</span></div>}
-            <p style={{ margin: "14px 0 0", color: C.faint, fontSize: 11.5, lineHeight: 1.4 }}>{confirmedBooking.pending ? "Nothing is confirmed until a provider accepts. You will be notified the moment one does." : confirmedBooking.doctor ? "Your appointment is booked with this doctor. You'll get a reminder ahead of your slot." : "Your appointment is booked. You'll get a reminder, and your medico will be assigned ahead of your slot."}</p>
+            <p style={{ margin: "14px 0 0", color: C.faint, fontSize: 11.5, lineHeight: 1.4 }}>{confirmedBooking.doctor ? "Your appointment is booked with this doctor. You'll get a reminder ahead of your slot." : "Your appointment is booked. You'll get a reminder, and your medico will be assigned ahead of your slot."}</p>
             <button onClick={() => setConfirmedBooking(null)} style={{ marginTop: 18, width: "100%", background: "linear-gradient(135deg,#0C9668,#059669)", color: "#fff", border: "none", borderRadius: 14, padding: "13px", fontWeight: 800, fontSize: 14.5, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Done</button>
           </div>
         </div>
@@ -16381,9 +16121,7 @@ function DirectRequestOverlay({ provider, spec, who, emergency, fallbackLabel, o
   const [phase, setPhase] = useState("contacting"); // contacting → accepted
   const [left, setLeft] = useState(emergency ? 60 : 600); // emergency = 1-minute window, else 10 minutes
   const fallbackCalledRef = useRef(false);
-  // Previously this flipped to "accepted" after 3.2 seconds with nobody on the
-  // other end, so a provider appeared to accept when none had. Acceptance now
-  // only arrives from a real accept; the countdown below is the fallback.
+  useEffect(() => { if (phase !== "contacting") return; if (emergency) return; const t = setTimeout(() => setPhase("accepted"), 3200); return () => clearTimeout(t); }, [phase, emergency]);
   useEffect(() => { fallbackCalledRef.current = false; }, [provider?.name, spec?.name, emergency]);
   useEffect(() => { if (phase !== "contacting") return; const iv = setInterval(() => setLeft(s => Math.max(0, s - 1)), 1000); return () => clearInterval(iv); }, [phase]);
   useEffect(() => { if (phase !== "contacting" || left > 0 || fallbackCalledRef.current) return; fallbackCalledRef.current = true; onFallback && onFallback(); }, [phase, left, onFallback]);
@@ -17729,15 +17467,13 @@ export default function MyDoxFull({ initialView } = {}) {
 
     const applyAcceptedRow = async (row) => {
       if (cancelled || !row) return;
-      const isAccepted = row.status === "accepted" || row.status === "assigned";
-      if (isAccepted && (row.accepted_by || row.technician_id)) {
-        const providerId = row.accepted_by || row.technician_id;
+      if (row.status === "accepted" && row.accepted_by) {
         // Freeze the rebroadcast loop instantly — no duplicate pings after acceptance.
         setReq(r => (r && r.dbId === dbId) ? { ...r, stopRebroadcast: true } : r);
         const { data: prof } = await supabase
-          .from("profiles").select("full_name, specialty").eq("id", providerId).maybeSingle();
+          .from("profiles").select("full_name, specialty").eq("id", row.accepted_by).maybeSingle();
         if (cancelled) return;
-        const acceptedName = prof?.full_name || (row.technician_id ? "Technician on the way" : "Medico on the way");
+        const acceptedName = prof?.full_name || "Medico on the way";
         setReq(r => {
           if (!r || r.dbId !== dbId || r.status === "converging" || r.status === "at_hub" || r.status === "completed") return r;
           const winner = {
@@ -17757,10 +17493,9 @@ export default function MyDoxFull({ initialView } = {}) {
       if (syncInFlight || cancelled) return;
       syncInFlight = true;
       try {
-        const table = req.isTechnician ? "technician_visits" : "care_requests";
         const { data } = await supabase
-          .from(table)
-          .select("*")
+          .from("care_requests")
+          .select("id, status, accepted_by, accepted_at, paid_at, amount, otp, otp_verified_at, arrival_deadline, updated_at")
           .eq("id", dbId)
           .maybeSingle();
         await applyAcceptedRow(data);
@@ -17774,17 +17509,16 @@ export default function MyDoxFull({ initialView } = {}) {
     syncCurrentRow();
     const poll = setInterval(syncCurrentRow, 2000);
 
-    const table = req.isTechnician ? "technician_visits" : "care_requests";
     const channel = supabase
       .channel(`patient_req_${dbId}_${Math.random().toString(36).slice(2)}`)
       .on("postgres_changes",
-        { event: "UPDATE", schema: "public", table: table, filter: `id=eq.${dbId}` },
+        { event: "UPDATE", schema: "public", table: "care_requests", filter: `id=eq.${dbId}` },
         async (payload) => {
           await applyAcceptedRow(payload.new);
         })
       .subscribe();
     return () => { cancelled = true; clearInterval(poll); supabase.removeChannel(channel); };
-  }, [req?.dbId, req?.isTechnician]);
+  }, [req?.dbId]);
 
   const actions = {
     book: ({ spec, emergency, area, fare, hub, routeMode, radiusKm, specialization, myDoctorName, preferredName, myDoctorId, preferredId }) => {
@@ -17821,41 +17555,20 @@ export default function MyDoxFull({ initialView } = {}) {
       // For doctor-type bookings (not scans), insert a real care_requests row so a
       // logged-in medico can accept it from /map and drive the "assigned" state.
       if (spec.type !== "scan") {
-        const isTech = ["technician", "test"].includes(spec.type || activeTab);
-        if (isTech) {
-          bookTechnicianVisit({
-            data: {
-              testType: spec.name || spec.type || "general",
-              scheduledAt: spec.scheduled?.iso || null,
-              notes: hub?.name ? `Hub: ${hub.name}` : null,
-              fee: typeof fare === "number" ? fare : (spec.base || 600),
-            }
-          }).then(res => {
-            if (res.ok) {
-              setReq(r => (r && r.id === localId) ? { ...r, dbId: res.visitId, isTechnician: true } : r);
-              toast && toast("Technician request sent!");
-            }
-          }).catch(err => {
-            console.warn("bookTechnicianVisit failed", err?.message);
-          });
-        } else {
-          const isNurse = ["nurse"].includes(spec.type || activeTab);
-          createCareRequest({
-            specialty: spec.name || spec.type || "general",
-            emergency: !!emergency,
-            notes: hub?.name ? `Hub: ${hub.name}` : null,
-            fare: typeof fare === "number" ? fare : null,
-            notification_stage: initialStage,
-            my_doctor_id: myDoctorId || null,
-            preferred_id: preferredId || null,
-            ...(isNurse ? { lat: 18.5362, lng: 73.8930 } : {}),
-          }).then(row => {
-            setReq(r => (r && r.id === localId) ? { ...r, dbId: row.id } : r);
-            logRequestEvent(row.id, "patient_booked", { stage: initialStage, note: `Patient booked ${spec.name || spec.type}${emergency ? " (emergency)" : ""}${myDoctorCandidate ? ` — notifying My Doctor ${myDoctorCandidate.name}` : ""}` });
-          }).catch(err => {
-            console.warn("createCareRequest failed — falling back to simulated flow", err?.message);
-          });
-        }
+        createCareRequest({
+          specialty: spec.name || spec.type || "general",
+          emergency: !!emergency,
+          notes: hub?.name ? `Hub: ${hub.name}` : null,
+          fare: typeof fare === "number" ? fare : null,
+          notification_stage: initialStage,
+          my_doctor_id: myDoctorId || null,
+          preferred_id: preferredId || null,
+        }).then(row => {
+          setReq(r => (r && r.id === localId) ? { ...r, dbId: row.id } : r);
+          logRequestEvent(row.id, "patient_booked", { stage: initialStage, note: `Patient booked ${spec.name || spec.type}${emergency ? " (emergency)" : ""}${myDoctorCandidate ? ` — notifying My Doctor ${myDoctorCandidate.name}` : ""}` });
+        }).catch(err => {
+          console.warn("createCareRequest failed — falling back to simulated flow", err?.message);
+        });
       }
     },
 
