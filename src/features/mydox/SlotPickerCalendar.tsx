@@ -58,7 +58,47 @@ export const fmtSlotTime = (t: SlotTime) => {
 const dayLabel = (d: Date, i: number) =>
   i === 0 ? "Today" : i === 1 ? "Tomorrow" : d.toLocaleDateString("en-US", { weekday: "short" });
 
-export function isSlotUnavailable(..._args: unknown[]): boolean {
+export function isSlotAvailable(
+  t: SlotTime,
+  schedDate: number | null,
+  schedDates: Date[],
+  availableSlots?: AvailableSlot[]
+): boolean {
+  if (schedDate == null || !schedDates[schedDate]) return false;
+  const selectedDate = schedDates[schedDate];
+  const slotDt = new Date(selectedDate);
+  slotDt.setHours(t.h, t.m, 0, 0);
+
+  // 1. Any slot that has already started or passed is unavailable
+  if (slotDt.getTime() <= Date.now()) {
+    return false;
+  }
+
+  // 2. If provider published availableSlots exist and has slots for this date
+  if (availableSlots && availableSlots.length > 0) {
+    const hasSlotsForDate = availableSlots.some((s) => s.dateIdx === schedDate);
+    if (hasSlotsForDate) {
+      return availableSlots.some((s) => s.dateIdx === schedDate && s.h === t.h && s.m === t.m);
+    }
+    // If provider has published slots on other days but none on this date, date is unavailable
+    return false;
+  }
+
+  return true;
+}
+
+export function isSlotUnavailable(
+  seed?: string,
+  dateIdx?: number,
+  h?: number,
+  m?: number,
+  schedDates?: Date[]
+): boolean {
+  if (dateIdx != null && h != null && m != null && schedDates && schedDates[dateIdx]) {
+    const dt = new Date(schedDates[dateIdx]);
+    dt.setHours(h, m, 0, 0);
+    if (dt.getTime() <= Date.now()) return true;
+  }
   return false;
 }
 
@@ -79,6 +119,16 @@ export function SlotPickerCalendar({
   availableSlots, // published slots in { h, m, dateIdx } format
 }: SlotPickerCalendarProps) {
   const small = size === "sm";
+
+  // Clear selected time if it represents a slot that has passed
+  React.useEffect(() => {
+    if (schedDate != null && schedTime != null) {
+      const t = schedTimes[schedTime];
+      if (t && !isSlotAvailable(t, schedDate, schedDates, availableSlots)) {
+        setSchedTime(null);
+      }
+    }
+  }, [schedDate, schedTime, schedDates, schedTimes, availableSlots, setSchedTime]);
 
   return (
     <div>
@@ -125,34 +175,57 @@ export function SlotPickerCalendar({
               .filter(({ t }) => t.h >= b.from && t.h < b.to);
             if (!inBucket.length) return null;
 
+            const anyAvail = inBucket.some(({ t }) =>
+              isSlotAvailable(t, schedDate, schedDates, availableSlots)
+            );
+
             return (
               <div key={b.key}>
                 <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", margin: "0 0 5px" }}>
                   <p style={{ margin: 0, fontSize: 11, fontWeight: 800, color: ink }}>
                     {b.emoji} {b.label} <span style={{ color: faint, fontWeight: 600 }}>· {b.sub}</span>
                   </p>
+                  {!anyAvail && (
+                    <span style={{ fontSize: 9.5, color: "#94A3B8", fontWeight: 700 }}>
+                      · Fully booked / Past
+                    </span>
+                  )}
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: `repeat(${small ? 4 : 3},1fr)`, gap: 6 }}>
                   {inBucket.map(({ t, i }) => {
+                    const isAvail = isSlotAvailable(t, schedDate, schedDates, availableSlots);
+                    const unavail = !isAvail;
                     const a = schedTime === i;
+                    const isPast = (() => {
+                      if (schedDate == null || !schedDates[schedDate]) return false;
+                      const d = new Date(schedDates[schedDate]);
+                      d.setHours(t.h, t.m, 0, 0);
+                      return d.getTime() <= Date.now();
+                    })();
+
                     return (
                       <button
                         key={i}
                         type="button"
-                        onClick={() => setSchedTime(i)}
-                        title="Select slot"
+                        disabled={unavail}
+                        onClick={() => {
+                          if (!unavail) setSchedTime(i);
+                        }}
+                        title={unavail ? (isPast ? "Past slot" : "Slot unavailable") : "Select slot"}
+                        aria-disabled={unavail}
                         style={{
                           padding: small ? "8px 2px" : "10px 3px",
                           borderRadius: small ? 9 : 11,
-                          border: `1.5px solid ${a ? accent : line}`,
-                          background: a ? accent : "#fff",
-                          color: a ? "#fff" : ink,
-                          cursor: "pointer",
+                          border: `1.5px solid ${a ? accent : unavail ? "#F1F5F9" : line}`,
+                          background: unavail ? "#F8FAFC" : a ? accent : "#fff",
+                          color: unavail ? "#CBD5E1" : a ? "#fff" : ink,
+                          cursor: unavail ? "not-allowed" : "pointer",
                           fontSize: small ? 10.5 : 12,
                           fontWeight: 800,
-                          textDecoration: "none",
-                          opacity: 1,
+                          textDecoration: unavail ? "line-through" : "none",
+                          opacity: unavail ? 0.6 : 1,
                           fontFamily: "'Plus Jakarta Sans',sans-serif",
+                          transition: "all 0.15s ease",
                         }}
                       >
                         {fmtSlotTime(t)}

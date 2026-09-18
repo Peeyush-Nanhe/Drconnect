@@ -5,11 +5,20 @@ import { referenceInput } from "./state";
 export class ChatError extends Error {
   constructor(message: string, readonly code?: string) { super(message); }
 }
+
 type RpcResult = { data: unknown; error: { message: string; code?: string } | null };
+const unavailableRpcs = new Set<string>();
+
 async function rpc<T>(name: string, input?: Record<string, unknown>): Promise<T> {
+  if (unavailableRpcs.has(name)) {
+    throw new ChatError("Post-consultation chat is not available on this server yet.", "PGRST202");
+  }
   const result = await (supabase.rpc as unknown as (name: string, args: Record<string, unknown>) => Promise<RpcResult>)(name, input ? { p_input: input } : {});
   if (result.error) {
     const unavailable = ["PGRST202", "42883"].includes(result.error.code ?? "");
+    if (unavailable) {
+      unavailableRpcs.add(name);
+    }
     throw new ChatError(unavailable ? "Post-consultation chat is not available on this server yet." : result.error.message, result.error.code);
   }
   return result.data as T;

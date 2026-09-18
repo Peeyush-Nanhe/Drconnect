@@ -23,6 +23,7 @@ export type TherapistVisit = {
   fromPack: boolean;
   notes: string | null;
   therapistNote: string | null;
+  otp?: string;
 };
 
 export type TherapistBoard = {
@@ -59,10 +60,11 @@ const mapVisit = (r: any): TherapistVisit => ({
   fromPack: !!r.pack_id,
   notes: r.notes ?? null,
   therapistNote: r.therapist_note ?? r.notes ?? null,
+  otp: r.otp ?? undefined,
 });
 
 const VISIT_COLUMNS =
-  "id, patient_name, therapy_type, area, city, address, scheduled_at, duration_min, session_number, status, urgency, checked_in_at, checked_out_at, fee, notes, created_at";
+  "id, patient_name, therapy_type, area, city, address, scheduled_at, duration_min, session_number, status, urgency, confirmed_at, checked_in_at, checked_out_at, fee, notes, otp, created_at";
 
 const STAGES = ["confirmed", "en_route", "in_progress", "completed", "no_show", "cancelled"] as const;
 
@@ -163,18 +165,20 @@ export const claimPhysioVisit = createServerFn({ method: "POST" })
       .maybeSingle();
     if (!pt) throw new Error("Physiotherapist record not found");
 
-    const rpcRes = await sb.rpc("claim_physio_visit", { _visit_id: data.visitId });
-    if (rpcRes.error && (rpcRes.error.code === "PGRST202" || rpcRes.error.message?.includes("schema cache"))) {
+    const rpcRes = await sb.rpc("claim_physio_visit", {
+      _visit_id: data.visitId,
+      _therapist_id: pt.id,
+    });
+    if (rpcRes.error) {
       const { error: updErr } = await sb
         .from("physio_visits")
         .update({ therapist_id: pt.id, status: "assigned", updated_at: new Date().toISOString() })
         .eq("id", data.visitId)
         .is("therapist_id", null);
       if (updErr) throw new Error(updErr.message);
-      return { ok: true };
+      return { ok: true, visitId: data.visitId };
     }
-    if (rpcRes.error) throw new Error(rpcRes.error.message);
-    return { ok: true };
+    return { ok: true, visitId: data.visitId };
   });
 
 /** Therapist confirms a session or moves it through the stages. */
@@ -199,7 +203,9 @@ export const setPhysioVisitStage = createServerFn({ method: "POST" })
         status: data.stage,
         updated_at: new Date().toISOString(),
       };
-      if (data.stage === "in_progress") {
+      if (data.stage === "confirmed") {
+        updates.confirmed_at = new Date().toISOString();
+      } else if (data.stage === "in_progress") {
         updates.checked_in_at = new Date().toISOString();
       } else if (data.stage === "completed") {
         updates.checked_out_at = new Date().toISOString();
@@ -395,4 +401,52 @@ export const setTherapistOnline = createServerFn({ method: "POST" })
       .from("provider_availability")
       .upsert({ user_id: context.userId, is_online: data.online }, { onConflict: "user_id" });
     return { ok: true, online: data.online };
+  });
+
+export const insertEmergencyPhysioVisit = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator((d: { reqId: string, patientId: string, patientName: string, specialty: string, fare: number }) => d)
+  .handler(async ({ data, context }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const sb = (supabaseAdmin || context.supabase) as any;
+    
+    // Check if this request is already inserted? Optional, but insert might create duplicates if clicked multiple times.
+    const { data: existing } = await sb.from("physio_visits").select("id").eq("notes", `Emergency ${data.specialty} request (ID: ${data.reqId})`).maybeSingle();
+    if (existing) return { ok: true };
+
+    const { data: therapist } = await sb.from("physio_therapists").select("id").eq("user_id", context.userId).maybeSingle();
+    if (!therapist) {
+      // If the user isn't in physio_therapists, they can't be assigned a visit.
+      throw new Error("You must be registered as a therapist to accept this.");
+    }
+
+    const allowedTherapies = ['neuro','orthopaedic','sports','paediatric','geriatric','cardio_respiratory','post_surgical','pelvic_floor','general'];
+    let mappedType = data.specialty.toLowerCase().replace(/[^a-z_]/g, '_');
+    if (!allowedTherapies.includes(mappedType)) {
+      // Basic heuristics for common names
+      if (mappedType.includes("neuro")) mappedType = "neuro";
+      else if (mappedType.includes("ortho")) mappedType = "orthopaedic";
+      else if (mappedType.includes("sport")) mappedType = "sports";
+      else if (mappedType.includes("paed") || mappedType.includes("pedi")) mappedType = "paediatric";
+      else if (mappedType.includes("cardio")) mappedType = "cardio_respiratory";
+      else mappedType = "general";
+    }
+
+    const { error } = await sb.from("physio_visits").insert({
+        patient_id: data.patientId,
+        patient_name: data.patientName,
+        therapist_id: therapist.id,
+        therapy_type: mappedType,
+        area: "Emergency Location",
+        city: "Pune",
+        scheduled_at: new Date().toISOString(),
+        duration_min: 45,
+        session_number: 1,
+        status: "assigned",
+        urgency: "urgent",
+        fee: data.fare,
+        notes: `Emergency ${data.specialty} request (ID: ${data.reqId})`
+    });
+    if (error) throw new Error(error.message);
+    return { ok: true };
   });

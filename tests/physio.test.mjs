@@ -240,6 +240,42 @@ test("Phase 3 · partner assigns verified+active therapist → status=assigned",
   assert.equal(r.therapist_id, IDS.therapist1);
 });
 
+test("Phase 3 · set_physio_visit_stage confirmed sets status and confirmed_at", async () => {
+  const res = await actor(IDS.partnerUser, `
+    select public.set_physio_visit_stage($1, 'confirmed', 'Confirmed by partner/therapist') as result
+  `, [assignedVisitId]);
+  assert.equal(res.rows[0].result.ok, true);
+  assert.equal(res.rows[0].result.stage, "confirmed");
+
+  const r = (await actor(null,
+    "select status, confirmed_at, notes from public.physio_visits where id=$1",
+    [assignedVisitId], "service_role"
+  )).rows[0];
+  assert.equal(r.status, "confirmed");
+  assert.ok(r.confirmed_at, "confirmed_at must be set");
+  assert.equal(r.notes, "Confirmed by partner/therapist");
+});
+
+test("Phase 3 · claim_physio_visit assigns open visit to therapist", async () => {
+  const openVisit = (await actor(null, `
+    insert into public.physio_visits(patient_id, therapy_type, area, city, scheduled_at, status, urgency)
+    values ($1,'sports','Baner','Pune', now()+interval'2 days','requested','planned')
+    returning id
+  `, [IDS.patient], "service_role")).rows[0];
+
+  const res = await actor(null, `
+    select public.claim_physio_visit($1, $2) as result
+  `, [openVisit.id, IDS.therapist1], "service_role");
+  assert.equal(res.rows[0].result.ok, true);
+
+  const r = (await actor(null,
+    "select status, therapist_id from public.physio_visits where id=$1",
+    [openVisit.id], "service_role"
+  )).rows[0];
+  assert.equal(r.status, "assigned");
+  assert.equal(r.therapist_id, IDS.therapist1);
+});
+
 test("Phase 3 · en_route — checked_in_at still null", async () => {
   await actor(IDS.partnerUser,
     "update public.physio_visits set status='en_route' where id=$1",
@@ -274,6 +310,34 @@ test("Phase 3 · completed sets checked_out_at", async () => {
   )).rows[0];
   assert.equal(r.status, "completed");
   assert.ok(r.checked_out_at, "checked_out_at must be set");
+});
+
+test("Phase 3 · physio session OTP exchange and completion verification", async () => {
+  const visitRes = await actor(null, `
+    insert into public.physio_visits(patient_id, therapy_type, area, city, scheduled_at, status, urgency, therapist_id)
+    values ($1,'orthopaedic','Baner','Pune', now(),'in_progress','planned',$2)
+    returning id
+  `, [IDS.patient, IDS.therapist1], "service_role");
+  const vid = visitRes.rows[0].id;
+
+  // 1. Patient ensures/generates session passcode
+  const ensureRes = await actor(IDS.patient, `select public.ensure_consultation_passcode($1, '5821') as result`, [vid]);
+  assert.equal(ensureRes.rows[0].result.success, true);
+  assert.equal(ensureRes.rows[0].result.otp, "5821");
+
+  // 2. Wrong OTP fails verification
+  const wrongRes = await actor(IDS.therapist1, `select public.verify_consultation_otp($1, '9999', 'test note') as result`, [vid]);
+  assert.equal(wrongRes.rows[0].result.success, false);
+
+  // 3. Correct OTP completes the session
+  const verifyRes = await actor(IDS.therapist1, `select public.verify_consultation_otp($1, '5821', 'Knee rehab complete') as result`, [vid]);
+  assert.equal(verifyRes.rows[0].result.success, true);
+  assert.equal(verifyRes.rows[0].result.status, "completed");
+
+  const r = (await actor(null, "select status, checked_out_at, notes from public.physio_visits where id=$1", [vid], "service_role")).rows[0];
+  assert.equal(r.status, "completed");
+  assert.ok(r.checked_out_at);
+  assert.match(r.notes, /Knee rehab complete/);
 });
 
 test("Phase 3 · no_show marks flag — row persists", async () => {

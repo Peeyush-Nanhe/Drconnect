@@ -936,19 +936,22 @@ function TherapyPackageCard({ perSession, therapistName, therapyName, accent = "
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {THERAPY_PACKAGES.map(p => {
           const c = calc(p); const sel = pkgId === p.id; return (
-            <button key={p.id} onClick={() => setPkgId(sel ? null : p.id)} style={{ display: "flex", alignItems: "center", gap: 11, padding: "11px 12px", borderRadius: 14, border: `1.5px solid ${sel ? accent : C.line}`, background: sel ? accent + "0D" : "#fff", cursor: "pointer", textAlign: "left", fontFamily: "'Plus Jakarta Sans',sans-serif", width: "100%" }}>
-              <div style={{ width: 22, height: 22, borderRadius: "50%", border: `2px solid ${sel ? accent : C.line}`, background: sel ? accent : "#fff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{sel && <Check size={13} color="#fff" strokeWidth={3} />}</div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
-                  <span style={{ fontWeight: 800, color: C.ink, fontSize: 14 }}>{p.sessions} sessions</span>
-                  {p.discount > 0 && <span style={{ background: accent, color: "#fff", borderRadius: 99, padding: "1px 7px", fontSize: 9.5, fontWeight: 800 }}>{Math.round(p.discount * 100)}% OFF</span>}
-                  <span style={{ fontSize: 9.5, color: C.faint, fontWeight: 700 }}>{p.tag}</span>
+            <button key={p.id} onClick={() => setPkgId(sel ? null : p.id)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 10px", borderRadius: 14, border: `1.5px solid ${sel ? accent : C.line}`, background: sel ? accent + "0D" : "#fff", cursor: "pointer", textAlign: "left", fontFamily: "'Plus Jakarta Sans',sans-serif", width: "100%" }}>
+              <div style={{ width: 20, height: 20, borderRadius: "50%", border: `2px solid ${sel ? accent : C.line}`, background: sel ? accent : "#fff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{sel && <Check size={12} color="#fff" strokeWidth={3} />}</div>
+              <div style={{ flex: 1, minWidth: 0, paddingRight: 4 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                  <span style={{ fontWeight: 800, color: C.ink, fontSize: 13.5, whiteSpace: "nowrap" }}>{p.sessions} sessions</span>
+                  {p.discount > 0 && <span style={{ background: accent, color: "#fff", borderRadius: 99, padding: "1px 5px", fontSize: 9, fontWeight: 800, whiteSpace: "nowrap" }}>{Math.round(p.discount * 100)}% OFF</span>}
                 </div>
-                <p style={{ margin: "2px 0 0", fontSize: 11, color: C.sub }}>{inr(c.per)}/session{p.discount > 0 ? ` · was ${inr(perSession)}` : ""}</p>
+                <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 3, flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 10, color: C.faint, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" }}>{p.tag}</span>
+                  <span style={{ fontSize: 10, color: C.line }}>•</span>
+                  <span style={{ fontSize: 10.5, color: C.sub, whiteSpace: "nowrap" }}>{inr(c.per)}/sesh</span>
+                </div>
               </div>
-              <div style={{ textAlign: "right", flexShrink: 0 }}>
-                <p style={{ margin: 0, fontWeight: 900, color: C.ink, fontSize: 15 }}>{inr(c.total)}</p>
-                {c.save > 0 && <p style={{ margin: 0, fontSize: 10, fontWeight: 700, color: accent }}>save {inr(c.save)}</p>}
+              <div style={{ textAlign: "right", flexShrink: 0, marginLeft: "auto" }}>
+                <p style={{ margin: 0, fontWeight: 900, color: C.ink, fontSize: 14, whiteSpace: "nowrap" }}>{inr(c.total)}</p>
+                {c.save > 0 && <p style={{ margin: 0, fontSize: 9.5, fontWeight: 700, color: accent, whiteSpace: "nowrap" }}>save {inr(c.save)}</p>}
               </div>
             </button>
           );
@@ -1394,8 +1397,8 @@ function SpecialtyPickerModern({
         const mapped = data.filter(d => d.is_available).map(d => {
           const dt = new Date(d.start_time);
           const dateIdx = schedDates.findIndex(sd => sd.toDateString() === dt.toDateString());
-          return { dateIdx, h: dt.getHours(), m: dt.getMinutes() };
-        }).filter(s => s.dateIdx >= 0);
+          return { dateIdx, h: dt.getHours(), m: dt.getMinutes(), start_time: d.start_time };
+        }).filter(s => s.dateIdx >= 0 && new Date(s.start_time).getTime() > Date.now());
         setAvailableSlots(mapped);
 
         const firstAvail = Array.from({ length: 14 }, (_, i) => i).find(dIdx => mapped.some(s => s.dateIdx === dIdx));
@@ -1412,7 +1415,16 @@ function SpecialtyPickerModern({
   }, [selectedDoctor, schedDates]);
   const dayLabel = (d, i) => i === 0 ? "Today" : i === 1 ? "Tomorrow" : d.toLocaleDateString("en-US", { weekday: "short" });
   const fmtTime = t => { const ap = t.h < 12 ? "AM" : "PM"; const hh = t.h % 12 === 0 ? 12 : t.h % 12; return `${hh}:${t.m === 0 ? "00" : "30"} ${ap}`; };
-  const schedConfirmed = schedDate != null && schedTime != null;
+  const isSlotInPast = React.useMemo(() => {
+    if (schedDate == null || schedTime == null) return false;
+    const _sd = schedDates[schedDate];
+    const _st = schedTimes[schedTime];
+    if (!_sd || !_st) return false;
+    const d = new Date(_sd);
+    d.setHours(_st.h, _st.m, 0, 0);
+    return d.getTime() <= Date.now();
+  }, [schedDate, schedTime, schedDates, schedTimes]);
+  const schedConfirmed = schedDate != null && schedTime != null && !isSlotInPast;
   const schedLabel = schedConfirmed ? `${dayLabel(schedDates[schedDate], schedDate)}, ${schedDates[schedDate].getDate()} ${schedDates[schedDate].toLocaleDateString("en-US", { month: "short" })} · ${fmtTime(schedTimes[schedTime])}` : null;
 
   const providers = [
@@ -1598,8 +1610,8 @@ function SpecialtyPickerSimple({ providerType, selectedSpec, setSelectedSpec, em
         const mapped = data.filter(d => d.is_available).map(d => {
           const dt = new Date(d.start_time);
           const dateIdx = schedDates.findIndex(sd => sd.toDateString() === dt.toDateString());
-          return { dateIdx, h: dt.getHours(), m: dt.getMinutes() };
-        }).filter(s => s.dateIdx >= 0);
+          return { dateIdx, h: dt.getHours(), m: dt.getMinutes(), start_time: d.start_time };
+        }).filter(s => s.dateIdx >= 0 && new Date(s.start_time).getTime() > Date.now());
         setAvailableSlots(mapped);
 
         // Auto-select first date that has available slots if none selected or if current selection has no slots
@@ -1618,7 +1630,16 @@ function SpecialtyPickerSimple({ providerType, selectedSpec, setSelectedSpec, em
   const [profileDoctor, setProfileDoctor] = React.useState(null);
   const fmtTime = t => { const ap = t.h < 12 ? "AM" : "PM"; const hh = t.h % 12 === 0 ? 12 : t.h % 12; return `${hh}:${t.m === 0 ? "00" : String(t.m)} ${ap}`; };
   const dayLabel = (d, i) => i === 0 ? "Today" : i === 1 ? "Tomorrow" : d.toLocaleDateString("en-US", { weekday: "short" });
-  const schedConfirmed = schedDate != null && schedTime != null;
+  const isSlotInPast = React.useMemo(() => {
+    if (schedDate == null || schedTime == null) return false;
+    const _sd = schedDates[schedDate];
+    const _st = schedTimes[schedTime];
+    if (!_sd || !_st) return false;
+    const d = new Date(_sd);
+    d.setHours(_st.h, _st.m, 0, 0);
+    return d.getTime() <= Date.now();
+  }, [schedDate, schedTime, schedDates, schedTimes]);
+  const schedConfirmed = schedDate != null && schedTime != null && !isSlotInPast;
   const schedLabel = schedConfirmed ? `${dayLabel(schedDates[schedDate], schedDate)}, ${schedDates[schedDate].getDate()} ${schedDates[schedDate].toLocaleDateString("en-US", { month: "short" })} · ${fmtTime(schedTimes[schedTime])}` : null;
   const panelDoctors = React.useMemo(() => panelDoctorsForSpec(selectedSpec), [selectedSpec?.id]);
   const needsDoctor = providerType === "doctor"; // only doctors get the professional-score panel; therapist/nurse/scan etc. stay on the simpler model
@@ -7281,7 +7302,7 @@ function AcceptedPatientsCard({ rows, onOpenHistory }) {
     if (!uid) return [];
     return (rows || []).filter(r => {
       if (r.accepted_by !== uid) return false;
-      if (r.status === "accepted") return true;
+      if (["accepted", "assigned", "converging", "en_route", "arrived", "in_progress", "otp_verified"].includes(r.status)) return true;
       if (r.status === "completed" && isToday(r.completed_at || r.updated_at)) return true;
       return false;
     }).sort((a, b) => {
@@ -13984,6 +14005,9 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
   const [dashboardTab, setDashboardTab] = useState("home");
   const [bookingOpen, setBookingOpen] = useState(false);
   const dashboardScrollRef = useRef(null);
+  const [directReq, setDirectReq] = useState(null); // {provider,spec,fromOverlay,emergency,isMy,myName,preferredName}
+  const [scanDirect, setScanDirect] = useState(null); // {provider,scan}
+
   const patientName = (() => { try { return localStorage.getItem("mc_user_name") || ""; } catch { return ""; } })();
   const changeDashboardTab = (tab) => {
     setDashboardTab(tab); setBookingOpen(false); setSearchFocused(false); setQuery(""); setServiceView(null);
@@ -14168,7 +14192,6 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
   }); // favourite scan centres (max 2)
   const [scanOptions, setScanOptions] = useState(null); // {scan} — ambulance opt-in step
   const [scanRepeat, setScanRepeat] = useState(null); // {scan} — favourite scan-centre pop-up
-  const [scanDirect, setScanDirect] = useState(null); // {provider,scan}
   const toggleScanPreferred = (name) => {
     setScanPreferred(cur => {
       if (cur.includes(name)) return cur.filter(n => n !== name);
@@ -14316,9 +14339,6 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
   const [showPrefMgr, setShowPrefMgr] = useState(false); // preferred doctors manager
   const [repeatModal, setRepeatModal] = useState(null); // {cat,spec,fromOverlay} — repeat-provider pop-up
   const [directReq, setDirectReq] = useState(null); // {provider,spec,fromOverlay,emergency,isMy,myName,preferredName}
-  // Booking confirmation overlay: {name, label, doctor, bookingId}. Read in nine
-  // places and set in six; the declaration itself went missing, which is what
-  // threw "confirmedBooking is not defined" and took the whole patient app down.
   const [confirmedBooking, setConfirmedBooking] = useState(null);
   const [emgFallback, setEmgFallback] = useState(null); // emergency: My didn't accept → ask about Preferred
   const [aiMessages, setAiMessages] = useState([]);
@@ -14362,7 +14382,7 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
   // screen is waiting for payment/OTP.
   useEffect(() => {
     const canRecover = !req || ["broadcasting", "expired"].includes(req.status) || (req.status === "assigned" && !req.paid);
-    if (!canRecover) return;
+    if (!canRecover || directReq || scanDirect) return;
     let cancelled = false;
     let inFlight = false;
 
@@ -14395,7 +14415,7 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
         });
         setDirectReq(null);
         if (row.paid_at) actions?.markAcceptedCareRequestPaid?.({ row });
-        setScreen(row.paid_at ? "home" : "track");
+        setScreen("home");
       } catch (err) {
         console.warn("accepted-request recovery failed", err?.message);
       } finally {
@@ -14406,7 +14426,7 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
     tryAdopt();
     const poll = setInterval(tryAdopt, 3000);
     return () => { cancelled = true; clearInterval(poll); };
-  }, [req?.status, req?.dbId, req?.paid, actions, area]);
+  }, [req?.status, req?.dbId, req?.paid, actions, area, !!directReq, !!scanDirect]);
 
 
 
@@ -14434,9 +14454,8 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
         emergency: !!directReq.emergency,
         area,
       });
-      setDirectReq(null);
-      setScreen("track");
-      toast(`${prof?.full_name || directReq.provider?.name || "Doctor"} accepted — please pay to confirm`);
+      // The overlay stays open to show the "accepted" phase. 
+      // User clicks "Done" on the overlay to dismiss it and go to tracking.
     };
 
     const syncDirectRequest = async () => {
@@ -14491,10 +14510,13 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
     if (req.status === "completed") { setScreen("rate"); return; }
     // Show tracking for the early phases. Once converging/at_hub, don't yank the screen —
     // the patient can browse home and return via the live banner.
-    if (["broadcasting", "expired", "assigned"].includes(req.status)) setScreen("track");
+    if (!req.scheduled && ["broadcasting", "expired", "assigned"].includes(req.status)) {
+      if (directReq || scanDirect || confirmedBooking) return;
+      setScreen("track");
+    }
     // Referral review does not confirm an appointment. Booking association must
     // be persisted by the authorised booking operation, never by local request state.
-  }, [req?.status]);
+  }, [req?.status, req?.scheduled, !!directReq, !!scanDirect, !!confirmedBooking]);
 
   // An authenticated referral ID opens the ordinary review and booking screen.
   useEffect(() => {
@@ -14628,6 +14650,44 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
   const proceedNormal = (spec, fromOverlay) => {
     if ((visitMode === "home" || spec.visitMode === "home") && (spec.type || activeTab) === "doctor") { openDoctorHomeVisit(spec); return; }
     if (spec.scheduled) {
+    if (spec.scheduled) {
+      if (spec.scheduled.iso) {
+        const schedMs = new Date(spec.scheduled.iso).getTime();
+        if (!isNaN(schedMs) && schedMs <= Date.now()) {
+          toast && toast("Cannot book a past time slot. Please choose an upcoming slot.");
+          return;
+        }
+      }
+      const isPhysio = String(spec.name || "").toLowerCase().includes("physio") || String(spec.name || "").toLowerCase().includes("therap");
+      const fareAmount = spec.base || (spec.doctor ? spec.doctor.fee : (isPhysio ? 700 : 500));
+      const specialtyName = isPhysio ? "Physiotherapist" : (spec.name || "Consultation");
+
+      setConfirmedBooking({ name: spec.name, label: spec.scheduled.label, doctor: spec.doctor || null, bookingId: null, spec });
+      setSelectedSpec(null);
+      if (fromOverlay) setServiceView(null);
+
+      const broadcastReqData = {
+        id: "req-" + Date.now(),
+        dbId: null,
+        spec: { ...spec, type: isPhysio ? "therapist" : (spec.type || "doctor"), name: specialtyName },
+        emergency: false,
+        scheduled: spec.scheduled,
+        area: area || "Kothrud",
+        fare: { total: fareAmount },
+        hub: { name: "MyDox Hub — Koregaon Park", address: "Nearby", type: "medconnect" },
+        routeMode: "open",
+        status: "broadcasting",
+        stage: "broadcast",
+        remaining: 30,
+        candidates: [{ id: "you", name: isPhysio ? "Dr. Kavita Deshmukh" : "Dr. Rahul Nair", spec: specialtyName, rating: 4.9, distanceKm: 1.2, etaMin: 8 }],
+        initiatedBy: "patient",
+      };
+      if (typeof setReq === "function") {
+        setReq(broadcastReqData);
+      } else if (actions && typeof actions.setReqState === "function") {
+        actions.setReqState(broadcastReqData);
+      }
+
       (async () => {
         try {
           const { data: { user } } = await supabase.auth.getUser();
@@ -14768,9 +14828,9 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
     const dbPref = cat === "doctor" ? (myMedicos.get(spec.id || spec.name || "", "preferred") || myMedicos.get(spec.name || "", "preferred")) : null;
     const favs = dbPref && dbPref.medico_name && !localFavs.includes(dbPref.medico_name)
       ? [dbPref.medico_name, ...localFavs] : localFavs;
-    // Emergency + doctor: if a "My Doctor" exists, go straight to the emergency single-target flow.
-    if (emergency && cat === "doctor" && prior) { setRepeatModal({ cat, favKey, prior, spec, fromOverlay, emergency: true, favs }); return; }
-    if (PREF_CATS.includes(cat) && (prior || favs.length)) { setRepeatModal({ cat, favKey, prior, spec, fromOverlay, favs }); return; }
+    // Emergency + doctor/therapist: if a prior exists, go straight to the emergency single-target flow.
+    if (emergency && (cat === "doctor" || cat === "therapist") && prior) { setRepeatModal({ cat, favKey, prior, spec, fromOverlay, emergency: true, favs }); return; }
+    if (PREF_CATS.includes(cat) && (prior || favs.length)) { setRepeatModal({ cat, favKey, prior, spec, fromOverlay, emergency: !!emergency, favs }); return; }
     proceedNormal(spec, fromOverlay);
   };
 
@@ -14973,7 +15033,7 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
       )}
 
       {/* Stage-flow overlay — per-stage 60s timer, manual escalation only, live audit timeline */}
-      <StageFlowOverlay req={req} actions={actions} onCancel={() => requestCancel()} />
+      {!directReq && !scanDirect && <StageFlowOverlay req={req} actions={actions} onCancel={() => requestCancel()} />}
 
 
 
@@ -15298,13 +15358,51 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
           emergency={!!repeatModal.emergency}
           prior={repeatModal.prior} preferred={preferred[repeatModal.favKey] || []}
           onTogglePreferred={(name) => togglePreferred(repeatModal.favKey, name)}
-          onRequest={(p) => { const rm = repeatModal; setRepeatModal(null); setSelectedSpec(null); if (rm.fromOverlay) setServiceView(null); const isMy = rm.prior && p.name === rm.prior.name; const prefName = (rm.favs || []).find(n => !rm.prior || n !== rm.prior.name) || null; setDirectReq({ provider: p, spec: rm.spec, fromOverlay: rm.fromOverlay, emergency: !!rm.emergency, isMy, myName: rm.prior?.name || null, preferredName: prefName }); if (rm.emergency) { (async () => { try { const dbMy = myMedicos.get(rm.spec?.id || rm.spec?.name || "", "my") || myMedicos.get(rm.spec?.name || "", "my"); const dbPref = myMedicos.get(rm.spec?.id || rm.spec?.name || "", "preferred") || myMedicos.get(rm.spec?.name || "", "preferred"); let targetId = isMy ? (dbMy?.medico_id || null) : (dbPref?.medico_id || null); if (!targetId) { try { targetId = await myMedicos.lookupMedicoIdByName(p.name); } catch (_) { } } const row = await createCareRequest({ specialty: rm.spec?.name || "General", emergency: true, notes: `Direct call to ${p.name}${isMy ? " (My Doctor)" : " (Preferred)"}`, notification_stage: isMy ? "my_doctor" : "preferred", my_doctor_id: isMy ? targetId : null, preferred_id: isMy ? null : targetId }); setDirectReq(cur => cur && cur.provider?.name === p.name ? { ...cur, dbId: row.id } : cur); } catch (err) { console.warn("emergency direct request insert failed", err?.message); } })(); } }}
+          onRequest={(p) => {
+            const rm = repeatModal;
+            setRepeatModal(null);
+            setSelectedSpec(null);
+            if (rm.fromOverlay) setServiceView(null);
+            const isMy = rm.prior && p.name === rm.prior.name;
+            const prefName = (rm.favs || []).find(n => !rm.prior || n !== rm.prior.name) || null;
+            setDirectReq({ provider: p, cat: rm.cat, spec: rm.spec, fromOverlay: rm.fromOverlay, emergency: !!rm.emergency, isMy, myName: rm.prior?.name || null, preferredName: prefName });
+            if (actions && actions.directRequest) {
+              actions.directRequest({ provider: p, spec: rm.spec, emergency: !!rm.emergency, fare: rm.spec?.base || 700, area, dbId: null });
+            }
+            (async () => {
+              try {
+                const dbMy = myMedicos.get(rm.spec?.id || rm.spec?.name || "", "my") || myMedicos.get(rm.spec?.name || "", "my");
+                const dbPref = myMedicos.get(rm.spec?.id || rm.spec?.name || "", "preferred") || myMedicos.get(rm.spec?.name || "", "preferred");
+                let targetId = isMy ? (dbMy?.medico_id || null) : (dbPref?.medico_id || null);
+                if (!targetId) {
+                  try { targetId = await myMedicos.lookupMedicoIdByName(p.name); } catch (_) { }
+                }
+                const specialtyName = rm.spec?.name || (rm.cat === "therapist" ? "Physiotherapy" : "General");
+                const row = await createCareRequest({
+                  specialty: specialtyName,
+                  emergency: !!rm.emergency,
+                  notes: `Direct call to ${p.name}${isMy ? " (My Doctor)" : " (Preferred)"}`,
+                  notification_stage: isMy ? "my_doctor" : "preferred",
+                  my_doctor_id: isMy ? targetId : null,
+                  preferred_id: isMy ? null : targetId
+                });
+                setDirectReq(cur => cur && cur.provider?.name === p.name ? { ...cur, dbId: row.id } : cur);
+                if (actions && actions.directRequest) {
+                  actions.directRequest({ provider: p, spec: rm.spec, emergency: !!rm.emergency, fare: rm.spec?.base || 700, area, dbId: row.id });
+                }
+              } catch (err) {
+                console.warn("direct request insert failed", err?.message);
+              }
+            })();
+          }}
           onBroadcast={() => { const rm = repeatModal; setRepeatModal(null); proceedNormal(rm.spec, rm.fromOverlay); }}
           onClose={() => setRepeatModal(null)} />
       )}
       {directReq && (
         <DirectRequestOverlay
-          provider={directReq.provider} spec={directReq.spec} who="you"
+          provider={directReq.provider} cat={directReq.cat} spec={directReq.spec} who="you"
+          dbId={directReq.dbId}
+          reqStatus={req?.status}
           emergency={!!directReq.emergency}
           fallbackLabel={directReq.emergency ? (directReq.isMy ? (directReq.preferredName ? `Not accepting — try Preferred (${directReq.preferredName}) →` : "Not accepting — broadcast to any available →") : "Not accepting — broadcast to any available →") : undefined}
           onConfirmed={() => { const dr = directReq; setDirectReq(null); setConfirmedBooking({ name: dr.provider.name + " · " + (dr.spec?.name || "Visit"), label: "Repeat visit · same provider" }); }}
@@ -15406,7 +15504,37 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
             )}
             {confirmedBooking.label && <div style={{ margin: "12px 0 0", display: "inline-flex", alignItems: "center", gap: 7, background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 12, padding: "9px 14px" }}><span style={{ fontSize: 16 }}>📅</span><span style={{ color: "#1D4ED8", fontWeight: 800, fontSize: 13 }}>{confirmedBooking.label}</span></div>}
             <p style={{ margin: "14px 0 0", color: C.faint, fontSize: 11.5, lineHeight: 1.4 }}>{confirmedBooking.doctor ? "Your appointment is booked with this doctor. You'll get a reminder ahead of your slot." : "Your appointment is booked. You'll get a reminder, and your medico will be assigned ahead of your slot."}</p>
-            <button onClick={() => setConfirmedBooking(null)} style={{ marginTop: 18, width: "100%", background: "linear-gradient(135deg,#0C9668,#059669)", color: "#fff", border: "none", borderRadius: 14, padding: "13px", fontWeight: 800, fontSize: 14.5, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Done</button>
+            <button onClick={() => {
+              const booking = confirmedBooking;
+              setConfirmedBooking(null);
+              if (!booking?.spec) return;
+              
+              toast && toast("Booking confirmed! Dispatched live broadcast to medicos.");
+              const isPhys = String(booking?.name || "").toLowerCase().includes("physio") || String(booking?.name || "").toLowerCase().includes("therap");
+              const fareAmt = isPhys ? Math.round(700 * 1.2) : 500;
+              const titleName = isPhys ? "Physiotherapist" : (booking?.name || "Consultation");
+              const bData = {
+                id: "req-" + Date.now(),
+                dbId: booking?.careRequestId || null,
+                spec: { ...(booking?.spec || {}), type: isPhys ? "therapist" : "doctor", name: titleName },
+                emergency: false,
+                scheduled: { label: booking?.label || "Scheduled" },
+                area: area || "Kothrud",
+                fare: { total: fareAmt },
+                hub: { name: "MyDox Hub — Koregaon Park", address: "Nearby", type: "medconnect" },
+                routeMode: "open",
+                status: "broadcasting",
+                stage: "broadcast",
+                remaining: 30,
+                candidates: [{ id: "you", name: isPhys ? "Dr. Kavita Deshmukh" : "Dr. Rahul Nair", spec: titleName, rating: 4.9, distanceKm: 1.2, etaMin: 8 }],
+                initiatedBy: "patient",
+              };
+              if (typeof setReq === "function") {
+                setReq(cur => (cur && cur.status === "broadcasting") ? cur : bData);
+              } else if (actions && typeof actions.setReqState === "function") {
+                actions.setReqState(bData);
+              }
+            }} style={{ marginTop: 18, width: "100%", background: "linear-gradient(135deg,#0C9668,#059669)", color: "#fff", border: "none", borderRadius: 14, padding: "13px", fontWeight: 800, fontSize: 14.5, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Done</button>
           </div>
         </div>
       )}
@@ -15443,7 +15571,13 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
             <div style={{ display: "flex", gap: 8 }}>
               <button onClick={() => {
                 const svc = { ...selScan, type: "scan" };
-                const fare = buildFare(svc, emergency);
+                let fare = buildFare(svc, emergency);
+                if (isPhys && emergency) {
+                  // For emergency physio, calculate base 700 + 20% surge directly to match UI
+                  const base = 700;
+                  const surge = Math.round(base * 0.2);
+                  fare = { base, convenience: 0, distance: 0, surcharge: surge, total: base + surge };
+                }
                 if (wantAmbulance) {
                   fare.total += 500;
                   fare.ambulance = 500;
@@ -15741,64 +15875,11 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
         {cancelDialog}
       </Screen>
     );
-    if (req.status === "assigned") return (
-      <Screen>
-        <Header title="Medico confirmed!" emergency={req.emergency} />
-        <div className="flex-1 overflow-y-auto px-5 py-4">
-          <div className="flex flex-col items-center text-center">
-            {assigned && <Avatar name={assigned.name} size={64} emergency={req.emergency} />}
-            <p className="font-extrabold mt-3" style={{ color: C.ink, fontSize: 18 }}>{assigned?.name}</p>
-            <p style={{ color: C.sub, fontSize: 13 }}>{req.spec.name} · <Stars v={assigned?.rating} /></p>
-            <span className="mt-2 rounded-full px-3 py-1" style={{ background: C.primarySoft, color: C.primaryDeep, fontSize: 11, fontWeight: 800 }}>✓ Accepted your request</span>
-          </div>
-          {req.spec?.scheduled?.label && (
-            <div className="mt-4 rounded-2xl px-4 py-3 flex items-center gap-3" style={{ background: "#EFF6FF", border: "1px solid #BFDBFE" }}>
-              <span style={{ fontSize: 18 }}>📅</span>
-              <div><p className="font-bold" style={{ color: C.ink, fontSize: 12.5, margin: 0 }}>Scheduled for</p><p style={{ color: "#1D4ED8", fontSize: 12.5, fontWeight: 700, margin: 0 }}>{req.spec.scheduled.label}</p></div>
-            </div>
-          )}
-          <div className="mt-4 rounded-2xl p-4" style={{ background: C.canvas }}>
-            <p style={{ fontWeight: 800, color: C.ink, fontSize: 13, marginBottom: 8 }}>Pay to confirm &amp; dispatch</p>
-            {[["Service fee", req.fare.base], ["Convenience", req.fare.convenience], ["Distance", req.fare.distance], ...(req.fare.surcharge ? [["Emergency +20%", req.fare.surcharge]] : [])].map(([l, v]) => (
-              <div key={l} style={{ display: "flex", justifyContent: "space-between", padding: "3px 0", fontSize: 12.5, color: C.sub }}><span>{l}</span><span>{inr(v)}</span></div>
-            ))}
-            <div style={{ height: 1, background: C.line, margin: "7px 0" }} />
-            <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 800, color: C.ink, fontSize: 15 }}><span>Total</span><span>{inr(req.fare.total)}</span></div>
-            <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
-              {["UPI", "Card", "Wallet"].map((m, i) => (<div key={m} style={{ flex: 1, textAlign: "center", border: `1.5px solid ${i === 0 ? C.primary : C.line}`, borderRadius: 10, padding: "7px 0", fontSize: 11, fontWeight: 700, color: i === 0 ? C.primaryDeep : C.sub, background: i === 0 ? C.primarySoft : "#fff" }}>{m}</div>))}
-            </div>
-          </div>
-          <p className="flex items-center gap-1.5 mt-3" style={{ color: C.sub, fontSize: 11.5 }}><ShieldCheck size={13} /> Money held in escrow · released only after OTP arrival</p>
-          <p className="flex items-center gap-1.5 mt-1.5" style={{ color: C.primaryDeep, fontSize: 11.5, fontWeight: 600 }}><MessageCircle size={13} /> Chat &amp; call open the moment you pay</p>
-          <div className="mt-4">
-            {paying === "done" ? (
-              <div className="rounded-2xl p-4 text-center" style={{ background: C.primarySoft }}>
-                <div className="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-2" style={{ background: C.primary }}><Check size={26} color="white" /></div>
-                <p style={{ fontWeight: 800, color: C.primaryDeep, fontSize: 15, margin: 0 }}>Payment received ✓</p>
-                <p style={{ color: C.sub, fontSize: 11.5, margin: "3px 0 0" }}>{inr(req.fare.total)} paid · dispatching your medico…</p>
-              </div>
-            ) : (
-              <PrimaryBtn emergency={req.emergency} onClick={() => {
-                if (paying !== "idle") return;
-                setPaying("processing");
-                setTimeout(() => {
-                  setPaying("done");
-                  setTimeout(() => { actions.pay(); setPaying("idle"); }, 900);
-                }, 800);
-              }}>
-                {paying === "processing" ? <>Processing…</> : <><Check size={16} /> Pay {inr(req.fare.total)} &amp; Dispatch</>}
-              </PrimaryBtn>
-            )}
-            <p style={{ textAlign: "center", color: C.faint, fontSize: 10, margin: "8px 0 0" }}>Demo payment · Razorpay integration coming soon</p>
-          </div>
-        </div>
-      </Screen>
-    );
-    if (req.status === "converging" || req.status === "at_hub") {
+    if (req.status === "converging" || req.status === "at_hub" || req.status === "assigned") {
       const atHub = req.status === "at_hub";
       return (
         <Screen>
-          <Header title={atHub ? "Both at the hub!" : "Converging at hub"} onBack={() => setScreen("home")} emergency={req.emergency} />
+          <Header title={atHub ? "Both at the hub!" : (req.hub?.type === "home" ? "Medico en route" : "Converging at hub")} onBack={() => setScreen("home")} emergency={req.emergency} />
           <div className="flex-1 overflow-y-auto px-5 py-4">
             <MapConverge req={req} />
             <div className="rounded-2xl p-4 mt-3" style={{ background: C.surface, border: `1px solid ${C.line}` }}>
@@ -16172,25 +16253,26 @@ const Initials = ({ name, color }) => (
 
 /* Pop-up shown on a new enquiry when a prior/preferred provider exists for that category */
 function RepeatProviderModal({ cat, spec, prior, preferred, who, emergency, onRequest, onBroadcast, onTogglePreferred, onClose }) {
+  const isDoctorEmergency = emergency && (!cat || cat === "doctor");
   const catLabel = CAT_LABEL[cat] || "providers";
   const list = [];
   if (prior) list.push(prior);
   (preferred || []).forEach(nm => { if (!list.find(p => p.name === nm)) list.push({ name: nm, sub: "Preferred provider", color: "#0C9668" }); });
-  const emgList = emergency && prior ? [prior] : list;
+  const displayList = isDoctorEmergency && prior ? [prior] : list;
   const emgPrefName = (preferred || []).find(n => !prior || n !== prior.name) || null;
   return (
-    <div onClick={onClose} style={{ position: "absolute", inset: 0, zIndex: 130, background: "rgba(15,23,42,.55)", display: "flex", alignItems: emergency ? "flex-start" : "flex-end", justifyContent: "center", paddingTop: emergency ? "max(12px, env(safe-area-inset-top))" : 0 }}>
-      <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 380, background: "#fff", borderRadius: emergency ? "0 0 24px 24px" : "24px 24px 0 0", padding: "20px 18px 18px", maxHeight: "86%", overflowY: "auto" }}>
+    <div onClick={onClose} style={{ position: "absolute", inset: 0, zIndex: 130, background: "rgba(15,23,42,.55)", display: "flex", alignItems: isDoctorEmergency ? "flex-start" : "flex-end", justifyContent: "center", paddingTop: isDoctorEmergency ? "max(12px, env(safe-area-inset-top))" : 0 }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 380, background: "#fff", borderRadius: isDoctorEmergency ? "0 0 24px 24px" : "24px 24px 0 0", padding: "20px 18px 18px", maxHeight: "86%", overflowY: "auto" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
-          <p style={{ margin: 0, fontWeight: 900, color: C.ink, fontSize: 18 }}>{emergency && prior ? "Emergency · My " + (spec?.name || "Doctor") : "Same provider as before?"}</p>
+          <p style={{ margin: 0, fontWeight: 900, color: C.ink, fontSize: 18 }}>{isDoctorEmergency && prior ? "Emergency · My " + (spec?.name || "Doctor") : "Same provider as before?"}</p>
           <button onClick={onClose} style={{ border: "none", background: C.canvas, borderRadius: "50%", width: 30, height: 30, cursor: "pointer", color: C.faint, fontSize: 17, flexShrink: 0 }}>×</button>
         </div>
-        {emergency && prior ? (
+        {isDoctorEmergency && prior ? (
           <p style={{ margin: "0 0 14px", color: C.sub, fontSize: 12.5, lineHeight: 1.45 }}>Sending straight to your <b>My {spec?.name || "Doctor"}</b>. If they don't accept within 1 minute, we'll ask if you'd like to try your <b>Preferred</b> next.</p>
         ) : (
           <p style={{ margin: "0 0 14px", color: C.sub, fontSize: 12.5, lineHeight: 1.45 }}>Your <b>favourites</b> get the request first. We broadcast to all {catLabel} only if they don't take it within <b>10 minutes</b>. Tap the ♥ to favourite a provider for repeat visits.</p>
         )}
-        {emgList.map(p => {
+        {displayList.map(p => {
           const isPref = (preferred || []).includes(p.name);
           return (
             <div key={p.name} style={{ display: "flex", alignItems: "center", gap: 11, background: C.canvas, borderRadius: 14, padding: "11px 12px", marginBottom: 9 }}>
@@ -16199,12 +16281,12 @@ function RepeatProviderModal({ cat, spec, prior, preferred, who, emergency, onRe
                 <p style={{ margin: 0, fontWeight: 800, color: C.ink, fontSize: 13.5 }}>{p.name}</p>
                 <p style={{ margin: "1px 0 0", color: C.sub, fontSize: 11 }}>{p.sub}{p.rating ? ` · ★ ${p.rating}` : ""}{p.visits ? ` · ${p.visits} past visits` : ""}</p>
               </div>
-              {!emergency && (<button onClick={() => onTogglePreferred(p.name)} title="Add to favourites" style={{ border: "none", background: "transparent", cursor: "pointer", flexShrink: 0, padding: 4 }}><Heart size={20} color={isPref ? "#EF4444" : C.line} fill={isPref ? "#EF4444" : "none"} /></button>)}
-              <button onClick={() => onRequest(p)} style={{ flexShrink: 0, border: "none", background: emergency ? C.emerg : (p.color || C.primary), color: "#fff", borderRadius: 99, padding: "9px 14px", fontWeight: 800, fontSize: 12, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>{emergency ? "Call now" : "Request"}</button>
+              {!isDoctorEmergency && (<button onClick={() => onTogglePreferred(p.name)} title="Add to favourites" style={{ border: "none", background: "transparent", cursor: "pointer", flexShrink: 0, padding: 4 }}><Heart size={20} color={isPref ? "#EF4444" : C.line} fill={isPref ? "#EF4444" : "none"} /></button>)}
+              <button onClick={() => onRequest(p)} style={{ flexShrink: 0, border: "none", background: isDoctorEmergency ? C.emerg : (p.color || C.primary), color: "#fff", borderRadius: 99, padding: "9px 14px", fontWeight: 800, fontSize: 12, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>{isDoctorEmergency ? "Call now" : "Request"}</button>
             </div>
           );
         })}
-        {emergency && prior ? (
+        {isDoctorEmergency && prior ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 4 }}>
             {emgPrefName && (
               <button onClick={() => onRequest({ name: emgPrefName, sub: "Preferred " + (spec?.name || "Doctor"), color: "#0C9668" })} style={{ width: "100%", borderRadius: 12, padding: "11px", border: `1.5px solid ${C.line}`, background: C.surface, color: C.ink, fontWeight: 700, fontSize: 12.5, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Skip · call Preferred ({emgPrefName}) instead</button>
@@ -16241,9 +16323,10 @@ function EmergencyPreferredPromptModal({ myName, preferredName, spec, onTryPrefe
 }
 
 /* Direct request to one provider — they accept, else fall back to a full broadcast */
-function DirectRequestOverlay({ provider, spec, who, emergency, fallbackLabel, onConfirmed, onFallback, onClose }) {
+function DirectRequestOverlay({ provider, cat, spec, who, emergency, fallbackLabel, dbId, reqStatus, onConfirmed, onFallback, onClose }) {
+  const isDoctorEmergency = emergency && (!cat || cat === "doctor");
   const [phase, setPhase] = useState("contacting"); // contacting → accepted
-  const [left, setLeft] = useState(emergency ? 60 : 600); // emergency = 1-minute window, else 10 minutes
+  const [left, setLeft] = useState(isDoctorEmergency ? 60 : 600); // emergency doctor = 1-minute window, else 10 minutes
   const fallbackCalledRef = useRef(false);
   useEffect(() => { if (phase !== "contacting") return; if (emergency) return; const t = setTimeout(() => setPhase("accepted"), 3200); return () => clearTimeout(t); }, [phase, emergency]);
   useEffect(() => { fallbackCalledRef.current = false; }, [provider?.name, spec?.name, emergency]);
@@ -17564,9 +17647,18 @@ export default function MyDoxFull({ initialView } = {}) {
   }, []);
 
   useEffect(() => {
-    // Patient must pay on the "assigned" screen; payment moves status to "converging".
-    // (No auto-advance — handled by the Pay button.)
-  }, [req?.status, req?.id]);
+    if (req?.status === "assigned") {
+      setReq(r => {
+        if (!r || r.status !== "assigned") return r;
+        if (r.dbId) {
+          payAndGenerateOtp(r.dbId, r.fare?.total ?? null)
+            .then(otp => setReq(cur => (cur && cur.dbId === r.dbId) ? { ...cur, otp } : cur))
+            .catch(err => console.warn("payAndGenerateOtp failed", err?.message));
+        }
+        return { ...r, status: "converging", paid: true };
+      });
+    }
+  }, [req?.status, req?.id, req?.dbId, req?.fare?.total]);
 
   // Emergency auto-escalation → persist stage change to DB so real providers see it.
   useEffect(() => {
@@ -17598,14 +17690,18 @@ export default function MyDoxFull({ initialView } = {}) {
           .from("profiles").select("full_name, specialty").eq("id", row.accepted_by).maybeSingle();
         if (cancelled) return;
         const acceptedName = prof?.full_name || "Medico on the way";
+        if (dbId && !row.paid_at) {
+          payAndGenerateOtp(dbId, null).catch(() => { });
+        }
         setReq(r => {
-          if (!r || r.dbId !== dbId || r.status === "converging" || r.status === "at_hub" || r.status === "completed") return r;
+          if (!r || r.dbId !== dbId || r.status === "completed") return r;
           const winner = {
             id: "db_winner", name: acceptedName, rating: 4.9, exp: 10,
             distanceKm: 1.5, etaMin: 7, area: r.hub?.area || "", notified: true,
           };
           return {
-            ...r, status: "assigned", assignedId: winner.id, stopRebroadcast: true,
+            ...r, status: "converging", paid: true, assignedId: winner.id, stopRebroadcast: true,
+            otp: row.otp || r.otp || "0000",
             doctorEtaHub: winner.etaMin * 60, doctorInitEta: winner.etaMin * 60,
             candidates: [winner, ...(r.candidates || []).filter(c => c.id !== "db_winner")],
           };
@@ -17683,7 +17779,7 @@ export default function MyDoxFull({ initialView } = {}) {
           specialty: spec.name || spec.type || "general",
           emergency: !!emergency,
           notes: hub?.name ? `Hub: ${hub.name}` : null,
-          fare: typeof fare === "number" ? fare : null,
+          fare: typeof fare === "number" ? fare : fare?.total ? fare.total : null,
           notification_stage: initialStage,
           my_doctor_id: myDoctorId || null,
           preferred_id: preferredId || null,
@@ -17708,9 +17804,12 @@ export default function MyDoxFull({ initialView } = {}) {
         id: "db_winner", name: providerName || "Medico on the way", rating: 4.9, exp: 10,
         distanceKm: 1.5, etaMin: 7, area: nextHub?.area || "", notified: true,
       };
+      if (row.id && !row.paid_at) {
+        payAndGenerateOtp(row.id, nextFare?.total ?? null).catch(() => { });
+      }
       setReq({
         id: Date.now(), dbId: row.id, spec: svc, emergency: !!emergency, area: patientArea, fare: nextFare, hub: nextHub,
-        routeMode: "preferred", otp: row.otp || "0000", status: "assigned", stage: row.notification_stage || null,
+        routeMode: "preferred", otp: row.otp || "0000", status: "converging", paid: true, stage: row.notification_stage || null,
         elapsed: 0, remaining: 60, coverageKm: 4, candidates: [winner], assignedId: winner.id,
         doctorEtaHub: winner.etaMin * 60, doctorInitEta: winner.etaMin * 60,
         patientEtaHub: nextHub?.patEtaMin ? nextHub.patEtaMin * 60 : 0,
@@ -17811,7 +17910,7 @@ export default function MyDoxFull({ initialView } = {}) {
   };
 
   const onAccept = (src, who, etaMin) => {
-    if (src === "patient") setReq(r => r?.status === "broadcasting" ? { ...r, status: "assigned", assignedId: who, doctorEtaHub: etaMin * 60, doctorInitEta: etaMin * 60 } : r);
+    if (src === "patient") setReq(r => r?.status === "broadcasting" ? { ...r, status: "converging", paid: true, assignedId: who, doctorEtaHub: etaMin * 60, doctorInitEta: etaMin * 60 } : r);
     else setHubReq(r => r?.status === "broadcasting" ? { ...r, status: "assigned", assignedId: who, doctorEtaHub: etaMin * 60, doctorInitEta: etaMin * 60 } : r);
   };
 
