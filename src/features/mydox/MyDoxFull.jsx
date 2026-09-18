@@ -14338,7 +14338,6 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
   }, [preferred, labPreferred, scanPreferred, prefsKey]);
   const [showPrefMgr, setShowPrefMgr] = useState(false); // preferred doctors manager
   const [repeatModal, setRepeatModal] = useState(null); // {cat,spec,fromOverlay} — repeat-provider pop-up
-  const [directReq, setDirectReq] = useState(null); // {provider,spec,fromOverlay,emergency,isMy,myName,preferredName}
   const [confirmedBooking, setConfirmedBooking] = useState(null);
   const [emgFallback, setEmgFallback] = useState(null); // emergency: My didn't accept → ask about Preferred
   const [aiMessages, setAiMessages] = useState([]);
@@ -14649,7 +14648,6 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
   // The normal path: elective → confirm, emergency/standard → broadcast to the whole category
   const proceedNormal = (spec, fromOverlay) => {
     if ((visitMode === "home" || spec.visitMode === "home") && (spec.type || activeTab) === "doctor") { openDoctorHomeVisit(spec); return; }
-    if (spec.scheduled) {
     if (spec.scheduled) {
       if (spec.scheduled.iso) {
         const schedMs = new Date(spec.scheduled.iso).getTime();

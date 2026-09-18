@@ -40,7 +40,8 @@ type Module =
   | "Prosthetics"
   | "Special Needs"
   | "Blood Bank"
-  | "Surgery";
+  | "Surgery"
+  | "Physiotherapy";
 
 type Item = {
   id: string;
@@ -94,6 +95,7 @@ const MODULE_ICON: Record<Module, string> = {
   "Special Needs": "🤝",
   "Blood Bank": "🩸",
   Surgery: "🏥",
+  Physiotherapy: "🧘",
 };
 
 function classifyCareRequest(specialty: string): Module {
