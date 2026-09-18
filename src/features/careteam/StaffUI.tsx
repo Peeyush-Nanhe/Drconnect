@@ -1,3 +1,4 @@
+import { ChevronLeft, LogOut, Power, ShieldCheck, User, Users } from "lucide-react";
 import type { ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import type { Option } from "@/lib/care-staff-catalog";
@@ -8,29 +9,50 @@ export function StaffShell({
   title,
   subtitle,
   right,
+  stats,
   children,
 }: {
   title: string;
   subtitle?: string;
   right?: ReactNode;
+  stats?: ReactNode;
   children: ReactNode;
 }) {
   return (
+    /* Phone-locked. These portals are used one-handed on a phone, so the
+       column stays at handset width on every screen instead of stretching
+       across a desktop. The outer div is only the backdrop behind it. */
     <div
-      className="min-h-[100dvh] bg-[#E7F0EC] text-slate-900"
+      className="min-h-[100dvh] bg-slate-200/60 text-slate-900"
       style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif" }}
     >
-      <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 px-4 py-3 backdrop-blur">
-        <div className="mx-auto flex max-w-3xl items-center justify-between gap-3">
-          <div className="min-w-0">
-            <h1 className="truncate text-base font-extrabold sm:text-lg">{title}</h1>
-            {subtitle ? <p className="truncate text-[11px] text-slate-500">{subtitle}</p> : null}
+     <div className="mx-auto min-h-[100dvh] w-full max-w-[430px] bg-[#E7F0EC] shadow-xl">
+      <header
+        className="sticky top-0 z-20 px-4 pb-6 pt-4 text-white shadow-lg"
+        style={{ background: 'linear-gradient(135deg, #059669 0%, #10B981 100%)' }}
+      >
+        <div className="w-full">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <button
+                onClick={() => window.history.back()}
+                className="rounded-full bg-white/20 p-1 hover:bg-white/30"
+              >
+                <ChevronLeft size={20} />
+              </button>
+              <div className="min-w-0">
+                <h1 className="truncate text-base font-black sm:text-lg">{title}</h1>
+                {subtitle ? <p className="truncate text-[11px] font-bold opacity-80">{subtitle}</p> : null}
+              </div>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">{right}</div>
           </div>
-          <div className="flex shrink-0 items-center gap-2">{right}</div>
+
+          {stats && <div className="mt-5 grid grid-cols-3 gap-3">{stats}</div>}
         </div>
       </header>
-      <main className="mx-auto max-w-3xl space-y-4 px-3 py-4 sm:px-4">{children}</main>
-      <footer className="mx-auto max-w-3xl flex items-center justify-between px-4 pb-8 pt-2 text-[11px] text-slate-500">
+      <main className="w-full space-y-4 px-3 py-4">{children}</main>
+      <footer className="flex w-full items-center justify-between px-4 pb-8 pt-2 text-[11px] text-slate-500">
         <a href="/?view=patient" className="font-semibold text-teal-700 hover:underline">
           ← MyDox patient home
         </a>
@@ -38,6 +60,7 @@ export function StaffShell({
           Switch account / Sign in
         </Link>
       </footer>
+     </div>
     </div>
   );
 }
@@ -73,9 +96,9 @@ export function OnlineToggle({
 
 export function Stat({ label, value, tone = "teal" }: { label: string; value: string | number; tone?: "teal" | "slate" }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-3">
-      <div className={`text-lg font-extrabold ${tone === "teal" ? "text-teal-700" : "text-slate-800"}`}>{value}</div>
-      <div className="text-[11px] font-semibold text-slate-500">{label}</div>
+    <div className="rounded-2xl bg-white/10 p-3 text-center backdrop-blur-sm border border-white/10 shadow-sm">
+      <div className="text-lg font-black leading-none text-white">{value}</div>
+      <div className="mt-1 text-[10px] font-bold uppercase tracking-wider text-white/70">{label}</div>
     </div>
   );
 }

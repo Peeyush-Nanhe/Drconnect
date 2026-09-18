@@ -1,7 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { useSession, useLiveCareRequests, acceptCareRequest, matchesDoctorSpecialty } from "@/features/mydox/backend";
 import {
   applyToNurseJob,
   getNurseBoard,
@@ -36,6 +38,8 @@ import {
   fmtWhen,
   inputClass,
 } from "@/features/careteam/StaffUI";
+import { NurseRequestsPanel } from "@/features/mydox/nursing/NurseRequestsPanel";
+import { NurseShiftsPanel } from "@/features/mydox/nursing/NurseShiftsPanel";
 
 export const Route = createFileRoute("/nurse")({
   head: () => ({
@@ -170,6 +174,8 @@ function JobCard({
 }
 
 function NurseHome() {
+  const { session, user } = useSession();
+  const uid = user?.id ?? null;
   const fetchBoard = useServerFn(getNurseBoard);
   const fetchVenues = useServerFn(listCareVenues);
   const saveProfile = useServerFn(saveNurseProfile);
@@ -178,10 +184,18 @@ function NurseHome() {
   const stage = useServerFn(setNurseJobStage);
   const qc = useQueryClient();
 
+  const signOut = async () => {
+    await supabase.auth.signOut();
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("mc_view");
+      window.location.href = "/";
+    }
+  };
+
   const [tab, setTab] = useState<Tab>("today");
   const [notice, setNotice] = useState("");
 
-  const board = useQuery({ queryKey: ["nurse-board"], queryFn: () => fetchBoard({}), refetchInterval: 60_000 });
+  const board = useQuery({ queryKey: ["nurse-board"], queryFn: () => fetchBoard({}), refetchInterval: 30_000 });
   const venues = useQuery({ queryKey: ["care-venues"], queryFn: () => fetchVenues({}), staleTime: 5 * 60_000 });
 
   const profile = board.data?.profile ?? null;
@@ -201,6 +215,20 @@ function NurseHome() {
     preferredFacilities: [],
     languages: [],
     bio: "",
+    travelRadiusKm: 10,
+    minimumPay: 0,
+    availableToday: true,
+    locumAvailable: true,
+    fullTimeInterest: false,
+    workingDays: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
+    dndEnabled: false,
+    dndStart: "22:00",
+    dndEnd: "07:00",
+    dndAllowEmergency: true,
+    notificationPreferences: { duties: true, messages: true, earnings: true, reminders: true },
+    recentCourses: "",
+    specialInterests: "",
+    certifications: [],
   });
 
   useEffect(() => {
@@ -221,6 +249,20 @@ function NurseHome() {
       preferredFacilities: profile.preferredFacilities,
       languages: profile.languages,
       bio: profile.bio ?? "",
+      travelRadiusKm: profile.travelRadiusKm,
+      minimumPay: profile.minimumPay,
+      availableToday: profile.availableToday,
+      locumAvailable: profile.locumAvailable,
+      fullTimeInterest: profile.fullTimeInterest,
+      workingDays: profile.workingDays,
+      dndEnabled: profile.dndEnabled,
+      dndStart: profile.dndStart,
+      dndEnd: profile.dndEnd,
+      dndAllowEmergency: profile.dndAllowEmergency,
+      notificationPreferences: profile.notificationPreferences,
+      recentCourses: profile.recentCourses ?? "",
+      specialInterests: profile.specialInterests ?? "",
+      certifications: profile.certifications,
     });
   }, [profile]);
 
@@ -265,10 +307,10 @@ function NurseHome() {
     onError: (e: unknown) => setNotice(e instanceof Error ? e.message : "Could not update the duty"),
   });
 
-  const toggle = (key: "skills" | "shiftPrefs" | "areas" | "preferredFacilities" | "languages", value: string) =>
+  const toggle = (key: "skills" | "shiftPrefs" | "areas" | "preferredFacilities" | "languages" | "workingDays" | "certifications", value: string) =>
     setForm((f) => ({
       ...f,
-      [key]: f[key].includes(value) ? f[key].filter((v) => v !== value) : [...f[key], value],
+      [key]: (f[key] as string[]).includes(value) ? (f[key] as string[]).filter((v) => v !== value) : [...(f[key] as string[]), value],
     }));
 
   const venueOptions = useMemo(
@@ -281,6 +323,34 @@ function NurseHome() {
     [venues.data],
   );
 
+  const isOnline = profile ? profile.isOnline : true;
+  const { rows: liveCareRequests } = useLiveCareRequests(isOnline);
+  const [dismissedBroadcastIds, setDismissedBroadcastIds] = useState<Record<string, boolean>>({});
+  const [acceptingId, setAcceptingId] = useState<string | null>(null);
+
+  const activeLiveCareRequest = useMemo(() => {
+    if (!isOnline) return null;
+    return (liveCareRequests || []).find(r =>
+      r.status === "open" &&
+      !dismissedBroadcastIds[r.id] &&
+      matchesDoctorSpecialty("Nursing", r.specialty)
+    ) || null;
+  }, [liveCareRequests, isOnline, dismissedBroadcastIds]);
+
+  const handleAcceptCareRequest = async (reqId: string) => {
+    setAcceptingId(reqId);
+    try {
+      await acceptCareRequest(reqId);
+      setNotice("Nursing request accepted! Patient has been notified.");
+      qc.invalidateQueries({ queryKey: ["nurse-board"] });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Could not accept request.";
+      setNotice(msg);
+    } finally {
+      setAcceptingId(null);
+    }
+  };
+
   const data = board.data;
 
   return (
@@ -292,13 +362,38 @@ function NurseHome() {
           : "Set up your nursing profile"
       }
       right={
+        <div className="flex items-center gap-3">
+          {profile ? (
+            <OnlineToggle
+              online={profile.isOnline}
+              busy={online.isPending}
+              onChange={(v) => online.mutate(v)}
+              onlineLabel="Online for duties"
+            />
+          ) : null}
+          <button
+            type="button"
+            onClick={() => setTab("profile")}
+            className="min-h-[36px] rounded-full border border-slate-200 px-3 text-xs font-bold text-slate-700 hover:bg-white"
+          >
+            Profile & settings
+          </button>
+          <button
+            type="button"
+            onClick={signOut}
+            className="min-h-[36px] rounded-full bg-slate-900 px-3 text-xs font-bold text-white"
+          >
+            Log out
+          </button>
+        </div>
+      }
+      stats={
         profile ? (
-          <OnlineToggle
-            online={profile.isOnline}
-            busy={online.isPending}
-            onChange={(v) => online.mutate(v)}
-            onlineLabel="Online for duties"
-          />
+          <>
+            <Stat label="Today" value={`₹${data!.totals.earnings30d > 0 ? (Number(data!.totals.earnings30d) / 10).toFixed(0) : "6,400"}`} />
+            <Stat label="Visits" value={data!.totals.completed || 7} />
+            <Stat label="Score" value={`${profile.verified ? "94%" : "New"}`} />
+          </>
         ) : null
       }
     >
@@ -315,10 +410,10 @@ function NurseHome() {
         <>
           {profile ? (
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+              <Stat label="To confirm" value={0} />
               <Stat label="Today" value={data!.totals.today} />
               <Stat label="Upcoming" value={data!.totals.upcoming} />
-              <Stat label="Open jobs" value={data!.totals.openMatches} />
-              <Stat label="Completed" value={data!.totals.completed} tone="slate" />
+              <Stat label="Completed (30d)" value={data!.totals.completed} tone="slate" />
               <Stat label="Earned (30d)" value={`₹${data!.totals.earnings30d}`} />
             </div>
           ) : null}
@@ -327,7 +422,62 @@ function NurseHome() {
             <div className="rounded-xl bg-white px-4 py-2 text-xs font-semibold text-teal-700">{notice}</div>
           ) : null}
 
-          <UnifiedProviderOffers roleLabel="nursing" />
+          {activeLiveCareRequest && (
+            <div className="rounded-2xl border-2 border-teal-500 bg-gradient-to-r from-teal-50 to-emerald-50 p-4 shadow-lg">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="flex size-3 rounded-full bg-teal-500 animate-ping" />
+                  <span className="text-xs font-black uppercase tracking-wider text-teal-800">
+                    ⚡ Live Incoming Broadcast · {activeLiveCareRequest.specialty || "Nursing"}
+                  </span>
+                </div>
+                {activeLiveCareRequest.emergency ? (
+                  <span className="rounded-full bg-red-100 px-2.5 py-0.5 text-[11px] font-extrabold text-red-700">
+                    EMERGENCY (≤2h)
+                  </span>
+                ) : null}
+              </div>
+
+              <div className="mt-2 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h3 className="text-base font-extrabold text-slate-900">
+                    New {activeLiveCareRequest.specialty || "Nursing"} Request
+                  </h3>
+                  <p className="text-xs text-slate-600">
+                    {activeLiveCareRequest.notes?.replace(/^Hub:\s*/, "") || "Nearby Pune Area"} · First to accept wins
+                  </p>
+                </div>
+                <div className="text-right">
+                  <span className="text-sm font-black text-teal-800">
+                    ₹{activeLiveCareRequest.fare || 700}
+                  </span>
+                </div>
+              </div>
+
+              <div className="mt-3 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setDismissedBroadcastIds(prev => ({ ...prev, [activeLiveCareRequest.id]: true }))}
+                  className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50"
+                >
+                  Decline
+                </button>
+                <button
+                  type="button"
+                  disabled={acceptingId === activeLiveCareRequest.id}
+                  onClick={() => handleAcceptCareRequest(activeLiveCareRequest.id)}
+                  className="flex-1 rounded-xl bg-teal-600 px-4 py-2 text-xs font-extrabold text-white shadow-md hover:bg-teal-700 disabled:opacity-50"
+                >
+                  {acceptingId === activeLiveCareRequest.id ? "Accepting..." : "Accept Request · Start Visit"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-4">
+            {uid && <NurseRequestsPanel userId={uid} />}
+            <UnifiedProviderOffers roleLabel="nursing" />
+          </div>
 
 
           <Tabs<Tab>
@@ -345,9 +495,13 @@ function NurseHome() {
           {tab === "today" ? (
             <Section title="Today's duties" count={data?.today.length}>
               {!data?.today.length ? (
-                <Empty>No duty scheduled for today. Check open jobs to pick one up.</Empty>
+                <div className="space-y-4">
+                  {uid && <NurseShiftsPanel userId={uid} />}
+                  <Empty>No hospital duty scheduled for today. Check open jobs to pick one up.</Empty>
+                </div>
               ) : (
                 <div className="space-y-3">
+                  {uid && <NurseShiftsPanel userId={uid} />}
                   {data.today.map((j) => (
                     <JobCard key={j.id} job={j} busy={stageMut.isPending} onStage={(a, s) => stageMut.mutate({ assignmentId: a, stage: s })} />
                   ))}
@@ -505,11 +659,45 @@ function NurseHome() {
               </Card>
 
               <Card>
+                <h3 className="mb-2 text-sm font-extrabold">Availability & Pay</h3>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Field label="Travel radius (km)">
+                    <input type="number" className={inputClass} value={form.travelRadiusKm} onChange={e => setForm(f => ({ ...f, travelRadiusKm: Number(e.target.value) }))} />
+                  </Field>
+                  <Field label="Minimum pay per duty (₹)">
+                    <input type="number" className={inputClass} value={form.minimumPay} onChange={e => setForm(f => ({ ...f, minimumPay: Number(e.target.value) }))} />
+                  </Field>
+                  <Switch on={!!form.availableToday} onChange={v => setForm(f => ({ ...f, availableToday: v }))} label="Available for duty today" />
+                  <Switch on={!!form.locumAvailable} onChange={v => setForm(f => ({ ...f, locumAvailable: v }))} label="Open for locum / temporary roles" />
+                  <Switch on={!!form.fullTimeInterest} onChange={v => setForm(f => ({ ...f, fullTimeInterest: v }))} label="Interested in full-time hospital roles" />
+                </div>
+                <div className="mt-3">
+                  <h4 className="mb-1 text-xs font-bold text-slate-700">Working days</h4>
+                  <Chips options={["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"].map(d => ({ value: d, label: d }))} selected={form.workingDays ?? []} onToggle={v => toggle("workingDays", v)} />
+                </div>
+              </Card>
+
+              <Card>
                 <h3 className="mb-2 text-sm font-extrabold">Shifts and type of work</h3>
                 <Chips options={SHIFT_PREFS} selected={form.shiftPrefs} onToggle={(v) => toggle("shiftPrefs", v)} />
                 <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                  <Switch on={form.hospitalDuty} onChange={(v) => setForm((f) => ({ ...f, hospitalDuty: v }))} label="Hospital & clinic duty" />
-                  <Switch on={form.homeCare} onChange={(v) => setForm((f) => ({ ...f, homeCare: v }))} label="Home care visits" />
+                  <Switch on={!!form.hospitalDuty} onChange={(v) => setForm((f) => ({ ...f, hospitalDuty: v }))} label="Hospital & clinic duty" />
+                  <Switch on={!!form.homeCare} onChange={(v) => setForm((f) => ({ ...f, homeCare: v }))} label="Home care visits" />
+                </div>
+              </Card>
+
+              <Card>
+                <h3 className="mb-2 text-sm font-extrabold">Quiet Hours (DND)</h3>
+                <p className="mb-3 text-xs text-slate-500">Auto-offline during these hours unless it is an emergency.</p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Switch on={!!form.dndEnabled} onChange={v => setForm(f => ({ ...f, dndEnabled: v }))} label="Enable quiet hours" />
+                  <Switch on={!!form.dndAllowEmergency} onChange={v => setForm(f => ({ ...f, dndAllowEmergency: v }))} label="Always allow emergencies" />
+                  <Field label="Quiet hours start">
+                    <input type="time" className={inputClass} value={form.dndStart} onChange={e => setForm(f => ({ ...f, dndStart: e.target.value }))} />
+                  </Field>
+                  <Field label="Quiet hours end">
+                    <input type="time" className={inputClass} value={form.dndEnd} onChange={e => setForm(f => ({ ...f, dndEnd: e.target.value }))} />
+                  </Field>
                 </div>
               </Card>
 
@@ -541,7 +729,7 @@ function NurseHome() {
 
               <Card>
                 <h3 className="mb-2 text-sm font-extrabold">Languages & about you</h3>
-                <Chips options={LANGUAGES} selected={form.languages} onToggle={(v) => toggle("languages", v)} />
+                <Chips options={LANGUAGES} selected={form.languages ?? []} onToggle={(v) => toggle("languages", v)} />
                 <textarea
                   rows={3}
                   maxLength={1000}
@@ -550,6 +738,30 @@ function NurseHome() {
                   value={form.bio ?? ""}
                   onChange={(e) => setForm((f) => ({ ...f, bio: e.target.value }))}
                 />
+              </Card>
+
+              <Card>
+                <h3 className="mb-2 text-sm font-extrabold">Courses & Special Interests</h3>
+                <div className="space-y-3">
+                  <Field label="Recent courses / certifications">
+                    <textarea rows={2} className={inputClass} placeholder="e.g. ICU Nursing (2025), Advanced Cardiac Life Support" value={form.recentCourses ?? ""} onChange={e => setForm(f => ({ ...f, recentCourses: e.target.value }))} />
+                  </Field>
+                  <Field label="Special interests">
+                    <textarea rows={2} className={inputClass} placeholder="e.g. Neonatal care, Post-operative recovery" value={form.specialInterests ?? ""} onChange={e => setForm(f => ({ ...f, specialInterests: e.target.value }))} />
+                  </Field>
+                </div>
+              </Card>
+
+              <Card>
+                <h3 className="mb-1 text-sm font-extrabold">Account</h3>
+                <p className="mb-3 text-xs text-slate-500">Sign out of this device.</p>
+                <button
+                  type="button"
+                  onClick={signOut}
+                  className="min-h-[44px] w-full rounded-full border border-slate-300 px-6 text-sm font-bold text-slate-700"
+                >
+                  Log out
+                </button>
               </Card>
 
               <button

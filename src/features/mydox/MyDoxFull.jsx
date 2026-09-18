@@ -14176,7 +14176,127 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
       toast(name + " added to favourite scan centres"); return [...cur, name];
     });
   };
-  const [confirmedBooking, setConfirmedBooking] = useState(null); // elective booking confirmation popup
+  // Live Nursing Engagement Sync:
+  useEffect(() => {
+    let cancelled = false;
+    const syncNursing = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user || cancelled) return;
+        const { data: engs } = await supabase
+          .from("nursing_engagements")
+          .select("id, kind, status, assignment_state, primary_nurse_id")
+          .eq("patient_id", user.id)
+          .eq("status", "active")
+          .eq("assignment_state", "assigned")
+          .order("created_at", { ascending: false })
+          .limit(1);
+        if (cancelled || !engs || !engs.length) return;
+        const latest = engs[0];
+        if (latest.primary_nurse_id) {
+          const { data: nurseProf } = await supabase
+            .from("profiles")
+            .select("full_name")
+            .eq("id", latest.primary_nurse_id)
+            .maybeSingle();
+          if (cancelled) return;
+          const nurseName = nurseProf?.full_name || "Nurse Pooja";
+
+          setConfirmedBooking(cur => {
+            const confirmedData = {
+              pending: false,
+              name: latest.kind,
+              doctor: { name: nurseName, spec: "Nursing Specialist", rating: 4.9 },
+              label: "Nurse assigned \u00B7 Confirmed",
+            };
+
+            // If we don't have a confirmed popup showing, or it's currently "pending",
+            // pop it up with the new real data.
+            if (!cur || cur.pending || cur.engagementId === latest.id) {
+              if (cur?.pending) toast && toast(`${nurseName} accepted your nursing request!`);
+              return confirmedData;
+            }
+            return cur;
+          });
+        }
+      } catch (_err) {}
+    };
+
+    syncNursing();
+    const poll = setInterval(syncNursing, 2500);
+    const channel = supabase
+      .channel(`patient_nursing_sync_${Math.random().toString(36).slice(2)}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "nursing_engagements" }, () => {
+        syncNursing();
+      })
+      .subscribe();
+
+    return () => {
+      cancelled = true;
+      clearInterval(poll);
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  // Live Technician Visit Sync (for scheduled bookings):
+  useEffect(() => {
+    let cancelled = false;
+    const syncTechnician = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user || cancelled) return;
+        const { data: visits } = await supabase
+          .from("technician_tests")
+          .select("id, test_type, status, technician_id")
+          .eq("patient_id", user.id)
+          .in("status", ["assigned", "en_route", "arrived"])
+          .order("created_at", { ascending: false })
+          .limit(2);
+        if (cancelled || !visits || !visits.length) return;
+
+        const latest = visits[0];
+        if (latest.status === "assigned" && latest.technician_id) {
+          const { data: techProf } = await supabase
+            .from("profiles")
+            .select("full_name")
+            .eq("id", latest.technician_id)
+            .maybeSingle();
+          if (cancelled) return;
+          const techName = techProf?.full_name || "Technician";
+
+          setConfirmedBooking(cur => {
+            const confirmedData = {
+              pending: false,
+              name: `${latest.test_type.toUpperCase()} Visit`,
+              doctor: { name: techName, spec: "Technician", rating: 4.8 },
+              label: `Status: ${latest.status} \u00B7 Confirmed`,
+            };
+
+            if (!cur || cur.pending || cur.visitId === latest.id) {
+              if (cur?.pending) toast && toast(`${techName} accepted your technician request!`);
+              return confirmedData;
+            }
+            return cur;
+          });
+        }
+      } catch (_err) {}
+    };
+
+    syncTechnician();
+    const poll = setInterval(syncTechnician, 2500);
+    const channel = supabase
+      .channel(`patient_tech_sync_${Math.random().toString(36).slice(2)}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "technician_tests" }, () => {
+        syncTechnician();
+      })
+      .subscribe();
+
+    return () => {
+      cancelled = true;
+      clearInterval(poll);
+      supabase.removeChannel(channel);
+    };
+  }, []);
   // Per-user local persistence key (survives logout on the same device)
   const prefsKey = useMemo(() => {
     const n = (typeof window !== "undefined" && window.localStorage.getItem("mc_user_name")) || "guest";
@@ -14196,6 +14316,10 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
   const [showPrefMgr, setShowPrefMgr] = useState(false); // preferred doctors manager
   const [repeatModal, setRepeatModal] = useState(null); // {cat,spec,fromOverlay} — repeat-provider pop-up
   const [directReq, setDirectReq] = useState(null); // {provider,spec,fromOverlay,emergency,isMy,myName,preferredName}
+  // Booking confirmation overlay: {name, label, doctor, bookingId}. Read in nine
+  // places and set in six; the declaration itself went missing, which is what
+  // threw "confirmedBooking is not defined" and took the whole patient app down.
+  const [confirmedBooking, setConfirmedBooking] = useState(null);
   const [emgFallback, setEmgFallback] = useState(null); // emergency: My didn't accept → ask about Preferred
   const [aiMessages, setAiMessages] = useState([]);
   const [aiLoading, setAiLoading] = useState(false);

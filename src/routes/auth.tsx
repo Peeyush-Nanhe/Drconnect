@@ -146,12 +146,24 @@ function AuthPage() {
       "technician",
       "physio_staff",
       "therapist",
+      "diagnostic",
+      "labs"
     ]);
     const facilityViews = new Set(["hub", "diagnostic", "pharmacy", "labs"]);
     const requestedView = viewOverride || storedSubtype || request?.requested_view || profileRes.data?.view || undefined;
     let derivedView = ROLE_TO_VIEW[primary];
     if (primary === "provider" && requestedView && providerViews.has(requestedView)) derivedView = requestedView;
     if (primary === "facility" && requestedView && facilityViews.has(requestedView)) derivedView = requestedView;
+
+    // Dedicated staff portals (Nurse/Tech) have their own landing pages
+    if (derivedView === "nurse") {
+      window.location.assign("/nurse");
+      return;
+    }
+    if (derivedView === "technician") {
+      window.location.assign("/technician");
+      return;
+    }
 
     if (typeof window !== "undefined") {
       localStorage.setItem("mc_view", derivedView);

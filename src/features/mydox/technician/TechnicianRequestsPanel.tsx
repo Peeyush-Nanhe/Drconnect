@@ -74,8 +74,8 @@ export function TechnicianRequestsPanel({ userId }: { userId: string | null }) {
   useEffect(() => {
     if (!userId) return;
     const channel = supabase
-      .channel("technician_visits_live")
-      .on("postgres_changes", { event: "*", schema: "public", table: "technician_visits" }, () => {
+      .channel("technician_tests_live")
+      .on("postgres_changes", { event: "*", schema: "public", table: "technician_tests" }, () => {
         qc.invalidateQueries({ queryKey: ["technician-offers"] });
       })
       .subscribe();

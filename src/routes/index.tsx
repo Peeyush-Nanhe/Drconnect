@@ -71,6 +71,21 @@ function Home() {
   }, [user, role, viewQuery]);
 
   if (!loading && !user) return <Navigate to="/auth" search={{ admin: undefined, next: undefined }} />;
+
+  // Care staff have their own portals. auth.tsx redirects them at sign-in, but
+  // that only fires on the sign-in itself: a nurse with a live session, or one
+  // who reloads or opens "/" directly, otherwise lands back on the shared
+  // provider console. Redirect here too, so the portal is where the role lives
+  // rather than where one code path happens to send them.
+  // An explicit ?view= override still wins, so the old console stays reachable.
+  if (!viewQuery && profileView) {
+    if (profileView === "nurse") return <Navigate to="/nurse" />;
+    if (profileView === "technician") return <Navigate to="/technician" />;
+    if (profileView === "physio_staff" || profileView === "therapist") {
+      return <Navigate to="/physio/therapist" />;
+    }
+  }
+
   if (loading || (user && !profileView)) {
     return (
       <div style={{ minHeight: "100vh", background: "#DCE6E1" }} className="flex items-center justify-center text-sm text-slate-600">

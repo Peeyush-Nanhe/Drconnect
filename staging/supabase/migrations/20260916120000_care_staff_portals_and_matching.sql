@@ -14,8 +14,10 @@ CREATE TABLE IF NOT EXISTS public.app_notifications (
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.app_notifications TO authenticated;
 GRANT ALL ON public.app_notifications TO service_role;
 ALTER TABLE public.app_notifications ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "users read own notifications" ON public.app_notifications;
 CREATE POLICY "users read own notifications" ON public.app_notifications
   FOR SELECT TO authenticated USING (user_id = auth.uid());
+DROP POLICY IF EXISTS "users update own notifications" ON public.app_notifications;
 CREATE POLICY "users update own notifications" ON public.app_notifications
   FOR UPDATE TO authenticated USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
 
@@ -46,6 +48,7 @@ CREATE TABLE IF NOT EXISTS public.ambulance_units (
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.ambulance_units TO authenticated;
 GRANT ALL ON public.ambulance_units TO service_role;
 ALTER TABLE public.ambulance_units ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "ambulance_units readable by authenticated" ON public.ambulance_units;
 CREATE POLICY "ambulance_units readable by authenticated" ON public.ambulance_units FOR SELECT TO authenticated USING (true);
 
 -- Migration: 20260916120000_care_staff_portals_and_matching.sql
@@ -53,7 +56,7 @@ CREATE POLICY "ambulance_units readable by authenticated" ON public.ambulance_un
 
 -- ==================== 0000_nurse_technician_physio_portals.sql ====================
 -- ============ NURSES ============
-CREATE TABLE public.nurses (
+CREATE TABLE IF NOT EXISTS public.nurses (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid UNIQUE,
   full_name text NOT NULL,
@@ -83,25 +86,30 @@ GRANT ALL ON public.nurses TO service_role;
 
 ALTER TABLE public.nurses ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "nurses readable by authenticated" ON public.nurses;
 CREATE POLICY "nurses readable by authenticated" ON public.nurses
   FOR SELECT TO authenticated USING (true);
 
+DROP POLICY IF EXISTS "nurse creates own row" ON public.nurses;
 CREATE POLICY "nurse creates own row" ON public.nurses
   FOR INSERT TO authenticated WITH CHECK (user_id = auth.uid());
 
+DROP POLICY IF EXISTS "nurse manages own row" ON public.nurses;
 CREATE POLICY "nurse manages own row" ON public.nurses
   FOR UPDATE TO authenticated USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
 
+DROP POLICY IF EXISTS "nurses admin all" ON public.nurses;
 CREATE POLICY "nurses admin all" ON public.nurses
   FOR ALL TO authenticated
   USING (has_role(auth.uid(), 'admin'::app_role) OR has_role(auth.uid(), 'super_admin'::app_role))
   WITH CHECK (has_role(auth.uid(), 'admin'::app_role) OR has_role(auth.uid(), 'super_admin'::app_role));
 
+DROP TRIGGER IF EXISTS nurses_set_updated_at ON public.nurses;
 CREATE TRIGGER nurses_set_updated_at BEFORE UPDATE ON public.nurses
   FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
-CREATE INDEX nurses_city_idx ON public.nurses (city);
-CREATE INDEX nurses_online_idx ON public.nurses (is_online) WHERE active;
+CREATE INDEX IF NOT EXISTS nurses_city_idx ON public.nurses (city);
+CREATE INDEX IF NOT EXISTS nurses_online_idx ON public.nurses (is_online) WHERE active;
 
 -- ============ PHYSIOTHERAPIST PROFILE EXTENSIONS ============
 ALTER TABLE public.physio_therapists
@@ -115,6 +123,7 @@ ALTER TABLE public.physio_therapists
   ADD COLUMN IF NOT EXISTS bio text,
   ADD COLUMN IF NOT EXISTS languages text[] NOT NULL DEFAULT '{}';
 
+DROP POLICY IF EXISTS "therapist manages own row" ON public.physio_therapists;
 CREATE POLICY "therapist manages own row" ON public.physio_therapists
   FOR UPDATE TO authenticated USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
 
@@ -193,10 +202,12 @@ ALTER TABLE public.technicians
   ADD COLUMN IF NOT EXISTS bio text,
   ADD COLUMN IF NOT EXISTS phone_verified boolean NOT NULL DEFAULT false;
 
+DROP POLICY IF EXISTS "technician creates own row" ON public.technicians;
 CREATE POLICY "technician creates own row" ON public.technicians
   FOR INSERT TO authenticated WITH CHECK (user_id = auth.uid());
 
 -- technicians may see unclaimed open test requests so they can pick them up
+DROP POLICY IF EXISTS "tests technician read unassigned" ON public.technician_tests;
 CREATE POLICY "tests technician read unassigned" ON public.technician_tests
   FOR SELECT TO authenticated
   USING (
@@ -539,9 +550,11 @@ RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS
   ) OR public.is_admin_user();
 $$;
 
+DROP POLICY IF EXISTS "Participants and admins read bookings" ON public.unified_bookings;
 CREATE POLICY "Participants and admins read bookings" ON public.unified_bookings
   FOR SELECT TO authenticated USING (public.can_view_unified_booking(id, auth.uid()));
 
+DROP POLICY IF EXISTS "Providers and patients read their offers" ON public.booking_offers;
 CREATE POLICY "Providers and patients read their offers" ON public.booking_offers
   FOR SELECT TO authenticated USING (
     provider_id = auth.uid()
@@ -550,20 +563,25 @@ CREATE POLICY "Providers and patients read their offers" ON public.booking_offer
     OR public.is_admin_user()
   );
 
+DROP POLICY IF EXISTS "Participants read booking timeline" ON public.booking_status_history;
 CREATE POLICY "Participants read booking timeline" ON public.booking_status_history
   FOR SELECT TO authenticated USING (public.can_view_unified_booking(booking_id, auth.uid()));
 
+DROP POLICY IF EXISTS "Reviews readable by participants" ON public.booking_reviews;
 CREATE POLICY "Reviews readable by participants" ON public.booking_reviews
   FOR SELECT TO authenticated USING (
     reviewer_id = auth.uid() OR reviewee_id = auth.uid() OR public.can_view_unified_booking(booking_id, auth.uid())
   );
 
+DROP POLICY IF EXISTS "Providers read own reliability" ON public.provider_reliability_events;
 CREATE POLICY "Providers read own reliability" ON public.provider_reliability_events
   FOR SELECT TO authenticated USING (provider_id = auth.uid() OR public.is_admin_user());
 
+DROP POLICY IF EXISTS "Reporters and admins read issues" ON public.booking_issues;
 CREATE POLICY "Reporters and admins read issues" ON public.booking_issues
   FOR SELECT TO authenticated USING (reporter_id = auth.uid() OR provider_id = auth.uid() OR public.is_admin_user());
 
+DROP POLICY IF EXISTS "Signed in users read matching settings" ON public.booking_matching_settings;
 CREATE POLICY "Signed in users read matching settings" ON public.booking_matching_settings
   FOR SELECT TO authenticated USING (true);
 

@@ -412,3 +412,33 @@ test('the worker leases a job and backs off on failure', async () => {
   assert.equal(after.rows[0].status, 'pending');
   assert.ok(new Date(after.rows[0].available_at) > new Date(), 'retry is scheduled, not immediate');
 });
+
+// --------------------------------------------------------- policy safety ---
+
+test('a nurse can read her own shifts without tripping policy recursion', async () => {
+  const eng = await bookAt({ offset: 2 });
+  await actor(ids.nurseNear, 'select public.accept_nursing_engagement($1)', [eng.id]);
+
+  // Both directions of the engagement/visit policy pair, as the app reads them.
+  const shifts = await actor(ids.nurseNear,
+    'select id, visit_date from public.nursing_visits where assigned_nurse_id = $1',
+    [ids.nurseNear]);
+  assert.ok(shifts.rows.length > 0, 'the nurse sees her days');
+
+  const eng2 = await actor(ids.nurseNear,
+    'select id from public.nursing_engagements where id = $1', [eng.id]);
+  assert.equal(eng2.rows.length, 1, 'and the booking behind them');
+
+  const asPatient = await actor(ids.patient,
+    'select id from public.nursing_visits where engagement_id = $1', [eng.id]);
+  assert.ok(asPatient.rows.length > 0, 'the family sees the days too');
+});
+
+test('an unrelated nurse still sees none of it', async () => {
+  const eng = await bookAt({ offset: 2 });
+  await actor(ids.nurseNear, 'select public.accept_nursing_engagement($1)', [eng.id]);
+  // nurseFar is outside the roster radius, so she was never offered this one.
+  const seen = await actor(ids.nurseFar,
+    'select id from public.nursing_visits where engagement_id = $1', [eng.id]);
+  assert.equal(seen.rows.length, 0);
+});

@@ -21,6 +21,22 @@ export type NurseProfile = {
   isOnline: boolean;
   verified: boolean;
   active: boolean;
+  travelRadiusKm: number;
+  preferredDutyHours: number;
+  maxHoursPerDay: number;
+  minimumPay: number;
+  availableToday: boolean;
+  locumAvailable: boolean;
+  fullTimeInterest: boolean;
+  workingDays: string[];
+  dndEnabled: boolean;
+  dndStart: string;
+  dndEnd: string;
+  dndAllowEmergency: boolean;
+  notificationPreferences: Record<string, boolean>;
+  recentCourses: string | null;
+  specialInterests: string | null;
+  certifications: string[];
 };
 
 export type NurseJob = {
@@ -85,6 +101,22 @@ function mapProfile(r: any): NurseProfile {
     isOnline: !!r.is_online,
     verified: !!r.verified,
     active: !!r.active,
+    travelRadiusKm: r.travel_radius_km ?? 10,
+    preferredDutyHours: r.preferred_duty_hours ?? 8,
+    maxHoursPerDay: r.max_hours_per_day ?? 12,
+    minimumPay: r.minimum_pay ?? 0,
+    availableToday: !!r.available_today,
+    locumAvailable: !!r.locum_available,
+    fullTimeInterest: !!r.full_time_interest,
+    workingDays: r.working_days ?? [],
+    dndEnabled: !!r.dnd_enabled,
+    dndStart: r.dnd_start ?? '22:00',
+    dndEnd: r.dnd_end ?? '07:00',
+    dndAllowEmergency: !!r.dnd_allow_emergency,
+    notificationPreferences: r.notification_preferences ?? {},
+    recentCourses: r.recent_courses ?? null,
+    specialInterests: r.special_interests ?? null,
+    certifications: r.certifications ?? [],
   };
 }
 
@@ -235,6 +267,22 @@ export type NurseProfileInput = {
   preferredFacilities: string[];
   languages: string[];
   bio?: string | null;
+  travelRadiusKm?: number;
+  preferredDutyHours?: number;
+  maxHoursPerDay?: number;
+  minimumPay?: number;
+  availableToday?: boolean;
+  locumAvailable?: boolean;
+  fullTimeInterest?: boolean;
+  workingDays?: string[];
+  dndEnabled?: boolean;
+  dndStart?: string;
+  dndEnd?: string;
+  dndAllowEmergency?: boolean;
+  notificationPreferences?: Record<string, boolean>;
+  recentCourses?: string | null;
+  specialInterests?: string | null;
+  certifications?: string[];
 };
 
 /** Nurse builds or updates their own profile (skills, wards, areas, venues). */
@@ -265,6 +313,22 @@ export const saveNurseProfile = createServerFn({ method: "POST" })
       preferred_facilities: data.preferredFacilities ?? [],
       languages: data.languages ?? [],
       bio: data.bio?.trim() || null,
+      travel_radius_km: data.travelRadiusKm ?? 10,
+      preferred_duty_hours: data.preferredDutyHours ?? 8,
+      max_hours_per_day: data.maxHoursPerDay ?? 12,
+      minimum_pay: data.minimumPay ?? 0,
+      available_today: !!data.availableToday,
+      locum_available: !!data.locumAvailable,
+      full_time_interest: !!data.fullTimeInterest,
+      working_days: data.workingDays ?? [],
+      dnd_enabled: !!data.dndEnabled,
+      dnd_start: data.dndStart ?? '22:00',
+      dnd_end: data.dndEnd ?? '07:00',
+      dnd_allow_emergency: !!data.dndAllowEmergency,
+      notification_preferences: data.notificationPreferences ?? {},
+      recent_courses: data.recentCourses?.trim() || null,
+      special_interests: data.specialInterests?.trim() || null,
+      certifications: data.certifications ?? [],
     };
 
     const { data: existing } = await sb.from("nurses").select("id").eq("user_id", context.userId).maybeSingle();

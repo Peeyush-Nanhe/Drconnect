@@ -27,6 +27,7 @@ import { Route as Char91DotwellKnownChar93OauthProtectedResourceRouteImport } fr
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as AdminBookingOperationsRouteImport } from './routes/admin.booking-operations'
 import { Route as AdminCredentialsRouteImport } from './routes/admin.credentials'
+import { Route as AdminEmergencyRouteImport } from './routes/admin.emergency'
 import { Route as AdminHomecareRouteImport } from './routes/admin.homecare'
 import { Route as AdminLiveRouteImport } from './routes/admin.live'
 import { Route as AdminLocumRouteImport } from './routes/admin.locum'
@@ -36,6 +37,10 @@ import { Route as AdminTechnicianRouteImport } from './routes/admin.technician'
 import { Route as AdminUsersRouteImport } from './routes/admin.users'
 import { Route as AdminWellnessRouteImport } from './routes/admin.wellness'
 import { Route as DevRaceAcceptRouteImport } from './routes/dev.race-accept'
+import { Route as EmergencyAmbulanceRouteImport } from './routes/emergency.ambulance'
+import { Route as EmergencyDoctorRouteImport } from './routes/emergency.doctor'
+import { Route as EmergencyHospitalRouteImport } from './routes/emergency.hospital'
+import { Route as EmergencyPatientRouteImport } from './routes/emergency.patient'
 import { Route as HospitalNurseDutiesRouteImport } from './routes/hospital.nurse-duties'
 import { Route as NursesFindRouteImport } from './routes/nurses.find'
 import { Route as PhysioBookRouteImport } from './routes/physio.book'
@@ -141,6 +146,11 @@ const AdminCredentialsRoute = AdminCredentialsRouteImport.update({
   path: '/admin/credentials',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminEmergencyRoute = AdminEmergencyRouteImport.update({
+  id: '/admin/emergency',
+  path: '/admin/emergency',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminHomecareRoute = AdminHomecareRouteImport.update({
   id: '/admin/homecare',
   path: '/admin/homecare',
@@ -184,6 +194,26 @@ const AdminWellnessRoute = AdminWellnessRouteImport.update({
 const DevRaceAcceptRoute = DevRaceAcceptRouteImport.update({
   id: '/dev/race-accept',
   path: '/dev/race-accept',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EmergencyAmbulanceRoute = EmergencyAmbulanceRouteImport.update({
+  id: '/emergency/ambulance',
+  path: '/emergency/ambulance',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EmergencyDoctorRoute = EmergencyDoctorRouteImport.update({
+  id: '/emergency/doctor',
+  path: '/emergency/doctor',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EmergencyHospitalRoute = EmergencyHospitalRouteImport.update({
+  id: '/emergency/hospital',
+  path: '/emergency/hospital',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EmergencyPatientRoute = EmergencyPatientRouteImport.update({
+  id: '/emergency/patient',
+  path: '/emergency/patient',
   getParentRoute: () => rootRouteImport,
 } as any)
 const HospitalNurseDutiesRoute = HospitalNurseDutiesRouteImport.update({
@@ -267,6 +297,7 @@ export interface FileRoutesByFullPath {
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/admin/booking-operations': typeof AdminBookingOperationsRoute
   '/admin/credentials': typeof AdminCredentialsRoute
+  '/admin/emergency': typeof AdminEmergencyRoute
   '/admin/homecare': typeof AdminHomecareRoute
   '/admin/live': typeof AdminLiveRoute
   '/admin/locum': typeof AdminLocumRoute
@@ -276,6 +307,10 @@ export interface FileRoutesByFullPath {
   '/admin/users': typeof AdminUsersRoute
   '/admin/wellness': typeof AdminWellnessRoute
   '/dev/race-accept': typeof DevRaceAcceptRoute
+  '/emergency/ambulance': typeof EmergencyAmbulanceRoute
+  '/emergency/doctor': typeof EmergencyDoctorRoute
+  '/emergency/hospital': typeof EmergencyHospitalRoute
+  '/emergency/patient': typeof EmergencyPatientRoute
   '/hospital/nurse-duties': typeof HospitalNurseDutiesRoute
   '/nurses/find': typeof NursesFindRoute
   '/physio/book': typeof PhysioBookRoute
@@ -308,6 +343,7 @@ export interface FileRoutesByTo {
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/admin/booking-operations': typeof AdminBookingOperationsRoute
   '/admin/credentials': typeof AdminCredentialsRoute
+  '/admin/emergency': typeof AdminEmergencyRoute
   '/admin/homecare': typeof AdminHomecareRoute
   '/admin/live': typeof AdminLiveRoute
   '/admin/locum': typeof AdminLocumRoute
@@ -317,6 +353,10 @@ export interface FileRoutesByTo {
   '/admin/users': typeof AdminUsersRoute
   '/admin/wellness': typeof AdminWellnessRoute
   '/dev/race-accept': typeof DevRaceAcceptRoute
+  '/emergency/ambulance': typeof EmergencyAmbulanceRoute
+  '/emergency/doctor': typeof EmergencyDoctorRoute
+  '/emergency/hospital': typeof EmergencyHospitalRoute
+  '/emergency/patient': typeof EmergencyPatientRoute
   '/hospital/nurse-duties': typeof HospitalNurseDutiesRoute
   '/nurses/find': typeof NursesFindRoute
   '/physio/book': typeof PhysioBookRoute
@@ -350,6 +390,7 @@ export interface FileRoutesById {
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/admin/booking-operations': typeof AdminBookingOperationsRoute
   '/admin/credentials': typeof AdminCredentialsRoute
+  '/admin/emergency': typeof AdminEmergencyRoute
   '/admin/homecare': typeof AdminHomecareRoute
   '/admin/live': typeof AdminLiveRoute
   '/admin/locum': typeof AdminLocumRoute
@@ -359,6 +400,10 @@ export interface FileRoutesById {
   '/admin/users': typeof AdminUsersRoute
   '/admin/wellness': typeof AdminWellnessRoute
   '/dev/race-accept': typeof DevRaceAcceptRoute
+  '/emergency/ambulance': typeof EmergencyAmbulanceRoute
+  '/emergency/doctor': typeof EmergencyDoctorRoute
+  '/emergency/hospital': typeof EmergencyHospitalRoute
+  '/emergency/patient': typeof EmergencyPatientRoute
   '/hospital/nurse-duties': typeof HospitalNurseDutiesRoute
   '/nurses/find': typeof NursesFindRoute
   '/physio/book': typeof PhysioBookRoute
@@ -393,6 +438,7 @@ export interface FileRouteTypes {
     | '/.well-known/oauth-protected-resource'
     | '/admin/booking-operations'
     | '/admin/credentials'
+    | '/admin/emergency'
     | '/admin/homecare'
     | '/admin/live'
     | '/admin/locum'
@@ -402,6 +448,10 @@ export interface FileRouteTypes {
     | '/admin/users'
     | '/admin/wellness'
     | '/dev/race-accept'
+    | '/emergency/ambulance'
+    | '/emergency/doctor'
+    | '/emergency/hospital'
+    | '/emergency/patient'
     | '/hospital/nurse-duties'
     | '/nurses/find'
     | '/physio/book'
@@ -434,6 +484,7 @@ export interface FileRouteTypes {
     | '/.well-known/oauth-protected-resource'
     | '/admin/booking-operations'
     | '/admin/credentials'
+    | '/admin/emergency'
     | '/admin/homecare'
     | '/admin/live'
     | '/admin/locum'
@@ -443,6 +494,10 @@ export interface FileRouteTypes {
     | '/admin/users'
     | '/admin/wellness'
     | '/dev/race-accept'
+    | '/emergency/ambulance'
+    | '/emergency/doctor'
+    | '/emergency/hospital'
+    | '/emergency/patient'
     | '/hospital/nurse-duties'
     | '/nurses/find'
     | '/physio/book'
@@ -475,6 +530,7 @@ export interface FileRouteTypes {
     | '/.well-known/oauth-protected-resource'
     | '/admin/booking-operations'
     | '/admin/credentials'
+    | '/admin/emergency'
     | '/admin/homecare'
     | '/admin/live'
     | '/admin/locum'
@@ -484,6 +540,10 @@ export interface FileRouteTypes {
     | '/admin/users'
     | '/admin/wellness'
     | '/dev/race-accept'
+    | '/emergency/ambulance'
+    | '/emergency/doctor'
+    | '/emergency/hospital'
+    | '/emergency/patient'
     | '/hospital/nurse-duties'
     | '/nurses/find'
     | '/physio/book'
@@ -517,6 +577,7 @@ export interface RootRouteChildren {
   Char91DotwellKnownChar93OauthProtectedResourceRoute: typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   AdminBookingOperationsRoute: typeof AdminBookingOperationsRoute
   AdminCredentialsRoute: typeof AdminCredentialsRoute
+  AdminEmergencyRoute: typeof AdminEmergencyRoute
   AdminHomecareRoute: typeof AdminHomecareRoute
   AdminLiveRoute: typeof AdminLiveRoute
   AdminLocumRoute: typeof AdminLocumRoute
@@ -526,6 +587,10 @@ export interface RootRouteChildren {
   AdminUsersRoute: typeof AdminUsersRoute
   AdminWellnessRoute: typeof AdminWellnessRoute
   DevRaceAcceptRoute: typeof DevRaceAcceptRoute
+  EmergencyAmbulanceRoute: typeof EmergencyAmbulanceRoute
+  EmergencyDoctorRoute: typeof EmergencyDoctorRoute
+  EmergencyHospitalRoute: typeof EmergencyHospitalRoute
+  EmergencyPatientRoute: typeof EmergencyPatientRoute
   HospitalNurseDutiesRoute: typeof HospitalNurseDutiesRoute
   NursesFindRoute: typeof NursesFindRoute
   PhysioBookRoute: typeof PhysioBookRoute
@@ -669,6 +734,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminCredentialsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/emergency': {
+      id: '/admin/emergency'
+      path: '/admin/emergency'
+      fullPath: '/admin/emergency'
+      preLoaderRoute: typeof AdminEmergencyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin/homecare': {
       id: '/admin/homecare'
       path: '/admin/homecare'
@@ -730,6 +802,34 @@ declare module '@tanstack/react-router' {
       path: '/dev/race-accept'
       fullPath: '/dev/race-accept'
       preLoaderRoute: typeof DevRaceAcceptRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/emergency/ambulance': {
+      id: '/emergency/ambulance'
+      path: '/emergency/ambulance'
+      fullPath: '/emergency/ambulance'
+      preLoaderRoute: typeof EmergencyAmbulanceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/emergency/doctor': {
+      id: '/emergency/doctor'
+      path: '/emergency/doctor'
+      fullPath: '/emergency/doctor'
+      preLoaderRoute: typeof EmergencyDoctorRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/emergency/hospital': {
+      id: '/emergency/hospital'
+      path: '/emergency/hospital'
+      fullPath: '/emergency/hospital'
+      preLoaderRoute: typeof EmergencyHospitalRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/emergency/patient': {
+      id: '/emergency/patient'
+      path: '/emergency/patient'
+      fullPath: '/emergency/patient'
+      preLoaderRoute: typeof EmergencyPatientRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/hospital/nurse-duties': {
@@ -838,6 +938,7 @@ const rootRouteChildren: RootRouteChildren = {
     Char91DotwellKnownChar93OauthProtectedResourceRoute,
   AdminBookingOperationsRoute: AdminBookingOperationsRoute,
   AdminCredentialsRoute: AdminCredentialsRoute,
+  AdminEmergencyRoute: AdminEmergencyRoute,
   AdminHomecareRoute: AdminHomecareRoute,
   AdminLiveRoute: AdminLiveRoute,
   AdminLocumRoute: AdminLocumRoute,
@@ -847,6 +948,10 @@ const rootRouteChildren: RootRouteChildren = {
   AdminUsersRoute: AdminUsersRoute,
   AdminWellnessRoute: AdminWellnessRoute,
   DevRaceAcceptRoute: DevRaceAcceptRoute,
+  EmergencyAmbulanceRoute: EmergencyAmbulanceRoute,
+  EmergencyDoctorRoute: EmergencyDoctorRoute,
+  EmergencyHospitalRoute: EmergencyHospitalRoute,
+  EmergencyPatientRoute: EmergencyPatientRoute,
   HospitalNurseDutiesRoute: HospitalNurseDutiesRoute,
   NursesFindRoute: NursesFindRoute,
   PhysioBookRoute: PhysioBookRoute,

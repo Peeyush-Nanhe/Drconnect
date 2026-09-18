@@ -20,6 +20,23 @@ export type TechnicianProfile = {
   bio: string | null;
   isOnline: boolean;
   active: boolean;
+  travelRadiusKm: number;
+  preferredDutyHours: number;
+  maxHoursPerDay: number;
+  minimumPay: number;
+  availableToday: boolean;
+  locumAvailable: boolean;
+  fullTimeInterest: boolean;
+  workingDays: string[];
+  dndEnabled: boolean;
+  dndStart: string;
+  dndEnd: string;
+  dndAllowEmergency: boolean;
+  notificationPreferences: Record<string, boolean>;
+  recentCourses: string | null;
+  specialInterests: string | null;
+  certifications: string[];
+  languages: string[];
 };
 
 export type TechnicianJob = {
@@ -50,7 +67,7 @@ export type TechnicianJob = {
 export type TechnicianBoard = {
   profile: TechnicianProfile | null;
   hubs: { id: string; name: string; area: string | null }[];
-  totals: { today: number; upcoming: number; completed30d: number; earnings30d: number; openMatches: number };
+  totals: { today: number; upcoming: number; completed30d: number; earnings30d: number; openMatches: number; toConfirm: number };
   today: TechnicianJob[];
   upcoming: TechnicianJob[];
   history: TechnicianJob[];
@@ -79,6 +96,23 @@ function mapProfile(r: any): TechnicianProfile {
     bio: r.bio ?? null,
     isOnline: !!r.is_online,
     active: !!r.active,
+    travelRadiusKm: r.travel_radius_km ?? 10,
+    preferredDutyHours: r.preferred_duty_hours ?? 8,
+    maxHoursPerDay: r.max_hours_per_day ?? 12,
+    minimumPay: r.minimum_pay ?? 0,
+    availableToday: !!r.available_today,
+    locumAvailable: !!r.locum_available,
+    fullTimeInterest: !!r.full_time_interest,
+    workingDays: r.working_days ?? [],
+    dndEnabled: !!r.dnd_enabled,
+    dndStart: r.dnd_start ?? '22:00',
+    dndEnd: r.dnd_end ?? '07:00',
+    dndAllowEmergency: !!r.dnd_allow_emergency,
+    notificationPreferences: r.notification_preferences ?? {},
+    recentCourses: r.recent_courses ?? null,
+    specialInterests: r.special_interests ?? null,
+    certifications: r.certifications ?? [],
+    languages: r.languages ?? [],
   };
 }
 
@@ -133,7 +167,7 @@ export const getTechnicianBoard = createServerFn({ method: "GET" })
       return {
         profile: null,
         hubs,
-        totals: { today: 0, upcoming: 0, completed30d: 0, earnings30d: 0, openMatches: 0 },
+        totals: { today: 0, upcoming: 0, completed30d: 0, earnings30d: 0, openMatches: 0, toConfirm: 0 },
         today: [],
         upcoming: [],
         history: [],
@@ -192,6 +226,8 @@ export const getTechnicianBoard = createServerFn({ method: "GET" })
       .filter((j) => (j.homeVisit ? profile.homeVisits : profile.clinicVisits))
       .filter((j) => !profile.areas.length || !j.area || profile.areas.includes(j.area));
 
+    const toConfirm = jobs.filter(j => j.status === 'assigned').length;
+
     return {
       profile,
       hubs,
@@ -201,6 +237,7 @@ export const getTechnicianBoard = createServerFn({ method: "GET" })
         completed30d: completed30.length,
         earnings30d: Math.round(completed30.reduce((s, j) => s + (j.fee ?? 0), 0)),
         openMatches: openTests.length,
+        toConfirm,
       },
       today,
       upcoming,
@@ -224,6 +261,23 @@ export type TechnicianProfileInput = {
   preferredHubs: string[];
   preferredFacilities: string[];
   bio?: string | null;
+  travelRadiusKm?: number;
+  preferredDutyHours?: number;
+  maxHoursPerDay?: number;
+  minimumPay?: number;
+  availableToday?: boolean;
+  locumAvailable?: boolean;
+  fullTimeInterest?: boolean;
+  workingDays?: string[];
+  dndEnabled?: boolean;
+  dndStart?: string;
+  dndEnd?: string;
+  dndAllowEmergency?: boolean;
+  notificationPreferences?: Record<string, boolean>;
+  recentCourses?: string | null;
+  specialInterests?: string | null;
+  certifications?: string[];
+  languages?: string[];
 };
 
 /** Technician builds their live profile: which tests they can run and where. */
@@ -253,6 +307,23 @@ export const saveTechnicianProfile = createServerFn({ method: "POST" })
       preferred_hubs: data.preferredHubs ?? [],
       preferred_facilities: data.preferredFacilities ?? [],
       bio: data.bio?.trim() || null,
+      travel_radius_km: data.travelRadiusKm ?? 10,
+      preferred_duty_hours: data.preferredDutyHours ?? 8,
+      max_hours_per_day: data.maxHoursPerDay ?? 12,
+      minimum_pay: data.minimumPay ?? 0,
+      available_today: !!data.availableToday,
+      locum_available: !!data.locumAvailable,
+      full_time_interest: !!data.fullTimeInterest,
+      working_days: data.workingDays ?? [],
+      dnd_enabled: !!data.dndEnabled,
+      dnd_start: data.dndStart ?? '22:00',
+      dnd_end: data.dndEnd ?? '07:00',
+      dnd_allow_emergency: !!data.dndAllowEmergency,
+      notification_preferences: data.notificationPreferences ?? {},
+      recent_courses: data.recentCourses?.trim() || null,
+      special_interests: data.specialInterests?.trim() || null,
+      certifications: data.certifications ?? [],
+      languages: data.languages ?? [],
     };
 
     const { data: existing } = await sb.from("technicians").select("id").eq("user_id", context.userId).maybeSingle();
