@@ -28,6 +28,14 @@ const DEFAULT_SERVICES = [
   "OT Technician", "Home Care",
 ];
 
+const DUTY_PREF_OPTIONS = [
+  { id: "all", label: "All" },
+  { id: "ward", label: "Ward" },
+  { id: "icu", label: "ICU" },
+  { id: "emergency", label: "Emergency" },
+  { id: "night", label: "Night shift" },
+];
+
 const DEFAULT_HOURS: WeekHours = {
   mon: [{ start: "09:00", end: "17:00" }],
   tue: [{ start: "09:00", end: "17:00" }],
@@ -53,6 +61,8 @@ function ProviderAvailability() {
   const [customService, setCustomService] = useState("");
   const [dndWindows, setDndWindows] = useState<DndWindow[]>([]);
   const [dndAllowEmergency, setDndAllowEmergency] = useState(true);
+  const [isCarePhysician, setIsCarePhysician] = useState(false);
+  const [cpDutyTypes, setCpDutyTypes] = useState<string[]>(["all"]);
 
   useEffect(() => {
     (async () => {
@@ -71,9 +81,35 @@ function ProviderAvailability() {
         setDndWindows(((data as unknown as { dnd_windows?: DndWindow[] }).dnd_windows) || []);
         setDndAllowEmergency((data as unknown as { dnd_allow_emergency?: boolean }).dnd_allow_emergency !== false);
       }
+      const { data: cpData } = await supabase.from("care_physician_profiles").select("duty_types").eq("user_id", u).maybeSingle();
+      if (cpData) {
+        setIsCarePhysician(true);
+        if (cpData.duty_types && cpData.duty_types.length) {
+          setCpDutyTypes(cpData.duty_types);
+        }
+      } else {
+        const { data: prof } = await supabase.from("profiles").select("view").eq("id", u).maybeSingle();
+        if (prof?.view === "care_physician") {
+          setIsCarePhysician(true);
+        }
+      }
       setLoading(false);
     })();
   }, []);
+
+  function handleCpDutyToggle(id: string) {
+    setCpDutyTypes((current) => {
+      const active = current || ["all"];
+      if (id === "all") {
+        return ["all"];
+      }
+      const withoutAll = active.filter((x) => x !== "all");
+      const next = withoutAll.includes(id)
+        ? withoutAll.filter((x) => x !== id)
+        : [...withoutAll, id];
+      return next.length === 0 ? ["all"] : next;
+    });
+  }
 
   const allServices = useMemo(() => {
     const set = new Set(DEFAULT_SERVICES);
@@ -94,6 +130,15 @@ function ProviderAvailability() {
       dnd_windows: dndWindows,
       dnd_allow_emergency: dndAllowEmergency,
     } as never, { onConflict: "user_id" });
+
+    if (isCarePhysician) {
+      await supabase.from("care_physician_profiles").upsert({
+        user_id: uid,
+        duty_types: cpDutyTypes,
+        qualification: "mbbs",
+      } as never, { onConflict: "user_id" });
+    }
+
     setSaving(false);
     setMsg(error ? `Error: ${error.message}` : "Saved. Dispatch will respect these settings.");
     if (!error) setTimeout(() => setMsg(null), 3000);
@@ -131,6 +176,47 @@ function ProviderAvailability() {
         {msg && <div style={{ ...S.card, background: msg.startsWith("Error") ? "#FEE2E2" : "#D1FAE5", color: msg.startsWith("Error") ? "#991B1B" : "#065F46", fontWeight: 700 }}>{msg}</div>}
 
         <div className="hv"><ProviderHomeSettings /></div>
+
+        {/* Care Physician Duty Preferences */}
+        {isCarePhysician && (
+          <div style={S.card}>
+            <div style={S.h2}>Hospital Duty Preferences</div>
+            <div style={S.hint}>Choose which types of hospital duties you want to receive. Multiple choice except All.</div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 14 }}>
+              {DUTY_PREF_OPTIONS.map((opt) => {
+                const isAll = opt.id === "all";
+                const isAllActive = !cpDutyTypes || cpDutyTypes.length === 0 || cpDutyTypes.includes("all");
+                const active = isAll ? isAllActive : (!isAllActive && cpDutyTypes.includes(opt.id));
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => handleCpDutyToggle(opt.id)}
+                    style={{
+                      border: `2px solid ${active ? "#6D28D9" : "#E2E8F0"}`,
+                      background: active ? "#F5F3FF" : "#FFFFFF",
+                      color: "#0F172A",
+                      borderRadius: 14,
+                      padding: "10px 20px",
+                      fontWeight: 800,
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                      fontSize: 14,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      boxShadow: active ? "0 2px 5px rgba(109,40,217,0.15)" : "none",
+                      transition: "all 0.15s ease",
+                    }}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Master toggle */}
         <div style={S.card}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
