@@ -26,6 +26,9 @@ import { HOME_VISIT_CONSENT } from "@/features/mydox/consent-texts";
 import { TwoWayChatModal } from "@/features/mydox/TwoWayChatModal";
 import { usePostConsultationInbox } from "@/features/mydox/post-consultation-chat/usePostConsultationChat";
 import { recordHomeVisitConsent } from "@/lib/consents.functions";
+import { EmergencyResponderPanel, EmergencyPatient } from "@/features/mydox/emergency/DispatchScreens";
+import { EmergencyProfileForm, EmergencyProfileNudge } from "@/features/mydox/emergency/EmergencyProfile";
+import { useCrewStats } from "@/features/mydox/emergency/useCrewStats";
 import {
   parseChatAttachment,
   formatMessageSnippet,
@@ -391,6 +394,13 @@ function _liveMedicoRoster() {
   const rows = (typeof LIVE_BY_VIEW !== "undefined" && LIVE_BY_VIEW.medico) || [];
   return rows.filter(p => p && p.name && p.userId);
 }
+// Preferred-doctor lists show only doctors who have actually treated a patient.
+// PATIENTS_SERVED is filled from provider_patient_counts(); until that function is
+// installed it stays null and the list is not filtered (nothing breaks).
+let PATIENTS_SERVED = null;
+function _hasTreatedPatients(m) {
+  return PATIENTS_SERVED == null || (PATIENTS_SERVED[m.userId] || 0) > 0;
+}
 // Non-doctor roles that must never appear in a specialty doctor panel,
 // matched against the profile's display name AND specialty field.
 const _NON_DOCTOR_ROLES = ["nurse", "paramedic", "technician", "therapist", "pharmacist", "receptionist", "coordinator", "ward boy", "attender"];
@@ -440,7 +450,7 @@ const pick = arr => arr[Math.floor(Math.random() * arr.length)];
 const QUALS = ["MBBS, MD", "MBBS, MS", "MBBS, DNB", "MBBS, MD, DM", "MBBS, MS, MCh", "MBBS, DGO"];
 function panelDoctorsForSpec(spec) {
   if (!spec) return [];
-  const roster = _liveMedicoRoster().filter(m => _medicoMatchesSpec(m, spec));
+  const roster = _liveMedicoRoster().filter(m => _medicoMatchesSpec(m, spec) && _hasTreatedPatients(m));
   const list = roster.map((m, i) => {
     const seed = _stableSeed(m.userId || m.name);
     const patientRating = +(4.3 + ((seed + i * 3) % 7) / 10).toFixed(1);
@@ -524,6 +534,14 @@ async function refreshLiveProviders() {
         isLive: true,
       });
     });
+    try {
+      const { data: counts, error: countErr } = await supabase.rpc("provider_patient_counts");
+      if (!countErr && Array.isArray(counts)) {
+        const map = {};
+        counts.forEach(r => { map[r.provider_id] = Number(r.patients) || 0; });
+        PATIENTS_SERVED = map;
+      }
+    } catch { /* function not installed yet: show everyone */ }
     // Prefer online accounts first in every bucket
     for (const k of Object.keys(LIVE_BY_VIEW)) {
       LIVE_BY_VIEW[k].sort((a, b) => Number(b.online) - Number(a.online));
@@ -4329,6 +4347,58 @@ function SurgeryInvitesCard() {
   );
 }
 
+/* Inline hub calendar: week strip + (selected day | previous patients) side by side. */
+function HubCalendarCard({ bookings, accent = "#7C3AED", onOpenFull }) {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const [sel, setSel] = React.useState(today.toDateString());
+  const days = Array.from({ length: 7 }, (_, i) => { const d = new Date(today); d.setDate(today.getDate() - 1 + i); return d; });
+  const list = bookings || [];
+  const onDay = list.filter(b => b.date.toDateString() === sel).sort((a, b) => a.date - b.date);
+  const previous = list.filter(b => b.date < new Date() && b.status === "Completed").sort((a, b) => b.date - a.date).slice(0, 4);
+  const t = (d) => d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" });
+  const box = { flex: 1, minWidth: 0, background: "#F9FAFB", borderRadius: 12, padding: "9px 10px" };
+  return (
+    <div style={{ background: "#fff", border: "1px solid #E5E7EB", borderRadius: 16, padding: 12, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+        <p style={{ margin: 0, fontWeight: 800, fontSize: 13.5, color: "#111827" }}>📅 Hub calendar</p>
+        <button type="button" onClick={onOpenFull} style={{ background: "none", border: 0, color: accent, fontWeight: 800, fontSize: 11.5, cursor: "pointer" }}>Full calendar ›</button>
+      </div>
+      <div style={{ display: "flex", gap: 4, marginBottom: 10 }}>
+        {days.map(d => {
+          const k = d.toDateString(); const active = k === sel; const n = list.filter(b => b.date.toDateString() === k).length;
+          return (
+            <button key={k} type="button" onClick={() => setSel(k)} style={{ flex: 1, border: 0, borderRadius: 10, padding: "6px 0", cursor: "pointer", background: active ? accent : "#F3F4F6", color: active ? "#fff" : "#374151", fontFamily: "inherit" }}>
+              <span style={{ display: "block", fontSize: 9.5, fontWeight: 700, opacity: .85 }}>{d.toLocaleDateString("en-IN", { weekday: "short" })}</span>
+              <span style={{ display: "block", fontSize: 14, fontWeight: 800 }}>{d.getDate()}</span>
+              <span style={{ display: "block", height: 5, marginTop: 2 }}>{n > 0 && <span style={{ display: "inline-block", width: 5, height: 5, borderRadius: "50%", background: active ? "#fff" : accent }} />}</span>
+            </button>
+          );
+        })}
+      </div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <div style={box}>
+          <p style={{ margin: "0 0 6px", fontWeight: 800, fontSize: 11, color: "#111827" }}>{sel === today.toDateString() ? "Today" : new Date(sel).toLocaleDateString("en-IN", { day: "numeric", month: "short" })} · {onDay.length}</p>
+          {onDay.length ? onDay.map((b, i) => (
+            <div key={i} style={{ marginBottom: 6 }}>
+              <p style={{ margin: 0, fontSize: 10.5, fontWeight: 800, color: b.color || accent }}>{t(b.date)}</p>
+              <p style={{ margin: 0, fontSize: 10.5, color: "#374151", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{b.title}</p>
+            </div>
+          )) : <p style={{ margin: 0, fontSize: 10.5, color: "#9CA3AF" }}>No bookings</p>}
+        </div>
+        <div style={box}>
+          <p style={{ margin: "0 0 6px", fontWeight: 800, fontSize: 11, color: "#111827" }}>Previous patients</p>
+          {previous.length ? previous.map((b, i) => (
+            <div key={i} style={{ marginBottom: 6 }}>
+              <p style={{ margin: 0, fontSize: 10.5, fontWeight: 700, color: "#374151", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{b.sub || b.title}</p>
+              <p style={{ margin: 0, fontSize: 10, color: "#9CA3AF" }}>{b.date.toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</p>
+            </div>
+          )) : <p style={{ margin: 0, fontSize: 10.5, color: "#9CA3AF" }}>None yet</p>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function HubPortalApp({ req, hubReq, hubActions, scanDispatch, scanDispatchActions, sevaActions }) {
   const [hubChat, setHubChat] = React.useState(null);
   const [showSurgery, setShowSurgery] = React.useState(false); // surgery team booking overlay
@@ -4446,7 +4516,9 @@ function HubPortalApp({ req, hubReq, hubActions, scanDispatch, scanDispatchActio
   ];
 
   return (
-    <div className="w-full h-full flex flex-col overflow-hidden" style={{ background: C.surface }}>
+    <div className="w-full h-full flex flex-col hub-scroll" style={{ background: C.surface, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
+      {/* Whole hub screen scrolls; sections keep their natural height instead of being squeezed to 0. */}
+      <style>{`.hub-scroll > * { flex: 0 0 auto !important; min-height: auto !important; }`}</style>
       {/* Hub Header */}
       <div className="flex-shrink-0 px-5 py-4" style={{ background: hubOnline ? gradHub : "#3A4A45", transition: "background .3s" }}>
         <div className="flex items-center justify-between text-white mb-3">
@@ -4455,33 +4527,25 @@ function HubPortalApp({ req, hubReq, hubActions, scanDispatch, scanDispatchActio
               <Building2 size={16} />
               <span className="font-extrabold" style={{ fontSize: 16 }}>{LOGGED_HUB.name}</span>
             </div>
-            <p className="text-xs opacity-75">{LOGGED_HUB.address} · Koregaon Park, Pune</p>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={() => setShowSeva(true)} className="rounded-full flex items-center justify-center" style={{ width: 34, height: 34, background: "rgba(255,255,255,.22)", border: "none", cursor: "pointer", color: "#fff" }} aria-label="Enrol a patient for free care"><HandCoins size={16} /></button>
-            <button onClick={() => setShowCal(true)} className="rounded-full flex items-center justify-center" style={{ width: 34, height: 34, background: "rgba(255,255,255,.22)", border: "none", cursor: "pointer", color: "#fff" }} aria-label="Hub schedule"><Calendar size={16} /></button>
             <ModuleProfilePill />
             <div className="flex flex-col items-end gap-1.5">
               <button onClick={() => { const n = !hubOnline; setHubOnline(n); toast(n ? "Hub active · accepting walk-ins & dispatch" : "Hub inactive · dispatch paused"); }} className="flex items-center gap-1.5 rounded-full px-2.5 py-1 font-bold" style={{ background: "rgba(255,255,255,.22)", fontSize: 10.5, color: "#fff", border: "none", cursor: "pointer" }}>
                 <span className="w-1.5 h-1.5 rounded-full" style={{ background: hubOnline ? "#4ADE80" : "#FCA5A5", animation: hubOnline ? "pulse 1.4s infinite" : "none" }} />
                 {hubOnline ? "Hub Active" : "Hub Inactive"}
               </button>
-              <span className="rounded-full px-2.5 py-1 font-bold"
-                style={{ background: "rgba(255,255,255,.22)", fontSize: 10, color: "rgba(255,255,255,.9)" }}>
-                Partner Pro
-              </span>
             </div>
           </div>
         </div>
         {showCal && <BookingCalendar title="Hub Schedule" subtitle="Bookings across the hub" accent={C.hub} bookings={HUB_BOOKINGS} onClose={() => setShowCal(false)} />}
         {showSeva && <SevaEnrollOverlay context="hub" onClose={() => setShowSeva(false)} onEnroll={(p) => sevaActions && sevaActions.enroll(p)} />}
         {/* Live stats strip */}
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-3 gap-2">
           {[
-            ["Rooms", `${rooms.filter(r => r.status === "occupied").length}/${LOGGED_HUB.rooms}`],
-            ["Today", "34 visits"],
-            ["Revenue", "₹28,400"],
-            ["Avg wait", "7 min"],
+            ["Visits", "34"],
+            ["Today's revenue", "₹28,400"],
+            ["Avg doctor arrival", "7 min"],
           ].map(([l, v]) => (
             <div key={l} className="rounded-xl py-2 text-center text-white" style={{ background: "rgba(255,255,255,.18)" }}>
               <p className="font-extrabold" style={{ fontSize: 13 }}>{v}</p>
@@ -4489,6 +4553,16 @@ function HubPortalApp({ req, hubReq, hubActions, scanDispatch, scanDispatchActio
             </div>
           ))}
         </div>
+      </div>
+
+      {/* Live emergency alerts (accept) + active admissions — real data from Supabase */}
+      <div className="px-4 pt-3">
+        <EmergencyResponderPanel kind="hospital" />
+      </div>
+
+      {/* Hub calendar — moved from the header icon; schedule + previous patients side by side */}
+      <div className="px-4 pt-3">
+        <HubCalendarCard bookings={HUB_BOOKINGS} accent={C.hub} onOpenFull={() => setShowCal(true)} />
       </div>
 
       {/* Preferred Doctors capsule — mirrors patient app */}
@@ -5109,6 +5183,17 @@ function HubPortalApp({ req, hubReq, hubActions, scanDispatch, scanDispatchActio
           onBroadcast={() => { const hr = hubRepeat; setHubRepeat(null); hubActions.book({ spec: hr.spec, emergency: dispEmerg, room: dispRoom, fare: hr.fare, kind: hr.cat, routeMode: dispRoute }); }}
           onClose={() => setHubRepeat(null)} />
       )}
+      {/* Enrol a patient for free care (Seva) — moved from the header to the end of the screen */}
+      <div className="px-4 pt-2 pb-6">
+        <button type="button" onClick={() => setShowSeva(true)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, background: "#ECFDF5", border: "1.5px solid #A7F3D0", borderRadius: 14, padding: "12px 14px", cursor: "pointer", textAlign: "left", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
+          <span style={{ width: 34, height: 34, borderRadius: "50%", background: "#059669", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><HandCoins size={17} /></span>
+          <span style={{ flex: 1 }}>
+            <span style={{ display: "block", fontWeight: 800, fontSize: 13, color: "#064E3B" }}>MyDox Seva · Free care enrolment</span>
+            <span style={{ display: "block", fontSize: 11, color: "#047857" }}>Enrol a patient who cannot afford treatment</span>
+          </span>
+          <ChevronRight size={16} style={{ color: "#059669" }} />
+        </button>
+      </div>
       {hubDirect && (
         <DirectRequestOverlay
           provider={hubDirect.provider} spec={hubDirect.spec} who="your hub"
@@ -8112,6 +8197,14 @@ function DoctorApp({ req, hubReq, online, setOnline, onAccept, sevaActions }) {
             </div>
           </div>
         )}
+        {/* Live emergency calls from Supabase (specialist paging). Shown right where the
+            doctor already waits for requests, so no separate screen is needed. */}
+        {online && (
+          <div className="rounded-2xl p-3 mb-3" style={{ background: "#FEF2F2", border: "1px solid #FECACA" }}>
+            <p className="font-extrabold mb-1" style={{ color: "#B91C1C", fontSize: 13 }}>🚨 Emergency calls</p>
+            <EmergencyResponderPanel kind="doctor" />
+          </div>
+        )}
         {online && !activeIncoming && !wonReq && (
           <div>
             <Empty Icon={Radio} title="Waiting for requests" desc="You'll be pinged when a patient or health hub needs your speciality nearby." />
@@ -10396,7 +10489,7 @@ function getCurrentPatientProfile() {
   return DEMO_PATIENT_PROFILES[n] || null;
 }
 
-function HealthProfileOverlay({ onClose, onOpenRecords, allergyDone }) {
+function HealthProfileOverlay({ onClose, onOpenRecords, allergyDone, onEmergencyProfile }) {
   const [showChat, setShowChat] = React.useState(false);
   const profile = React.useMemo(() => getCurrentPatientProfile(), []);
   const p = profile || {
@@ -10426,6 +10519,16 @@ function HealthProfileOverlay({ onClose, onOpenRecords, allergyDone }) {
         </button>
       </div>
       <div style={{ flex: 1, overflowY: "auto", padding: 14, scrollbarWidth: "none" }}>
+        {onEmergencyProfile && (
+          <button type="button" onClick={onEmergencyProfile} style={{ width: "100%", marginBottom: 12, display: "flex", alignItems: "center", gap: 10, background: "#FEF2F2", border: "1.5px solid #FECACA", borderRadius: 14, padding: "11px 12px", cursor: "pointer", textAlign: "left" }}>
+            <span style={{ fontSize: 18 }}>🚨</span>
+            <span style={{ flex: 1 }}>
+              <span style={{ display: "block", fontWeight: 800, fontSize: 13, color: C.ink }}>Emergency profile</span>
+              <span style={{ display: "block", fontSize: 10.5, color: "#B91C1C", fontWeight: 700 }}>Family contacts, blood group, allergies, medicines</span>
+            </span>
+            <ChevronRight size={16} style={{ color: "#DC2626" }} />
+          </button>
+        )}
         {/* Identity card */}
         <div style={{ background: "white", border: `1px solid ${C.line}`, borderRadius: 14, padding: "12px 13px", display: "flex", gap: 12, alignItems: "center", marginBottom: 10 }}>
           <Avatar name={p.name} size={54} />
@@ -11893,6 +11996,32 @@ function CenterDispatchFlow({ config, onClose }) {
 /* ── Emergency Care pathways: call-first, condition triage, parallel dispatch
    (ambulance + right-facility hospital + on-call specialist), auto-shared
    medical info, golden-hour clock. Built on the first-accept-wins engine. */
+// Live emergency screens rendered INSIDE the app card (same URL, same shell).
+// Data comes from Supabase via EmergencyResponderPanel; accept logic unchanged.
+function InAppEmergencyScreen({ kind, onClose }) {
+  const meta = {
+    ambulance: { title: "Ambulance", sub: "Live emergency dispatch", grad: "linear-gradient(135deg,#DC2626,#B91C1C)" },
+    hospital: { title: "Emergency department", sub: "Cases paged to your hospital", grad: "linear-gradient(135deg,#DC2626,#B91C1C)" },
+  }[kind];
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0, background: "#F4F7F6", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
+      <div style={{ flexShrink: 0, background: meta.grad, color: "#fff", padding: "16px 18px", display: "flex", alignItems: "center", gap: 10 }}>
+        <Ambulance size={20} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p style={{ margin: 0, fontWeight: 800, fontSize: 16 }}>{meta.title}</p>
+          <p style={{ margin: "2px 0 0", fontSize: 11.5, opacity: .9 }}>{meta.sub}</p>
+        </div>
+        <a href="tel:108" style={{ background: "rgba(255,255,255,.2)", color: "#fff", borderRadius: 99, padding: "6px 12px", fontWeight: 800, fontSize: 12, textDecoration: "none" }}>108</a>
+        {!onClose && <ModuleProfilePill />}
+        {onClose && <button onClick={onClose} aria-label="Close" style={{ background: "rgba(255,255,255,.2)", border: 0, color: "#fff", borderRadius: "50%", width: 30, height: 30, cursor: "pointer", fontWeight: 800 }}>✕</button>}
+      </div>
+      <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "12px 14px 28px" }}>
+        <EmergencyResponderPanel kind={kind} />
+      </div>
+    </div>
+  );
+}
+
 function DispatchRow({ icon, title, waiting, doneText, done, R, C }) {
   return (
     <div style={{ background: C.surface, border: `1px solid ${done ? "#A7F3D0" : C.line}`, borderRadius: 13, padding: "11px 12px", marginBottom: 9, display: "flex", alignItems: "center", gap: 11 }}>
@@ -14007,6 +14136,7 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
   const dashboardScrollRef = useRef(null);
   const [directReq, setDirectReq] = useState(null); // {provider,spec,fromOverlay,emergency,isMy,myName,preferredName}
   const [scanDirect, setScanDirect] = useState(null); // {provider,scan}
+  const [acknowledgedBookingIds, setAcknowledgedBookingIds] = useState([]); // stop continuous confirmations
 
   const patientName = (() => { try { return localStorage.getItem("mc_user_name") || ""; } catch { return ""; } })();
   const changeDashboardTab = (tab) => {
@@ -14132,6 +14262,8 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
   const [showSpecialty, setShowSpecialty] = useState(null); // {specId,label} — dental/derm/plastic/vasc overlay
   const [dispatchFlow, setDispatchFlow] = useState(null); // shared centre dispatch (broadcast + OTP) for care referrals
   const [showEmergency, setShowEmergency] = useState(false); // emergency care pathways
+  const [showEmgProfile, setShowEmgProfile] = useState(false); // emergency contacts + medical info
+  const [emgProfileVersion, setEmgProfileVersion] = useState(0);
   const [notifs, setNotifs] = useState(PATIENT_NOTIFS);
   const { session } = useSession();
   const { rows: patientLiveApps } = useLiveDoctorAppointments(session?.user?.id);
@@ -14216,6 +14348,8 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
           .limit(1);
         if (cancelled || !engs || !engs.length) return;
         const latest = engs[0];
+        if (acknowledgedBookingIds.includes(latest.id)) return;
+
         if (latest.primary_nurse_id) {
           const { data: nurseProf } = await supabase
             .from("profiles")
@@ -14227,6 +14361,7 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
 
           setConfirmedBooking(cur => {
             const confirmedData = {
+              id: latest.id,
               pending: false,
               name: latest.kind,
               doctor: { name: nurseName, spec: "Nursing Specialist", rating: 4.9 },
@@ -14235,7 +14370,7 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
 
             // If we don't have a confirmed popup showing, or it's currently "pending",
             // pop it up with the new real data.
-            if (!cur || cur.pending || cur.engagementId === latest.id) {
+            if (!cur || cur.pending || (cur.id || cur.engagementId) === latest.id) {
               if (cur?.pending) toast && toast(`${nurseName} accepted your nursing request!`);
               return confirmedData;
             }
@@ -14259,7 +14394,7 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
       clearInterval(poll);
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [acknowledgedBookingIds]);
 
   // Live Technician Visit Sync (for scheduled bookings):
   useEffect(() => {
@@ -14278,6 +14413,8 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
         if (cancelled || !visits || !visits.length) return;
 
         const latest = visits[0];
+        if (acknowledgedBookingIds.includes(latest.id)) return;
+
         if (latest.status === "assigned" && latest.technician_id) {
           const { data: techProf } = await supabase
             .from("profiles")
@@ -14289,13 +14426,14 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
 
           setConfirmedBooking(cur => {
             const confirmedData = {
+              id: latest.id,
               pending: false,
               name: `${latest.test_type.toUpperCase()} Visit`,
               doctor: { name: techName, spec: "Technician", rating: 4.8 },
               label: `Status: ${latest.status} \u00B7 Confirmed`,
             };
 
-            if (!cur || cur.pending || cur.visitId === latest.id) {
+            if (!cur || cur.pending || (cur.id || cur.visitId) === latest.id) {
               if (cur?.pending) toast && toast(`${techName} accepted your technician request!`);
               return confirmedData;
             }
@@ -14319,7 +14457,7 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
       clearInterval(poll);
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [acknowledgedBookingIds]);
   // Per-user local persistence key (survives logout on the same device)
   const prefsKey = useMemo(() => {
     const n = (typeof window !== "undefined" && window.localStorage.getItem("mc_user_name")) || "guest";
@@ -14998,6 +15136,8 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
       allergy: () => setShowBreatheFree(true), medicines: () => setShowDrugDelivery(true),
       homePackage: () => setShowHomeCare(true), family: () => setShowFamilyPlan(true),
       physio: () => { window.location.assign("/physio/book"); },
+      nurse: () => { window.location.assign("/nurse/book"); },
+      technician: () => { window.location.assign("/technician/book"); },
       dental: () => setShowSpecialty({ specId: "dental", label: "Dental Care" }),
       derm: () => setShowSpecialty({ specId: "derm", label: "Skin & Hair" }),
       plastic: () => setShowSpecialty({ specId: "plastic", label: "Plastic Surgery" }),
@@ -15029,6 +15169,9 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
           <ChevronRight size={16} style={{ color: req.emergency ? C.emerg : C.primary, flexShrink: 0 }} />
         </button>
       )}
+
+      {/* Client requirement: remind patients to add emergency contacts & medical info */}
+      {dashboardTab === "home" && !bookingOpen && <EmergencyProfileNudge onOpen={() => setShowEmgProfile(true)} refreshKey={emgProfileVersion} />}
 
       {/* Stage-flow overlay — per-stage 60s timer, manual escalation only, live audit timeline */}
       {!directReq && !scanDirect && <StageFlowOverlay req={req} actions={actions} onCancel={() => requestCancel()} />}
@@ -15464,7 +15607,7 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
           onClose={() => labActions && labActions.clear()} />
       )}
       {showAdmit && <HospitalFinder title="Get Admitted" subtitle="Find a hospital for you or family" ctaLabel="Request admission" ctaIcon={<Hospital size={15} />} accent="#2563EB" onSelect={(h) => { setShowAdmit(false); toast("Admission requested at " + h.name + " — they'll confirm a bed"); }} onClose={() => setShowAdmit(false)} />}
-      {showSOS && <SOSOverlay onClose={() => setShowSOS(false)} onDispatch={() => { ambulanceActions && ambulanceActions.requestSOS({ pickup: area || "Your location" }); toast("🚑 Ambulance dispatched — track it in the Ambulance tab"); }} />}
+      {showSOS && <EmergencyPatient variant="sos" onClose={() => setShowSOS(false)} />}
       {showCompanion && <HealthCompanionChat onClose={() => setShowCompanion(false)} onBookDoctor={(payload) => {
         setShowCompanion(false);
         const rawSpec = (payload && payload.specialty) ? String(payload.specialty) : "";
@@ -15485,7 +15628,11 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
       }} />}
       {showBreatheFree && <BreatheFreeFlow onClose={() => setShowBreatheFree(false)} onComplete={({ openChat }) => { setShowBreatheFree(false); setAllergyDone(true); if (openChat) setChatDoctor(BF_DOCTOR); }} />}
       {confirmedBooking && (
-        <div onClick={() => setConfirmedBooking(null)} style={{ position: "absolute", inset: 0, zIndex: 120, background: "rgba(15,23,42,.55)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+        <div onClick={() => {
+          const id = confirmedBooking.id || confirmedBooking.bookingId;
+          if (id) setAcknowledgedBookingIds(prev => [...prev, id]);
+          setConfirmedBooking(null);
+        }} style={{ position: "absolute", inset: 0, zIndex: 120, background: "rgba(15,23,42,.55)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
           <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 300, background: "#fff", borderRadius: 22, padding: "26px 22px", textAlign: "center", boxShadow: "0 24px 60px rgba(0,0,0,.3)" }}>
             <div style={{ width: 64, height: 64, borderRadius: "50%", background: "linear-gradient(135deg,#0C9668,#059669)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px", boxShadow: "0 8px 22px -6px rgba(12,150,104,.6)" }}><Check size={34} color="#fff" strokeWidth={3} /></div>
             <p style={{ margin: 0, fontWeight: 900, color: C.ink, fontSize: 19 }}>Booking Confirmed</p>
@@ -15504,6 +15651,8 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
             <p style={{ margin: "14px 0 0", color: C.faint, fontSize: 11.5, lineHeight: 1.4 }}>{confirmedBooking.doctor ? "Your appointment is booked with this doctor. You'll get a reminder ahead of your slot." : "Your appointment is booked. You'll get a reminder, and your medico will be assigned ahead of your slot."}</p>
             <button onClick={() => {
               const booking = confirmedBooking;
+              const id = booking?.id || booking?.bookingId;
+              if (id) setAcknowledgedBookingIds(prev => [...prev, id]);
               setConfirmedBooking(null);
               if (!booking?.spec) return;
               
@@ -15725,14 +15874,15 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
       )}
 
       {viewGroup && <CareGroupOverlay group={viewGroup} onClose={() => setViewGroup(null)} />}
-      {showProfile && <HealthProfileOverlay allergyDone={allergyDone} onClose={() => setShowProfile(false)} onOpenRecords={() => { setShowProfile(false); setShowRecords(true); }} />}
+      {showProfile && <HealthProfileOverlay allergyDone={allergyDone} onClose={() => setShowProfile(false)} onOpenRecords={() => { setShowProfile(false); setShowRecords(true); }} onEmergencyProfile={() => setShowEmgProfile(true)} />}
       {showRecords && <HealthRecordsOverlay onClose={() => setShowRecords(false)} onBookDoctor={(sugg) => { setShowRecords(false); setActiveTab("doctor"); setSelectedSpec(null); setQuery(""); toast("Pick a " + (sugg ? sugg.split(" / ")[0] : "doctor") + " below"); setBookingOpen(true); setTimeout(() => { try { pickerRef.current && pickerRef.current.scrollIntoView({ behavior: "smooth", block: "start" }); } catch (e) { } }, 80); }} />}
       {showCal && <BookingCalendar title="My Bookings" subtitle="Appointments, labs & scans" accent={C.primary} bookings={PATIENT_BOOKINGS} onClose={() => setShowCal(false)} />}
       {showMyBookings && <MyBookingsOverlay initialTab={bookingsInitialTab} title={bookingsTitle} onClose={() => setShowMyBookings(false)} onRebook={(it) => {
         setShowMyBookings(false);
-        const m = it.module;
-        if (m === "Doctor / Nurse") { setBookingOpen(true); const tab = /nurse/i.test(it.title) ? "nurse" : "doctor"; setActiveTab(tab); setSelectedSpec(null); setQuery(it.title || ""); toast(`Rebook: ${it.title} — pick a provider below`); }
-        else if (m === "Lab / Scan") { setBookingOpen(true); const tab = /mri|ct|xray|scan|ultrasound/i.test(it.title) ? "scan" : "technician"; setActiveTab(tab); toast(`Rebook: ${it.title}`); }
+        if (m === "Nursing") { window.location.assign("/nurse/visits"); }
+        else if (m === "Diagnostics") { window.location.assign("/technician/visits"); }
+        else if (m === "Physiotherapy") { window.location.assign("/physio/visits"); }
+        else if (m === "Doctor / Nurse") { setBookingOpen(true); const tab = /nurse/i.test(it.title) ? "nurse" : "doctor"; setActiveTab(tab); setSelectedSpec(null); setQuery(it.title || ""); toast(`Rebook: ${it.title} — pick a provider below`); }
         else if (m === "Home Care") { setShowHomeCare(true); }
         else if (m === "Medicines") { setShowDrugDelivery(true); }
         else if (m === "Care Program") { setShowHomeCare(true); toast(`Rebook care program: ${it.title}`); }
@@ -15767,7 +15917,8 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
       {showSpecialNeeds && <SpecialNeedsFlow onClose={() => setShowSpecialNeeds(false)} onBook={(b) => { mcCapture("special_needs", b); (async () => { try { const { data: { user } } = await supabase.auth.getUser(); if (user) { const { error } = await supabase.from("special_needs_bookings").insert({ patient_id: user.id, category: b.cat, subtype: b.sub, provider_name: b.provider, fee: b.fee ?? null }); if (error) { toast("⚠️ Booking could not be saved — please try again"); return; } } toast(`✅ ${b.sub} booked with ${b.provider}`); } catch (err) { console.warn("special needs save failed", err?.message); toast("⚠️ Booking could not be saved — please try again"); } })(); }} />}
       {showBloodBank && <BloodBankFlow onClose={() => setShowBloodBank(false)} onBook={(b) => { mcCapture("blood_bank", b); (async () => { try { const { data: { user } } = await supabase.auth.getUser(); if (user) { const { error } = await supabase.from("blood_bank_activity").insert({ patient_id: user.id, activity_type: b.type || "need_blood", blood_group: b.group ?? null, units: b.units ?? null, hospital: b.hospital ?? null, urgent: b.urgent ?? null, donor_name: b.name ?? null, camp_id: b.campId ?? null, camp_name: b.camp ?? null, payload: b || {} }); if (error) { toast("⚠️ Could not save to your record — please retry"); return; } } } catch (err) { console.warn("blood bank save failed", err?.message); toast("⚠️ Could not save to your record — please retry"); } })(); }} />}
       {dispatchFlow && <CenterDispatchFlow config={dispatchFlow} onClose={() => setDispatchFlow(null)} />}
-      {showEmergency && <EmergencyPathwayFlow onClose={() => setShowEmergency(false)} />}
+      {showEmergency && <EmergencyPatient onClose={() => setShowEmergency(false)} />}
+      {showEmgProfile && <EmergencyProfileForm onClose={() => setShowEmgProfile(false)} onSaved={() => setEmgProfileVersion(v => v + 1)} />}
       {showPrefMgr && <PreferredDoctorsOverlay who="patient" preferredMap={preferred} onToggle={(specId, name, slot) => togglePreferred(specId, name, slot)} onClose={() => setShowPrefMgr(false)} accent="#7C3AED" />}
       {showSecondOp && <SecondOpinionOverlay onClose={() => setShowSecondOp(false)} />}
       {showConsent && <ConsentOverlay onClose={() => setShowConsent(false)} onAccept={() => { setConsentOk(true); setShowConsent(false); setScreen("hub_discovery"); }} />}
@@ -16142,6 +16293,7 @@ function AmbulanceNav({ hospital, fromSOS, onComplete, onClose }) {
 /* Ambulance driver portal */
 function AmbulanceApp({ ambulanceJob, ambulanceActions, scanDispatch }) {
   const [online, setOnline] = useState(true);
+  const crewStats = useCrewStats(); // real numbers from this crew's emergency cases
   const [finder, setFinder] = useState(null);
   const [nav, setNav] = useState(null); // {hospital, fromSOS}
   const [scanAcceptedKey, setScanAcceptedKey] = useState(null); // scan transport job taken (by otp)
@@ -16168,7 +16320,7 @@ function AmbulanceApp({ ambulanceJob, ambulanceActions, scanDispatch }) {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
             <div style={{ width: 38, height: 38, borderRadius: 11, background: "rgba(255,255,255,.2)", display: "flex", alignItems: "center", justifyContent: "center" }}><Ambulance size={20} /></div>
-            <div><p style={{ margin: 0, fontWeight: 900, fontSize: 16 }}>Ambulance</p><p style={{ margin: 0, fontSize: 10.5, opacity: .85 }}>MH-12 EZ 4471 · Koregaon Park Unit 7</p></div>
+            <div><p style={{ margin: 0, fontWeight: 900, fontSize: 16 }}>Ambulance</p><p style={{ margin: 0, fontSize: 10.5, opacity: .85 }}>Live emergency dispatch · {online ? "receiving alerts" : "alerts paused"}</p></div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <button onClick={() => setOnline(o => !o)} style={{ display: "flex", alignItems: "center", gap: 6, background: "rgba(255,255,255,.2)", border: "none", borderRadius: 99, padding: "7px 12px", color: "#fff", fontWeight: 800, fontSize: 11.5, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}><span style={{ width: 7, height: 7, borderRadius: 50, background: online ? "#4ADE80" : "#FCA5A5" }} />{online ? "On duty" : "Off"}</button>
@@ -16176,7 +16328,7 @@ function AmbulanceApp({ ambulanceJob, ambulanceActions, scanDispatch }) {
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, marginTop: 13 }}>
-          {[["12", "Trips today"], ["4 min", "Avg response"], ["₹9,200", "Earnings"]].map(([v, l]) => (<div key={l} style={{ flex: 1, background: "rgba(255,255,255,.15)", borderRadius: 11, padding: "8px 10px" }}><p style={{ margin: 0, fontWeight: 900, fontSize: 15 }}>{v}</p><p style={{ margin: 0, fontSize: 9.5, opacity: .85 }}>{l}</p></div>))}
+          {[[crewStats ? String(crewStats.tripsToday) : "–", "Trips today"], [crewStats && crewStats.avgResponseMin != null ? `${crewStats.avgResponseMin} min` : "–", "Avg response"], [crewStats ? String(crewStats.completedToday) : "–", "Handed over today"]].map(([v, l]) => (<div key={l} style={{ flex: 1, background: "rgba(255,255,255,.15)", borderRadius: 11, padding: "8px 10px" }}><p style={{ margin: 0, fontWeight: 900, fontSize: 15 }}>{v}</p><p style={{ margin: 0, fontSize: 9.5, opacity: .85 }}>{l}</p></div>))}
         </div>
       </div>
       <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px 70px" }}>
@@ -16208,6 +16360,8 @@ function AmbulanceApp({ ambulanceJob, ambulanceActions, scanDispatch }) {
             <button onClick={() => { setScanAcceptedKey(scanDispatch.otp); startNav(scanDest, true); }} style={{ width: "100%", borderRadius: 12, padding: "12px", border: "none", background: "linear-gradient(135deg,#7C3AED,#6D28D9)", color: "#fff", fontWeight: 800, fontSize: 14, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif", display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}><Navigation size={16} /> Accept &amp; navigate</button>
           </div>
         )}
+        {/* Live emergency alerts (accept) + active assignments — real data from Supabase */}
+        <div style={{ marginBottom: 16 }}><EmergencyResponderPanel kind="ambulance" onDuty={online} /></div>
         <p style={{ margin: "4px 0 8px", fontWeight: 800, color: C.ink, fontSize: 13 }}>Nearest critical care</p>
         <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
           {quick.map(q => q.h && (

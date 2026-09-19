@@ -7,6 +7,7 @@ import type { EmergencyCase, EmergencyCategory, TransportMode, TriageAnswer } fr
 import { LocationMap } from "../ambulance/LocationMap";
 import type { DeviceLocation } from "../ambulance/location";
 import { useDeviceLocation } from "../ambulance/useDeviceLocation";
+import { EmergencyProfileForm, FamilyAlert, familyAlertMessage, useEmergencyProfile } from "./EmergencyProfile";
 import "./emergency.css";
 
 /** 108 and 112 stay on screen at every step. The app is never the only option. */
@@ -102,27 +103,53 @@ function MedicalSummary({ emergency }: { emergency: EmergencyCase }) {
   );
 }
 
-/** The crew rings these if the patient cannot speak. Saved once, at signup. */
+/** The crew rings these if the patient cannot speak. Saved once, in the emergency profile. */
 function ContactsCard({ emergency }: { emergency: EmergencyCase }) {
-  const contacts = emergencyContacts(emergency);
+  const caseContacts = emergencyContacts(emergency);
+  const { profile, reload } = useEmergencyProfile();
+  const [editing, setEditing] = useState(false);
+  // Contacts are copied into the case when it is created. If the patient adds them
+  // during the emergency, use the freshly saved profile for the family alert.
+  const saved = profile
+    ? [
+        { name: profile.emergency_contact_1_name, phone: profile.emergency_contact_1_phone },
+        { name: profile.emergency_contact_2_name, phone: profile.emergency_contact_2_phone },
+      ].filter((c): c is { name: string | null; phone: string } => !!c.phone)
+    : [];
+  const contacts = caseContacts.length ? caseContacts : saved;
+  const message = familyAlertMessage({
+    category: categoryDef(emergency.category)?.label ?? null,
+    lat: emergency.pickup_lat,
+    lng: emergency.pickup_lng,
+  });
+
   if (!contacts.length) {
     return (
-      <section className="emg-contacts emg-contacts-empty">
-        <p>
-          No emergency contact saved. Add two in your profile so the crew can reach your family if you cannot talk.
-        </p>
-      </section>
+      <>
+        <section className="emg-contacts emg-contacts-empty">
+          <p>No emergency contact saved. Add one so you can alert your family and the crew can reach them.</p>
+          <button type="button" className="emg-add-contacts" onClick={() => setEditing(true)}>
+            Add emergency contacts
+          </button>
+        </section>
+        {editing && <EmergencyProfileForm onClose={() => setEditing(false)} onSaved={() => void reload()} />}
+      </>
     );
   }
   return (
-    <section className="emg-contacts" aria-label="Emergency contacts shared with the crew">
-      <b>The crew can call</b>
-      {contacts.map((contact) => (
-        <a key={contact.phone} href={`tel:${contact.phone}`}>
-          <Phone size={14} /> {contact.name || "Emergency contact"} · {contact.phone}
-        </a>
-      ))}
-    </section>
+    <>
+      <FamilyAlert contacts={contacts} message={message} />
+      {caseContacts.length > 0 && (
+        <section className="emg-contacts" aria-label="Emergency contacts shared with the crew">
+          <b>The crew can call</b>
+          {caseContacts.map((contact) => (
+            <a key={contact.phone} href={`tel:${contact.phone}`}>
+              <Phone size={14} /> {contact.name || "Emergency contact"} · {contact.phone}
+            </a>
+          ))}
+        </section>
+      )}
+    </>
   );
 }
 

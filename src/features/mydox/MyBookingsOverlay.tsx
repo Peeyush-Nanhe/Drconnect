@@ -41,7 +41,9 @@ type Module =
   | "Special Needs"
   | "Blood Bank"
   | "Surgery"
-  | "Physiotherapy";
+  | "Physiotherapy"
+  | "Nursing"
+  | "Diagnostics";
 
 type Item = {
   id: string;
@@ -96,12 +98,15 @@ const MODULE_ICON: Record<Module, string> = {
   "Blood Bank": "🩸",
   Surgery: "🏥",
   Physiotherapy: "🧘",
+  Nursing: "👩‍⚕️",
+  Diagnostics: "🧪",
 };
 
 function classifyCareRequest(specialty: string): Module {
   const s = specialty.toLowerCase();
-  if (/(lab|scan|xray|mri|ct|ultrasound|blood test)/.test(s)) return "Lab / Scan";
-  if (/(home|nurse|physio|caretaker)/.test(s)) return "Home Care";
+  if (/(lab|scan|xray|mri|ct|ultrasound|blood test)/.test(s)) return "Diagnostics";
+  if (/(nurse|caretaker)/.test(s)) return "Nursing";
+  if (/(physio|therap)/.test(s)) return "Physiotherapy";
   return "Doctor / Nurse";
 }
 

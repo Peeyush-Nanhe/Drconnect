@@ -40,6 +40,7 @@ import {
 } from "@/features/careteam/StaffUI";
 import { NurseRequestsPanel } from "@/features/mydox/nursing/NurseRequestsPanel";
 import { NurseShiftsPanel } from "@/features/mydox/nursing/NurseShiftsPanel";
+import { verifyAndCompleteConsultation } from "@/features/mydox/backend";
 
 export const Route = createFileRoute("/nurse")({
   head: () => ({
@@ -74,6 +75,119 @@ const STATUS_LABEL: Record<string, string> = {
   rejected: "Not selected",
   open: "Open",
 };
+
+const CLOSED = ["completed", "withdrawn", "rejected"];
+
+/* ═══ Bottom Sheet: Session Over Dialog (matching doctor Consultation Over flow) ═══ */
+function SessionOverDialog({
+  job,
+  onClose,
+  onConfirm,
+}: {
+  job: NurseJob;
+  onClose: () => void;
+  onConfirm: (job: NurseJob, notes: string) => void;
+}) {
+  const [notes, setNotes] = useState("");
+  const [otp, setOtp] = useState("");
+  const [errorMsg, setErrorMsg] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const handleOtpChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value.replace(/\D/g, "").slice(0, 4);
+    setOtp(val);
+    if (errorMsg) setErrorMsg("");
+  };
+
+  const handleVerify = async () => {
+    if (otp.length !== 4 || busy) return;
+    if (!job.assignmentId) return;
+    setBusy(true);
+    setErrorMsg("");
+    try {
+      // For nursing visits, we use the assignmentId or visitId
+      const res = await verifyAndCompleteConsultation(job.assignmentId, otp, notes);
+      if (res.success) {
+        onConfirm(job, notes);
+      } else {
+        setErrorMsg(res.error || "Incorrect OTP. Ask the patient to read the code shown in their app.");
+      }
+    } catch (e: unknown) {
+      setErrorMsg(e instanceof Error ? e.message : "Failed to verify session OTP.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 70,
+        background: "rgba(15,23,42,0.55)",
+        display: "flex",
+        alignItems: "flex-end",
+        justifyContent: "center",
+        fontFamily: "'Plus Jakarta Sans', sans-serif",
+      }}
+      onClick={onClose}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Session over"
+        style={{
+          background: "#ffffff",
+          width: "100%",
+          maxWidth: 540,
+          borderRadius: "24px 24px 0 0",
+          padding: "20px 20px calc(24px + env(safe-area-inset-bottom))",
+          boxShadow: "0 -10px 30px rgba(0,0,0,0.15)",
+          display: "flex",
+          flexDirection: "column",
+          gap: 16,
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div>
+            <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: "#0F172A" }}>
+              Duty complete
+            </h3>
+            <p style={{ margin: "2px 0 0", fontSize: 13, color: "#64748B" }}>
+              Job: <strong style={{ color: "#0F172A" }}>{job.title}</strong>
+            </p>
+          </div>
+          <button type="button" onClick={onClose} style={{ background: "#F1F5F9", border: "none", borderRadius: "50%", width: 32, height: 32, cursor: "pointer", color: "#475569", fontSize: 16, fontWeight: 700 }}>✕</button>
+        </div>
+        <div>
+          <label style={{ display: "block", fontSize: 12.5, fontWeight: 700, color: "#334155", marginBottom: 6 }}>Nurse's Daily Notes</label>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value.slice(0, 1000))}
+            maxLength={1000}
+            rows={4}
+            placeholder="Clinical observations, care delivered, vitals recorded..."
+            style={{ width: "100%", boxSizing: "border-box", padding: "12px 14px", borderRadius: 14, border: "1.5px solid #E2E8F0", fontSize: 13.5, fontFamily: "inherit", resize: "none", outline: "none", color: "#0F172A", background: "#F8FAFC" }}
+          />
+        </div>
+        <div>
+          <label style={{ display: "block", fontSize: 12.5, fontWeight: 700, color: "#334155", marginBottom: 6 }}>Patient Verification Code</label>
+          <input type="text" inputMode="numeric" value={otp} onChange={handleOtpChange} placeholder="• • • •" maxLength={4}
+            style={{ width: "100%", boxSizing: "border-box", padding: "12px 16px", borderRadius: 14, border: errorMsg ? "1.5px solid #EF4444" : "1.5px solid #E2E8F0", fontSize: 24, fontWeight: 800, letterSpacing: "12px", textAlign: "center", fontFamily: "monospace", outline: "none", color: "#0F172A", background: "#F8FAFC" }}
+          />
+          <p style={{ margin: "6px 0 0", fontSize: 11.5, color: "#64748B", textAlign: "center" }}>Ask the patient to read the 4-digit code shown in their app</p>
+          {errorMsg && <p style={{ margin: "6px 0 0", fontSize: 12, color: "#DC2626", fontWeight: 600, textAlign: "center" }}>{errorMsg}</p>}
+        </div>
+        <button type="button" onClick={handleVerify} disabled={otp.length !== 4 || busy}
+          style={{ width: "100%", padding: "14px", borderRadius: 14, border: "none", background: otp.length === 4 && !busy ? "#0D9488" : "#CBD5E1", color: "#ffffff", fontSize: 14.5, fontWeight: 800, cursor: otp.length === 4 && !busy ? "pointer" : "not-allowed" }}>
+          {busy ? "Verifying..." : "Verify OTP & finish duty"}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function JobCard({
   job,
@@ -136,7 +250,7 @@ function JobCard({
         ) : null}
         {onStage && job.assignmentId ? (
           <>
-            {["applied", "accepted"].includes(job.status) ? (
+            {["applied", "accepted", "scheduled"].includes(job.status) ? (
               <button
                 type="button"
                 disabled={busy}
@@ -146,7 +260,7 @@ function JobCard({
                 Check in
               </button>
             ) : null}
-            {job.status === "in_progress" ? (
+            {job.status === "in_progress" || job.status === "arrived" ? (
               <button
                 type="button"
                 disabled={busy}
@@ -156,7 +270,7 @@ function JobCard({
                 Duty done
               </button>
             ) : null}
-            {["applied", "accepted"].includes(job.status) ? (
+            {["applied", "accepted", "scheduled"].includes(job.status) ? (
               <button
                 type="button"
                 disabled={busy}
@@ -327,6 +441,7 @@ function NurseHome() {
   const { rows: liveCareRequests } = useLiveCareRequests(isOnline);
   const [dismissedBroadcastIds, setDismissedBroadcastIds] = useState<Record<string, boolean>>({});
   const [acceptingId, setAcceptingId] = useState<string | null>(null);
+  const [sessionOverJob, setSessionOverJob] = useState<NurseJob | null>(null);
 
   const activeLiveCareRequest = useMemo(() => {
     if (!isOnline) return null;
@@ -340,7 +455,10 @@ function NurseHome() {
   const handleAcceptCareRequest = async (reqId: string) => {
     setAcceptingId(reqId);
     try {
-      await acceptCareRequest(reqId);
+      const cr = await acceptCareRequest(reqId);
+      // Removed: create_nursing_engagement was called from the NURSE's session and books for
+      // auth.uid(), so it created the engagement with the nurse as the patient.
+      if (!cr) throw new Error("This request was already taken by another nurse.");
       setNotice("Nursing request accepted! Patient has been notified.");
       qc.invalidateQueries({ queryKey: ["nurse-board"] });
     } catch (err: unknown) {
@@ -349,6 +467,12 @@ function NurseHome() {
     } finally {
       setAcceptingId(null);
     }
+  };
+
+  const handleSessionOverConfirm = (_job: NurseJob, _notes: string) => {
+    setSessionOverJob(null);
+    setNotice("Duty completed — patient verified with OTP.");
+    qc.invalidateQueries({ queryKey: ["nurse-board"] });
   };
 
   const data = board.data;
@@ -503,7 +627,10 @@ function NurseHome() {
                 <div className="space-y-3">
                   {uid && <NurseShiftsPanel userId={uid} />}
                   {data.today.map((j) => (
-                    <JobCard key={j.id} job={j} busy={stageMut.isPending} onStage={(a, s) => stageMut.mutate({ assignmentId: a, stage: s })} />
+                    <JobCard key={j.id} job={j} busy={stageMut.isPending} onStage={(a, s) => {
+                      if (s === "completed") { setSessionOverJob(j); return; }
+                      stageMut.mutate({ assignmentId: a, stage: s });
+                    }} />
                   ))}
                 </div>
               )}
@@ -533,7 +660,10 @@ function NurseHome() {
               ) : (
                 <div className="space-y-3">
                   {data.upcoming.map((j) => (
-                    <JobCard key={j.id} job={j} busy={stageMut.isPending} onStage={(a, s) => stageMut.mutate({ assignmentId: a, stage: s })} />
+                    <JobCard key={j.id} job={j} busy={stageMut.isPending} onStage={(a, s) => {
+                      if (s === "completed") { setSessionOverJob(j); return; }
+                      stageMut.mutate({ assignmentId: a, stage: s });
+                    }} />
                   ))}
                 </div>
               )}
@@ -779,6 +909,14 @@ function NurseHome() {
             </form>
           ) : null}
         </>
+      )}
+
+      {sessionOverJob && (
+        <SessionOverDialog
+          job={sessionOverJob}
+          onClose={() => setSessionOverJob(null)}
+          onConfirm={handleSessionOverConfirm}
+        />
       )}
     </StaffShell>
   );

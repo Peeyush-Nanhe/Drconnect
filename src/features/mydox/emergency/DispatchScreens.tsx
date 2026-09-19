@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Ambulance, Building2, Check, Phone, RefreshCw, Stethoscope, X } from "lucide-react";
+import { Building2, Check, Phone, RefreshCw, Stethoscope, X } from "lucide-react";
 import { EmergencyWizard } from "./EmergencyUI";
 import { AmbulanceEmergencyPortal } from "./AmbulanceEmergencyPortal";
 import { useEmergencyNotifications } from "./hooks";
@@ -191,30 +191,8 @@ function HospitalPanel() {
         </div>
       )}
 
-      {assigned.map((emergency) => (
-        <section className="emg-card emg-card-active" key={emergency.id}>
-          <div className="emg-badge">ACCEPTED BY THIS HOSPITAL</div>
-          <CaseSummary emergency={emergency} showPhones />
-          <p className="emg-note">
-            {emergency.bed_label ? `Bed ${emergency.bed_label} held.` : "No bed label recorded."}{" "}
-            {emergency.doctor_id ? "Specialist accepted." : "Still paging a specialist."}{" "}
-            {emergency.ambulance_id ? "Ambulance assigned." : "No crew assigned yet."}
-          </p>
-          <button
-            type="button"
-            className="emg-ghost"
-            disabled={busyId === emergency.id}
-            onClick={() => guard(emergency.id, () => dispatch.advance(emergency.id, "admitted"))}
-          >
-            <Check size={15} /> Mark admitted
-          </button>
-        </section>
-      ))}
-
-      {!assigned.length && !incoming.length && (
-        <p className="emg-note">No emergency cases routed here right now.</p>
-      )}
-
+      <h3 className="emg-section-title">Emergency alerts ({incoming.length})</h3>
+      {!incoming.length && <p className="emg-empty">No new emergency alerts for this hospital.</p>}
       {incoming.map((emergency) => (
         <section className="emg-card emg-card-incoming" key={emergency.id}>
           <div className="emg-badge emg-badge-alert">INCOMING EMERGENCY</div>
@@ -250,6 +228,29 @@ function HospitalPanel() {
           </button>
         </section>
       ))}
+
+      <h3 className="emg-section-title">Active assignments ({assigned.length})</h3>
+      {!assigned.length && <p className="emg-empty">No active emergency admissions.</p>}
+      {assigned.map((emergency) => (
+        <section className="emg-card emg-card-active" key={emergency.id}>
+          <div className="emg-badge">ACCEPTED · BED READY</div>
+          <CaseSummary emergency={emergency} showPhones />
+          <p className="emg-note">
+            {emergency.bed_label ? `Bed ${emergency.bed_label} held.` : "No bed label recorded."}{" "}
+            {emergency.doctor_id ? "Specialist accepted." : "Still paging a specialist."}{" "}
+            {emergency.ambulance_id ? "Ambulance assigned." : "No crew assigned yet."}
+          </p>
+          <button
+            type="button"
+            className="emg-ghost"
+            disabled={busyId === emergency.id}
+            onClick={() => guard(emergency.id, () => dispatch.advance(emergency.id, "admitted"))}
+          >
+            <Check size={15} /> Mark admitted
+          </button>
+        </section>
+      ))}
+
     </div>
   );
 }
@@ -296,19 +297,12 @@ function DoctorPanel({ onDuty }: { onDuty: boolean }) {
         </div>
       )}
 
-      {mine.map((emergency) => (
-        <section className="emg-card emg-card-active" key={emergency.id}>
-          <div className="emg-badge">YOU ACCEPTED THIS CASE</div>
-          <CaseSummary emergency={emergency} showPhones />
-          <p className="emg-note">
-            {emergency.bed_label ? `Bed ${emergency.bed_label}.` : ""}{" "}
-            {emergency.ambulance_id ? "Ambulance is bringing the patient in." : "Patient is making their own way in."}
-          </p>
-        </section>
-      ))}
-
-      {!mine.length && !offers.length && <p className="emg-note">No emergency cases offered right now.</p>}
-
+      <h3 className="emg-section-title">Emergency alerts ({mine.length ? 0 : offers.length})</h3>
+      {mine.length > 0 ? (
+        <p className="emg-empty">New calls are paused while you are attending a case.</p>
+      ) : !offers.length ? (
+        <p className="emg-empty">No emergency calls right now.</p>
+      ) : null}
       {!mine.length &&
         offers.map((emergency) => (
           <section className="emg-card emg-card-incoming" key={emergency.id}>
@@ -343,6 +337,20 @@ function DoctorPanel({ onDuty }: { onDuty: boolean }) {
             </button>
           </section>
         ))}
+
+      <h3 className="emg-section-title">Active assignments ({mine.length})</h3>
+      {!mine.length && <p className="emg-empty">No active assignments.</p>}
+      {mine.map((emergency) => (
+        <section className="emg-card emg-card-active" key={emergency.id}>
+          <div className="emg-badge">ACCEPTED · ATTENDING</div>
+          <CaseSummary emergency={emergency} showPhones />
+          <p className="emg-note">
+            {emergency.bed_label ? `Bed ${emergency.bed_label}.` : ""}{" "}
+            {emergency.ambulance_id ? "Ambulance is bringing the patient in." : "Patient is making their own way in."}
+          </p>
+        </section>
+      ))}
+
     </div>
   );
 }
@@ -354,15 +362,7 @@ function CrewPanel({ onDuty }: { onDuty: boolean }) {
   if (!onDuty) {
     return <p className="emg-note">Off duty. New cases are hidden; any accepted case stays active.</p>;
   }
-  return (
-    <>
-      <p className="emg-note">
-        <Ambulance size={14} /> Every crew inside the search radius is alerted at once. The first to accept gets the
-        case; the rest see it disappear.
-      </p>
-      <AmbulanceEmergencyPortal lat={gps.location?.lat ?? null} lng={gps.location?.lng ?? null} />
-    </>
-  );
+  return <AmbulanceEmergencyPortal lat={gps.location?.lat ?? null} lng={gps.location?.lng ?? null} />;
 }
 
 /**
@@ -451,7 +451,7 @@ export function EmergencyPortal({ kind }: { kind: ResponderRole | "patient" | "a
     kind === "admin" ? "Emergency dispatch operations" : kind === "hospital" ? "Emergency department" : "Emergency cases";
 
   return (
-    <div className="emg-page">
+    <div className={kind === "admin" ? "emg-page emg-page-wide" : "emg-page"}>
       <header className="emg-page-head">
         <h1>{title}</h1>
         <a href="tel:108">

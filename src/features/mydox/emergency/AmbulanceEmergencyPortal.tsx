@@ -96,7 +96,7 @@ function ActiveTrip({
   const beacon = useAmbulanceBeacon(emergency, userId);
   return (
     <section className="emg-card emg-card-active">
-      <div className="emg-badge">YOUR ACTIVE CASE</div>
+      <div className="emg-badge">ACCEPTED · {emergency.status.replace(/_/g, " ").toUpperCase()}</div>
       <CaseDetails emergency={emergency} />
 
       <p className="emg-note" role="status">
@@ -214,28 +214,13 @@ export function AmbulanceEmergencyPortal({
         </div>
       )}
 
-      {mine.map((emergency) => (
-        <div key={emergency.id}>
-          <ActiveTrip
-            emergency={emergency}
-            userId={emergency.ambulance_id ?? userId}
-            busy={busyId === emergency.id}
-            onAdvance={(status) => guard(emergency.id, () => dispatch.advance(emergency.id, status))}
-          />
-          {onNavigate && (
-            <button type="button" className="emg-ghost" onClick={() => onNavigate(emergency)}>
-              Open in trip screen
-            </button>
-          )}
-        </div>
-      ))}
-
-      {!mine.length && !incoming.length && (
-        <p className="emg-note">
-          <Ambulance size={14} /> On duty. No emergency cases nearby right now.
-        </p>
-      )}
-
+      {/* Alerts first (to accept), then what this crew has already accepted. */}
+      <h3 className="emg-section-title">Emergency alerts ({mine.length ? 0 : incoming.length})</h3>
+      {mine.length > 0 ? (
+        <p className="emg-empty">New alerts are paused while you have an active case.</p>
+      ) : !incoming.length ? (
+        <p className="emg-empty">No emergency alerts nearby right now.</p>
+      ) : null}
       {!mine.length &&
         incoming.map((emergency) => (
           <section className="emg-card emg-card-incoming" key={emergency.id}>
@@ -270,6 +255,24 @@ export function AmbulanceEmergencyPortal({
             </button>
           </section>
         ))}
+
+      <h3 className="emg-section-title">Active assignments ({mine.length})</h3>
+      {!mine.length && <p className="emg-empty">No active assignments.</p>}
+      {mine.map((emergency) => (
+        <div key={emergency.id}>
+          <ActiveTrip
+            emergency={emergency}
+            userId={emergency.ambulance_id ?? userId}
+            busy={busyId === emergency.id}
+            onAdvance={(status) => guard(emergency.id, () => dispatch.advance(emergency.id, status))}
+          />
+          {onNavigate && (
+            <button type="button" className="emg-ghost" onClick={() => onNavigate(emergency)}>
+              Open in trip screen
+            </button>
+          )}
+        </div>
+      ))}
     </div>
   );
 }

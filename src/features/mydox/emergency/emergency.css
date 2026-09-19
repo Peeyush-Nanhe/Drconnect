@@ -229,3 +229,70 @@
 }
 .emg-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 9px; }
 .emg-actions > button { flex: 1 1 auto; min-height: 44px; }
+
+
+/* ─── Laptop/desktop: show emergency screens as a centred app card ───────────
+   Same look as the rest of MyDox (rounded card on a soft grey background).
+   Phones (<600px) are unchanged and stay full-screen. */
+@media (min-width: 600px) {
+  .emg-standalone,
+  .emg-page:not(.emg-page-wide) {
+    min-height: 100dvh;
+    padding: 16px 0;
+    background: #E3EAE8;
+    box-sizing: border-box;
+  }
+  .emg-standalone > .emg-shell {
+    position: relative;
+    inset: auto;
+    width: 520px;
+    max-width: calc(100vw - 32px);
+    height: calc(100dvh - 32px);
+    margin: 0 auto;
+    border-radius: 28px;
+    overflow: hidden;
+    box-shadow: 0 18px 50px rgba(11, 32, 28, .18);
+  }
+  .emg-standalone .emg-header { padding: 16px 18px; }
+  .emg-page:not(.emg-page-wide) > .emg-page-head,
+  .emg-page:not(.emg-page-wide) > .emg-page-body {
+    width: 520px;
+    max-width: calc(100vw - 32px);
+    margin: 0 auto;
+    box-sizing: border-box;
+    background: #fff;
+  }
+  .emg-page:not(.emg-page-wide) > .emg-page-head {
+    border-radius: 28px 28px 0 0;
+  }
+  .emg-page:not(.emg-page-wide) > .emg-page-body {
+    min-height: calc(100dvh - 32px - 56px);
+    border-radius: 0 0 28px 28px;
+    box-shadow: 0 18px 50px rgba(11, 32, 28, .18);
+  }
+}
+
+.emg-add-contacts {
+  margin-top: 8px; width: 100%; border: 0; border-radius: 12px; padding: 10px 12px;
+  background: #DC2626; color: #fff; font-weight: 800; font-size: 13px; cursor: pointer; font-family: inherit;
+}
+
+/* ─── "Alerts on top, Active assignments below" layout (matches nurse duty home) ─── */
+.emg-section-title { margin: 6px 0 0; font-size: 13.5px; font-weight: 800; color: #111827; }
+.emg-empty {
+  margin: 0; padding: 14px; border: 1px solid #E5E7EB; border-radius: 14px;
+  background: #fff; font-size: 12.5px; color: #6B7280;
+}
+.emg-card { border-radius: 14px; box-shadow: 0 1px 2px rgba(17, 24, 39, .04); }
+/* Accepted work: plain white card, green status line, compact dark + outline buttons */
+.emg-card-active { background: #fff; border-color: #E5E7EB; }
+.emg-card-active .emg-badge { color: #0F766E; letter-spacing: .02em; font-size: 11px; }
+.emg-card-active .emg-primary,
+.emg-card-active .emg-ghost {
+  display: inline-flex; width: auto; margin: 10px 8px 0 0; padding: 9px 14px;
+  border-radius: 10px; font-size: 12.5px; font-weight: 700;
+}
+.emg-card-active .emg-primary { background: #111827; color: #fff; }
+.emg-card-active .emg-ghost { background: #fff; border: 1px solid #D1D5DB; color: #111827; }
+/* New alerts stay red so they cannot be missed */
+.emg-card-incoming .emg-primary { padding: 12px; font-size: 13.5px; }

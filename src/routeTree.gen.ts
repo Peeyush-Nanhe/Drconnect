@@ -42,12 +42,16 @@ import { Route as EmergencyDoctorRouteImport } from './routes/emergency.doctor'
 import { Route as EmergencyHospitalRouteImport } from './routes/emergency.hospital'
 import { Route as EmergencyPatientRouteImport } from './routes/emergency.patient'
 import { Route as HospitalNurseDutiesRouteImport } from './routes/hospital.nurse-duties'
+import { Route as NurseBookRouteImport } from './routes/nurse.book'
+import { Route as NurseVisitsRouteImport } from './routes/nurse.visits'
 import { Route as NursesFindRouteImport } from './routes/nurses.find'
 import { Route as PhysioBookRouteImport } from './routes/physio.book'
 import { Route as PhysioTherapistRouteImport } from './routes/physio.therapist'
 import { Route as PhysioVisitsRouteImport } from './routes/physio.visits'
 import { Route as ProviderAvailabilityRouteImport } from './routes/provider.availability'
 import { Route as ProviderEarningsRouteImport } from './routes/provider.earnings'
+import { Route as TechnicianBookRouteImport } from './routes/technician.book'
+import { Route as TechnicianVisitsRouteImport } from './routes/technician.visits'
 import { Route as DotlovableOauthConsentRouteImport } from './routes/[.]lovable.oauth.consent'
 import { Route as Char91DotmcpChar93InvokeToolToolRouteImport } from './routes/[.mcp]/invoke-tool/$tool'
 import { Route as SharedAiTokenRouteImport } from './routes/shared.ai.$token'
@@ -221,6 +225,16 @@ const HospitalNurseDutiesRoute = HospitalNurseDutiesRouteImport.update({
   path: '/hospital/nurse-duties',
   getParentRoute: () => rootRouteImport,
 } as any)
+const NurseBookRoute = NurseBookRouteImport.update({
+  id: '/book',
+  path: '/book',
+  getParentRoute: () => NurseRoute,
+} as any)
+const NurseVisitsRoute = NurseVisitsRouteImport.update({
+  id: '/visits',
+  path: '/visits',
+  getParentRoute: () => NurseRoute,
+} as any)
 const NursesFindRoute = NursesFindRouteImport.update({
   id: '/nurses/find',
   path: '/nurses/find',
@@ -250,6 +264,16 @@ const ProviderEarningsRoute = ProviderEarningsRouteImport.update({
   id: '/provider/earnings',
   path: '/provider/earnings',
   getParentRoute: () => rootRouteImport,
+} as any)
+const TechnicianBookRoute = TechnicianBookRouteImport.update({
+  id: '/book',
+  path: '/book',
+  getParentRoute: () => TechnicianRoute,
+} as any)
+const TechnicianVisitsRoute = TechnicianVisitsRouteImport.update({
+  id: '/visits',
+  path: '/visits',
+  getParentRoute: () => TechnicianRoute,
 } as any)
 const DotlovableOauthConsentRoute = DotlovableOauthConsentRouteImport.update({
   id: '/.lovable/oauth/consent',
@@ -289,10 +313,10 @@ export interface FileRoutesByFullPath {
   '/map': typeof MapRoute
   '/matching': typeof MatchingRoute
   '/mcp': typeof McpRoute
-  '/nurse': typeof NurseRoute
+  '/nurse': typeof NurseRouteWithChildren
   '/stitch-preview': typeof StitchPreviewRoute
   '/surgery': typeof SurgeryRoute
-  '/technician': typeof TechnicianRoute
+  '/technician': typeof TechnicianRouteWithChildren
   '/.mcp/list-tools': typeof Char91DotmcpChar93ListToolsRoute
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/admin/booking-operations': typeof AdminBookingOperationsRoute
@@ -312,12 +336,16 @@ export interface FileRoutesByFullPath {
   '/emergency/hospital': typeof EmergencyHospitalRoute
   '/emergency/patient': typeof EmergencyPatientRoute
   '/hospital/nurse-duties': typeof HospitalNurseDutiesRoute
+  '/nurse/book': typeof NurseBookRoute
+  '/nurse/visits': typeof NurseVisitsRoute
   '/nurses/find': typeof NursesFindRoute
   '/physio/book': typeof PhysioBookRoute
   '/physio/therapist': typeof PhysioTherapistRoute
   '/physio/visits': typeof PhysioVisitsRoute
   '/provider/availability': typeof ProviderAvailabilityRoute
   '/provider/earnings': typeof ProviderEarningsRoute
+  '/technician/book': typeof TechnicianBookRoute
+  '/technician/visits': typeof TechnicianVisitsRoute
   '/admin/': typeof AdminIndexRoute
   '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
   '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
@@ -335,10 +363,10 @@ export interface FileRoutesByTo {
   '/map': typeof MapRoute
   '/matching': typeof MatchingRoute
   '/mcp': typeof McpRoute
-  '/nurse': typeof NurseRoute
+  '/nurse': typeof NurseRouteWithChildren
   '/stitch-preview': typeof StitchPreviewRoute
   '/surgery': typeof SurgeryRoute
-  '/technician': typeof TechnicianRoute
+  '/technician': typeof TechnicianRouteWithChildren
   '/.mcp/list-tools': typeof Char91DotmcpChar93ListToolsRoute
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/admin/booking-operations': typeof AdminBookingOperationsRoute
@@ -358,12 +386,16 @@ export interface FileRoutesByTo {
   '/emergency/hospital': typeof EmergencyHospitalRoute
   '/emergency/patient': typeof EmergencyPatientRoute
   '/hospital/nurse-duties': typeof HospitalNurseDutiesRoute
+  '/nurse/book': typeof NurseBookRoute
+  '/nurse/visits': typeof NurseVisitsRoute
   '/nurses/find': typeof NursesFindRoute
   '/physio/book': typeof PhysioBookRoute
   '/physio/therapist': typeof PhysioTherapistRoute
   '/physio/visits': typeof PhysioVisitsRoute
   '/provider/availability': typeof ProviderAvailabilityRoute
   '/provider/earnings': typeof ProviderEarningsRoute
+  '/technician/book': typeof TechnicianBookRoute
+  '/technician/visits': typeof TechnicianVisitsRoute
   '/admin': typeof AdminIndexRoute
   '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
   '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
@@ -382,10 +414,10 @@ export interface FileRoutesById {
   '/map': typeof MapRoute
   '/matching': typeof MatchingRoute
   '/mcp': typeof McpRoute
-  '/nurse': typeof NurseRoute
+  '/nurse': typeof NurseRouteWithChildren
   '/stitch-preview': typeof StitchPreviewRoute
   '/surgery': typeof SurgeryRoute
-  '/technician': typeof TechnicianRoute
+  '/technician': typeof TechnicianRouteWithChildren
   '/.mcp/list-tools': typeof Char91DotmcpChar93ListToolsRoute
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/admin/booking-operations': typeof AdminBookingOperationsRoute
@@ -405,12 +437,16 @@ export interface FileRoutesById {
   '/emergency/hospital': typeof EmergencyHospitalRoute
   '/emergency/patient': typeof EmergencyPatientRoute
   '/hospital/nurse-duties': typeof HospitalNurseDutiesRoute
+  '/nurse/book': typeof NurseBookRoute
+  '/nurse/visits': typeof NurseVisitsRoute
   '/nurses/find': typeof NursesFindRoute
   '/physio/book': typeof PhysioBookRoute
   '/physio/therapist': typeof PhysioTherapistRoute
   '/physio/visits': typeof PhysioVisitsRoute
   '/provider/availability': typeof ProviderAvailabilityRoute
   '/provider/earnings': typeof ProviderEarningsRoute
+  '/technician/book': typeof TechnicianBookRoute
+  '/technician/visits': typeof TechnicianVisitsRoute
   '/admin/': typeof AdminIndexRoute
   '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
   '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
@@ -453,12 +489,16 @@ export interface FileRouteTypes {
     | '/emergency/hospital'
     | '/emergency/patient'
     | '/hospital/nurse-duties'
+    | '/nurse/book'
+    | '/nurse/visits'
     | '/nurses/find'
     | '/physio/book'
     | '/physio/therapist'
     | '/physio/visits'
     | '/provider/availability'
     | '/provider/earnings'
+    | '/technician/book'
+    | '/technician/visits'
     | '/admin/'
     | '/.lovable/oauth/consent'
     | '/.mcp/invoke-tool/$tool'
@@ -499,12 +539,16 @@ export interface FileRouteTypes {
     | '/emergency/hospital'
     | '/emergency/patient'
     | '/hospital/nurse-duties'
+    | '/nurse/book'
+    | '/nurse/visits'
     | '/nurses/find'
     | '/physio/book'
     | '/physio/therapist'
     | '/physio/visits'
     | '/provider/availability'
     | '/provider/earnings'
+    | '/technician/book'
+    | '/technician/visits'
     | '/admin'
     | '/.lovable/oauth/consent'
     | '/.mcp/invoke-tool/$tool'
@@ -545,12 +589,16 @@ export interface FileRouteTypes {
     | '/emergency/hospital'
     | '/emergency/patient'
     | '/hospital/nurse-duties'
+    | '/nurse/book'
+    | '/nurse/visits'
     | '/nurses/find'
     | '/physio/book'
     | '/physio/therapist'
     | '/physio/visits'
     | '/provider/availability'
     | '/provider/earnings'
+    | '/technician/book'
+    | '/technician/visits'
     | '/admin/'
     | '/.lovable/oauth/consent'
     | '/.mcp/invoke-tool/$tool'
@@ -569,10 +617,10 @@ export interface RootRouteChildren {
   MapRoute: typeof MapRoute
   MatchingRoute: typeof MatchingRoute
   McpRoute: typeof McpRoute
-  NurseRoute: typeof NurseRoute
+  NurseRoute: typeof NurseRouteWithChildren
   StitchPreviewRoute: typeof StitchPreviewRoute
   SurgeryRoute: typeof SurgeryRoute
-  TechnicianRoute: typeof TechnicianRoute
+  TechnicianRoute: typeof TechnicianRouteWithChildren
   Char91DotmcpChar93ListToolsRoute: typeof Char91DotmcpChar93ListToolsRoute
   Char91DotwellKnownChar93OauthProtectedResourceRoute: typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   AdminBookingOperationsRoute: typeof AdminBookingOperationsRoute
@@ -839,6 +887,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof HospitalNurseDutiesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/nurse/book': {
+      id: '/nurse/book'
+      path: '/book'
+      fullPath: '/nurse/book'
+      preLoaderRoute: typeof NurseBookRouteImport
+      parentRoute: typeof NurseRoute
+    }
+    '/nurse/visits': {
+      id: '/nurse/visits'
+      path: '/visits'
+      fullPath: '/nurse/visits'
+      preLoaderRoute: typeof NurseVisitsRouteImport
+      parentRoute: typeof NurseRoute
+    }
     '/nurses/find': {
       id: '/nurses/find'
       path: '/nurses/find'
@@ -881,6 +943,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProviderEarningsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/technician/book': {
+      id: '/technician/book'
+      path: '/book'
+      fullPath: '/technician/book'
+      preLoaderRoute: typeof TechnicianBookRouteImport
+      parentRoute: typeof TechnicianRoute
+    }
+    '/technician/visits': {
+      id: '/technician/visits'
+      path: '/visits'
+      fullPath: '/technician/visits'
+      preLoaderRoute: typeof TechnicianVisitsRouteImport
+      parentRoute: typeof TechnicianRoute
+    }
     '/.lovable/oauth/consent': {
       id: '/.lovable/oauth/consent'
       path: '/.lovable/oauth/consent'
@@ -919,6 +995,32 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface NurseRouteChildren {
+  NurseBookRoute: typeof NurseBookRoute
+  NurseVisitsRoute: typeof NurseVisitsRoute
+}
+
+const NurseRouteChildren: NurseRouteChildren = {
+  NurseBookRoute: NurseBookRoute,
+  NurseVisitsRoute: NurseVisitsRoute,
+}
+
+const NurseRouteWithChildren = NurseRoute._addFileChildren(NurseRouteChildren)
+
+interface TechnicianRouteChildren {
+  TechnicianBookRoute: typeof TechnicianBookRoute
+  TechnicianVisitsRoute: typeof TechnicianVisitsRoute
+}
+
+const TechnicianRouteChildren: TechnicianRouteChildren = {
+  TechnicianBookRoute: TechnicianBookRoute,
+  TechnicianVisitsRoute: TechnicianVisitsRoute,
+}
+
+const TechnicianRouteWithChildren = TechnicianRoute._addFileChildren(
+  TechnicianRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthRoute: AuthRoute,
@@ -929,10 +1031,10 @@ const rootRouteChildren: RootRouteChildren = {
   MapRoute: MapRoute,
   MatchingRoute: MatchingRoute,
   McpRoute: McpRoute,
-  NurseRoute: NurseRoute,
+  NurseRoute: NurseRouteWithChildren,
   StitchPreviewRoute: StitchPreviewRoute,
   SurgeryRoute: SurgeryRoute,
-  TechnicianRoute: TechnicianRoute,
+  TechnicianRoute: TechnicianRouteWithChildren,
   Char91DotmcpChar93ListToolsRoute: Char91DotmcpChar93ListToolsRoute,
   Char91DotwellKnownChar93OauthProtectedResourceRoute:
     Char91DotwellKnownChar93OauthProtectedResourceRoute,

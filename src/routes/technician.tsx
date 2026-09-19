@@ -31,6 +31,7 @@ import {
   inputClass,
 } from "@/features/careteam/StaffUI";
 import { TechnicianRequestsPanel } from "@/features/mydox/technician/TechnicianRequestsPanel";
+import { verifyAndCompleteConsultation } from "@/features/mydox/backend";
 
 export const Route = createFileRoute("/technician")({
   head: () => ({
@@ -56,33 +57,116 @@ export const Route = createFileRoute("/technician")({
 
 type Tab = "today" | "open" | "upcoming" | "history" | "profile";
 
-const STATUS_LABEL: Record<string, string> = {
-  requested: "Awaiting a technician",
-  pending: "Awaiting a technician",
-  assigned: "Needs your acceptance",
-  accepted: "Accepted",
-  en_route: "On the way",
-  in_progress: "Test running",
-  completed: "Completed",
-  cancelled: "Cancelled",
-  no_show: "Patient absent",
-};
+const CLOSED = ["completed", "cancelled", "no_show"];
 
-const NEXT: Record<string, { stage: string; label: string; soft?: boolean }[]> = {
-  assigned: [
-    { stage: "accepted", label: "Accept test" },
-    { stage: "cancelled", label: "Can't take it", soft: true },
-  ],
-  accepted: [
-    { stage: "en_route", label: "Collected machine · on the way" },
-    { stage: "cancelled", label: "Cancel", soft: true },
-  ],
-  en_route: [
-    { stage: "in_progress", label: "Start test" },
-    { stage: "no_show", label: "Patient not available", soft: true },
-  ],
-  in_progress: [{ stage: "completed", label: "Test done" }],
-};
+/* ═══ Bottom Sheet: Session Over Dialog (matching doctor Consultation Over flow) ═══ */
+function SessionOverDialog({
+  job,
+  onClose,
+  onConfirm,
+}: {
+  job: TechnicianJob;
+  onClose: () => void;
+  onConfirm: (job: TechnicianJob, notes: string) => void;
+}) {
+  const [notes, setNotes] = useState(job.findings ?? "");
+  const [otp, setOtp] = useState("");
+  const [errorMsg, setErrorMsg] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const handleOtpChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value.replace(/\D/g, "").slice(0, 4);
+    setOtp(val);
+    if (errorMsg) setErrorMsg("");
+  };
+
+  const handleVerify = async () => {
+    if (otp.length !== 4 || busy) return;
+    setBusy(true);
+    setErrorMsg("");
+    try {
+      const res = await verifyAndCompleteConsultation(job.id, otp, notes);
+      if (res.success) {
+        onConfirm(job, notes);
+      } else {
+        setErrorMsg(res.error || "Incorrect OTP. Ask the patient to read the code shown in their app.");
+      }
+    } catch (e: unknown) {
+      setErrorMsg(e instanceof Error ? e.message : "Failed to verify test OTP.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 70,
+        background: "rgba(15,23,42,0.55)",
+        display: "flex",
+        alignItems: "flex-end",
+        justifyContent: "center",
+        fontFamily: "'Plus Jakarta Sans', sans-serif",
+      }}
+      onClick={onClose}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Test complete"
+        style={{
+          background: "#ffffff",
+          width: "100%",
+          maxWidth: 540,
+          borderRadius: "24px 24px 0 0",
+          padding: "20px 20px calc(24px + env(safe-area-inset-bottom))",
+          boxShadow: "0 -10px 30px rgba(0,0,0,0.15)",
+          display: "flex",
+          flexDirection: "column",
+          gap: 16,
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div>
+            <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: "#0F172A" }}>
+              Test complete
+            </h3>
+            <p style={{ margin: "2px 0 0", fontSize: 13, color: "#64748B" }}>
+              Patient: <strong style={{ color: "#0F172A" }}>{job.patientName}</strong> · {job.testLabel}
+            </p>
+          </div>
+          <button type="button" onClick={onClose} style={{ background: "#F1F5F9", border: "none", borderRadius: "50%", width: 32, height: 32, cursor: "pointer", color: "#475569", fontSize: 16, fontWeight: 700 }}>✕</button>
+        </div>
+        <div>
+          <label style={{ display: "block", fontSize: 12.5, fontWeight: 700, color: "#334155", marginBottom: 6 }}>Technician findings / Notes</label>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value.slice(0, 2000))}
+            maxLength={2000}
+            rows={4}
+            placeholder="Preliminary findings, observations during test..."
+            style={{ width: "100%", boxSizing: "border-box", padding: "12px 14px", borderRadius: 14, border: "1.5px solid #E2E8F0", fontSize: 13.5, fontFamily: "inherit", resize: "none", outline: "none", color: "#0F172A", background: "#F8FAFC" }}
+          />
+        </div>
+        <div>
+          <label style={{ display: "block", fontSize: 12.5, fontWeight: 700, color: "#334155", marginBottom: 6 }}>Patient Verification Code</label>
+          <input type="text" inputMode="numeric" value={otp} onChange={handleOtpChange} placeholder="• • • •" maxLength={4}
+            style={{ width: "100%", boxSizing: "border-box", padding: "12px 16px", borderRadius: 14, border: errorMsg ? "1.5px solid #EF4444" : "1.5px solid #E2E8F0", fontSize: 24, fontWeight: 800, letterSpacing: "12px", textAlign: "center", fontFamily: "monospace", outline: "none", color: "#0F172A", background: "#F8FAFC" }}
+          />
+          <p style={{ margin: "6px 0 0", fontSize: 11.5, color: "#64748B", textAlign: "center" }}>Ask the patient to read the 4-digit code shown in their app</p>
+          {errorMsg && <p style={{ margin: "6px 0 0", fontSize: 12, color: "#DC2626", fontWeight: 600, textAlign: "center" }}>{errorMsg}</p>}
+        </div>
+        <button type="button" onClick={handleVerify} disabled={otp.length !== 4 || busy}
+          style={{ width: "100%", padding: "14px", borderRadius: 14, border: "none", background: otp.length === 4 && !busy ? "#0D9488" : "#CBD5E1", color: "#ffffff", fontSize: 14.5, fontWeight: 800, cursor: otp.length === 4 && !busy ? "pointer" : "not-allowed" }}>
+          {busy ? "Verifying..." : "Verify OTP & complete test"}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function VenueTag({ job }: { job: TechnicianJob }) {
   const label = job.venueKind === "home" ? "Home visit" : job.venueKind === "hub" ? "At tie-up hub" : "Clinic / hospital";
@@ -351,6 +435,7 @@ function TechnicianHome() {
   const { rows: liveCareRequests } = useLiveCareRequests(isOnline);
   const [dismissedBroadcastIds, setDismissedBroadcastIds] = useState<Record<string, boolean>>({});
   const [acceptingId, setAcceptingId] = useState<string | null>(null);
+  const [sessionOverJob, setSessionOverJob] = useState<TechnicianJob | null>(null);
 
   const activeLiveCareRequest = useMemo(() => {
     if (!isOnline) return null;
@@ -364,7 +449,25 @@ function TechnicianHome() {
   const handleAcceptCareRequest = async (reqId: string) => {
     setAcceptingId(reqId);
     try {
-      await acceptCareRequest(reqId);
+      const cr = await acceptCareRequest(reqId);
+      if (cr && matchesDoctorSpecialty("Diagnostic", cr.specialty)) {
+        const { data: pData } = await supabase.from("profiles").select("full_name").eq("id", cr.patient_id).maybeSingle();
+        // Create a real technician test entry so it appears in the technician's list.
+        const { error: insertError } = await sb.from("technician_tests").insert({
+          patient_id: cr.patient_id,
+          patient_name: pData?.full_name || "Emergency Patient",
+          technician_id: profile?.id,
+          test_type: cr.specialty.toLowerCase(),
+          test_label: cr.specialty,
+          area: cr.notes?.replace(/^Hub:\s*/, "") || "Emergency Location",
+          city: "Pune",
+          scheduled_at: new Date().toISOString(),
+          status: "accepted",
+          urgency: "urgent",
+          fee: cr.fare || 700
+        });
+        if (insertError) throw new Error(`Accepted, but the test could not be created: ${insertError.message}`);
+      }
       setNotice("Technician request accepted! Patient has been notified.");
       qc.invalidateQueries({ queryKey: ["technician-board"] });
     } catch (err: unknown) {
@@ -373,6 +476,12 @@ function TechnicianHome() {
     } finally {
       setAcceptingId(null);
     }
+  };
+
+  const handleSessionOverConfirm = (_job: TechnicianJob, _notes: string) => {
+    setSessionOverJob(null);
+    setNotice("Test completed — patient verified with OTP.");
+    qc.invalidateQueries({ queryKey: ["technician-board"] });
   };
 
   const data = board.data;
@@ -521,7 +630,10 @@ function TechnicianHome() {
           {tab === "today" ? (
             <Section title="Today's test visits" count={data?.today.length}>
               {!data?.today.length ? (
-                <Empty>No tests booked for today.</Empty>
+                <div className="space-y-4">
+                  {uid && <TechnicianRequestsPanel userId={uid} />}
+                  <Empty>No tests booked for today.</Empty>
+                </div>
               ) : (
                 <div className="space-y-3">
                   {data.today.map((j) => (
@@ -531,7 +643,10 @@ function TechnicianHome() {
                       busy={stageMut.isPending}
                       note={notes[j.id]}
                       onNote={(v) => setNotes((n) => ({ ...n, [j.id]: v }))}
-                      onStage={(id, s) => stageMut.mutate({ testId: id, stage: s, note: notes[id] ?? null })}
+                      onStage={(id, s) => {
+                        if (s === "completed") { setSessionOverJob(j); return; }
+                        stageMut.mutate({ testId: id, stage: s, note: notes[id] ?? null });
+                      }}
                     />
                   ))}
                 </div>
@@ -568,7 +683,10 @@ function TechnicianHome() {
                       busy={stageMut.isPending}
                       note={notes[j.id]}
                       onNote={(v) => setNotes((n) => ({ ...n, [j.id]: v }))}
-                      onStage={(id, s) => stageMut.mutate({ testId: id, stage: s, note: notes[id] ?? null })}
+                      onStage={(id, s) => {
+                        if (s === "completed") { setSessionOverJob(j); return; }
+                        stageMut.mutate({ testId: id, stage: s, note: notes[id] ?? null });
+                      }}
                     />
                   ))}
                 </div>
@@ -810,6 +928,14 @@ function TechnicianHome() {
             </form>
           ) : null}
         </>
+      )}
+
+      {sessionOverJob && (
+        <SessionOverDialog
+          job={sessionOverJob}
+          onClose={() => setSessionOverJob(null)}
+          onConfirm={handleSessionOverConfirm}
+        />
       )}
     </StaffShell>
   );

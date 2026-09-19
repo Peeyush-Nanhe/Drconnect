@@ -29,6 +29,12 @@ const roles: { value: BookingRole; label: string; help: string }[] = [
   { value: "ambulance", label: "Ambulance", help: "Patient transport and emergency pickup" },
   { value: "hospital", label: "Hospital", help: "Facility care and operations" },
 ];
+// Preselect from ?role=nurse / ?role=technician (used by the patient home buttons).
+function initialRole(): BookingRole {
+  if (typeof window === "undefined") return "care_physician";
+  const r = new URLSearchParams(window.location.search).get("role");
+  return roles.some((x) => x.value === r) ? (r as BookingRole) : "care_physician";
+}
 const activeStatuses = new Set(["requested", "searching", "expanded", "offered", "accepted", "en_route", "arrived", "started", "unavailable"]);
 const stageLabel: Record<string, string> = { requested: "Request received", searching: "Searching nearby", expanded: "Search area expanded", offered: "Professionals notified", accepted: "Professional assigned", en_route: "On the way", arrived: "Arrived", started: "Service started", completed: "Completed", cancelled: "Cancelled", unavailable: "No match yet", disputed: "Under review" };
 
@@ -44,7 +50,7 @@ function CareBookingPage() {
   useUnifiedBookingRealtime(qc);
   const hub = useQuery({ queryKey: ["unified-booking-hub"], queryFn: () => fetchHub({}), refetchInterval: 12_000 });
   const venues = useQuery({ queryKey: ["care-venues"], queryFn: () => fetchVenues({}), select: (data) => ({ venues: data.venues.filter((venue) => venue.kind === "hospital") }) });
-  const [role, setRole] = useState<BookingRole>("care_physician"), [priority, setPriority] = useState<BookingPriority>("normal"), [mode, setMode] = useState<BookingVisitMode>("home");
+  const [role, setRole] = useState<BookingRole>(initialRole), [priority, setPriority] = useState<BookingPriority>("normal"), [mode, setMode] = useState<BookingVisitMode>("home");
   const [form, setForm] = useState({ title: "", serviceCode: "", description: "", address: "", area: "", city: "Pune", scheduledFor: "", preferredFacilityId: "", duration: 60, earnings: 0, lat: undefined as number|undefined, lng: undefined as number|undefined });
   const [ratingFor, setRatingFor] = useState<string|null>(null), [ratings, setRatings] = useState({ overall: 5, quality: 5, punctuality: 5, professionalism: 5, communication: 5 }), [review, setReview] = useState(""), [wouldRecommend, setWouldRecommend] = useState(true), [reportIssue, setReportIssue] = useState(false), [showNotifications, setShowNotifications] = useState(false), [cancelTarget, setCancelTarget] = useState<string|null>(null), [cancelReason, setCancelReason] = useState("");
   const refresh = () => void qc.invalidateQueries({ queryKey: ["unified-booking-hub"] });
