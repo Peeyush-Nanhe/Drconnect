@@ -563,13 +563,13 @@ function TherapistHome() {
   const [dismissedBroadcastIds, setDismissedBroadcastIds] = useState<Record<string, boolean>>({});
   const [acceptingId, setAcceptingId] = useState<string | null>(null);
 
-  const activeLiveCareRequest = useMemo(() => {
-    if (!isOnline) return null;
-    return (liveCareRequests || []).find(r =>
+  const activeLiveCareRequests = useMemo(() => {
+    if (!isOnline) return [];
+    return (liveCareRequests || []).filter(r =>
       r.status === "open" &&
       !dismissedBroadcastIds[r.id] &&
       matchesDoctorSpecialty("Physiotherapy", r.specialty)
-    ) || null;
+    );
   }, [liveCareRequests, isOnline, dismissedBroadcastIds]);
 
   const handleAcceptCareRequest = async (reqId: string) => {
@@ -662,63 +662,84 @@ function TherapistHome() {
             <div className="rounded-xl bg-white px-4 py-2 text-xs font-semibold text-teal-700">{notice}</div>
           ) : null}
 
-          {activeLiveCareRequest && (
-            <div className="rounded-2xl border-2 border-teal-500 bg-gradient-to-r from-teal-50 to-emerald-50 p-4 shadow-lg">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <span className="flex size-3 rounded-full bg-teal-500 animate-ping" />
-                  <span className="text-xs font-black uppercase tracking-wider text-teal-800">
-                    ⚡ Live Incoming Broadcast · {activeLiveCareRequest.specialty || "Physiotherapy"}
-                  </span>
-                </div>
-                {activeLiveCareRequest.emergency ? (
-                  <span className="rounded-full bg-red-100 px-2.5 py-0.5 text-[11px] font-extrabold text-red-700">
-                    EMERGENCY (≤2h)
-                  </span>
-                ) : (
-                  <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-[11px] font-extrabold text-blue-700">
-                    Scheduled
-                  </span>
-                )}
+          {activeLiveCareRequests.length > 0 && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between px-1">
+                <span className="text-xs font-black uppercase tracking-wider text-teal-800 flex items-center gap-2">
+                  <span className="size-2 rounded-full bg-teal-500 animate-ping" />
+                  Live Incoming Broadcasts ({activeLiveCareRequests.length})
+                </span>
+                <span className="text-[11px] font-semibold text-slate-500">
+                  First to accept wins
+                </span>
               </div>
 
-              <div className="mt-2 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <h3 className="text-base font-extrabold text-slate-900">
-                    New {activeLiveCareRequest.specialty || "Physiotherapy"} Request
-                  </h3>
-                  <p className="text-xs text-slate-600">
-                    {activeLiveCareRequest.notes?.replace(/^Hub:\s*/, "") || "Nearby Pune Area"} · First to accept wins
-                  </p>
-                </div>
-                <div className="text-right">
-                  <span className="text-sm font-black text-teal-800">
-                    ₹{(() => {
-                      const base = (Number(activeLiveCareRequest.fare) > 0)
-                        ? Number(activeLiveCareRequest.fare)
-                        : getSpecialtyBaseFare(activeLiveCareRequest.specialty);
-                      return activeLiveCareRequest.emergency ? Math.round(base * 1.2) : base;
-                    })()}
-                  </span>
-                </div>
-              </div>
+              <div className="flex flex-col gap-3">
+                {activeLiveCareRequests.map((req) => {
+                  const base = (Number(req.fare) > 0)
+                    ? Number(req.fare)
+                    : getSpecialtyBaseFare(req.specialty);
+                  const displayFare = req.emergency ? Math.round(base * 1.2) : base;
 
-              <div className="mt-3 flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setDismissedBroadcastIds(prev => ({ ...prev, [activeLiveCareRequest.id]: true }))}
-                  className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50"
-                >
-                  Decline
-                </button>
-                <button
-                  type="button"
-                  disabled={acceptingId === activeLiveCareRequest.id}
-                  onClick={() => handleAcceptCareRequest(activeLiveCareRequest.id)}
-                  className="flex-1 rounded-xl bg-teal-600 px-4 py-2 text-xs font-extrabold text-white shadow-md hover:bg-teal-700 disabled:opacity-50"
-                >
-                  {acceptingId === activeLiveCareRequest.id ? "Accepting..." : "Accept Request · Start Visit"}
-                </button>
+                  return (
+                    <div
+                      key={req.id}
+                      className="rounded-2xl border-2 border-teal-500 bg-gradient-to-r from-teal-50 to-emerald-50 p-4 shadow-lg transition-all"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="flex size-3 rounded-full bg-teal-500 animate-ping" />
+                          <span className="text-xs font-black uppercase tracking-wider text-teal-800">
+                            ⚡ Live Incoming Broadcast · {req.specialty || "Physiotherapy"}
+                          </span>
+                        </div>
+                        {req.emergency ? (
+                          <span className="rounded-full bg-red-100 px-2.5 py-0.5 text-[11px] font-extrabold text-red-700">
+                            EMERGENCY (≤2h)
+                          </span>
+                        ) : (
+                          <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-[11px] font-extrabold text-blue-700">
+                            Scheduled
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="mt-2 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <h3 className="text-base font-extrabold text-slate-900">
+                            New {req.specialty || "Physiotherapy"} Request
+                          </h3>
+                          <p className="text-xs text-slate-600">
+                            {req.notes?.replace(/^Hub:\s*/, "") || "Nearby Pune Area"} · First to accept wins
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-sm font-black text-teal-800">
+                            ₹{displayFare}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setDismissedBroadcastIds(prev => ({ ...prev, [req.id]: true }))}
+                          className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors"
+                        >
+                          Decline
+                        </button>
+                        <button
+                          type="button"
+                          disabled={acceptingId === req.id}
+                          onClick={() => handleAcceptCareRequest(req.id)}
+                          className="flex-1 rounded-xl bg-teal-600 px-4 py-2 text-xs font-extrabold text-white shadow-md hover:bg-teal-700 disabled:opacity-50 transition-colors"
+                        >
+                          {acceptingId === req.id ? "Accepting..." : "Accept Request · Start Visit"}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
