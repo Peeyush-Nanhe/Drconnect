@@ -1,0 +1,17 @@
+Getting it to Peeyush
+
+After the push, GitHub prints a "Create a pull request" link. Or go to https://github.com/Peeyush-Nanhe/Drconnect and it'll offer a banner for your new branch. Target Dev on his repo, not main.
+
+Day to day from here
+
+Pull from origin (his, the source of truth), push to fork (yours):
+
+powershell
+git fetch origin
+git rebase origin/Dev
+git push fork staging
+
+Force-push after a rebase, since rebasing rewrites history:
+
+powershell
+git push --force-with-lease fork staging

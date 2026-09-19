@@ -13,6 +13,10 @@ import { useEffect, type ReactNode } from "react";
 import appCss from "../styles.css?url";
 import { Toaster } from "@/components/ui/sonner";
 import { reportLovableError } from "../lib/lovable-error-reporting";
+import { installDemoGps } from "../lib/demo-gps";
+
+// Demo GPS (Koregaon Park) — only active when VITE_DEMO_GPS=true in .env.
+installDemoGps();
 
 function NotFoundComponent() {
   return (

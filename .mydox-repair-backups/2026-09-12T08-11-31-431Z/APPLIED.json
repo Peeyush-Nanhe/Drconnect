@@ -1,0 +1,120 @@
+{
+  "appliedAt": "2026-09-12T08:11:31.467Z",
+  "files": [
+    {
+      "path": ".env.emergency-race.example",
+      "previouslyExisted": false,
+      "new_sha256": "d09e1fd19898b89e9624e8c3c8b5dffb159038746c6c9de6cbec8b93537e0807"
+    },
+    {
+      "path": ".env.example",
+      "previouslyExisted": true,
+      "new_sha256": "e019a22250a731f37994bf634fe03fc23a0b136dbf6de717b687df8a9ef8af13"
+    },
+    {
+      "path": ".gitignore",
+      "previouslyExisted": true,
+      "new_sha256": "d9b494284c2281d0b103847f59b8f508579a1d3257c9bca17ff0d0fec9b44ae1"
+    },
+    {
+      "path": "EMERGENCY_V2_COVERAGE.md",
+      "previouslyExisted": false,
+      "new_sha256": "3e2adccfcf9e4af03fb386ec973d50a933e24bde571fc1d47fe9811ec6d05fdd"
+    },
+    {
+      "path": "EMERGENCY_V2_VALIDATION.md",
+      "previouslyExisted": false,
+      "new_sha256": "8c96ff770392cc4538d5f8b7d5556fac654c9d260c48b27e19e6c2532340a6e9"
+    },
+    {
+      "path": "START_HERE_EMERGENCY_V2.md",
+      "previouslyExisted": false,
+      "new_sha256": "1044df74ceaccc7d23a9a454c45597b058c96c3d2b8df34a0ee8d2cbcf8bc240"
+    },
+    {
+      "path": "START_HERE_REPAIR.md",
+      "previouslyExisted": false,
+      "new_sha256": "66ec172c04990e9ddfe07a05d13d83b583f301898b06a840d2fbfb13a46a65a9"
+    },
+    {
+      "path": "TEST_SCRIPT_EMERGENCY_V2.md",
+      "previouslyExisted": false,
+      "new_sha256": "205fc6466f423fe22aff1705a3863a9473e44f36f481f880dd91fd0b934d987d"
+    },
+    {
+      "path": "database/emergency/00_preflight.sql",
+      "previouslyExisted": false,
+      "new_sha256": "29aa2766ae569a8e0e10e3fd0743b8518945bff36296752c1a3d361499e5c68f"
+    },
+    {
+      "path": "database/emergency/01_dispatch_core.sql",
+      "previouslyExisted": false,
+      "new_sha256": "27f198daf64ab50b5abf43abd43c3a73a39dfa2c2158bd6753e3febbb467800d"
+    },
+    {
+      "path": "database/emergency/02_schedule_dispatch.sql",
+      "previouslyExisted": false,
+      "new_sha256": "5997c694e7bb1b7c2340a2a3cc61e023b428505e3ded3579db34f4220401cffb"
+    },
+    {
+      "path": "database/emergency/03_verify_installation.sql",
+      "previouslyExisted": false,
+      "new_sha256": "e3095efbccd379fe9049b1e7e65f20dafa1835264b5800dfaabafc48ca993d41"
+    },
+    {
+      "path": "eslint.config.js",
+      "previouslyExisted": true,
+      "new_sha256": "4f8b9a333c349c0132b169703de4225edb52f5b7472a7610d8e4f46368dfe603"
+    },
+    {
+      "path": "package.json",
+      "previouslyExisted": true,
+      "new_sha256": "005d49713c1da057a4d3e554a4615506d5d60cf1c04fcaecb727157f0dbb6ee1"
+    },
+    {
+      "path": "scripts/doctor.mjs",
+      "previouslyExisted": false,
+      "new_sha256": "00c244a0eb8e32a776f5b193e9ca205fc6adabe50cfe797897288a02ae122e55"
+    },
+    {
+      "path": "scripts/test-emergency-race.mjs",
+      "previouslyExisted": false,
+      "new_sha256": "4b55be301131822ab17986c9a7321cb133188dbe37d5d9641148356afe17cdf1"
+    },
+    {
+      "path": "validation/repair-2026-09-12/PATIENT_ADMITTED.png",
+      "previouslyExisted": false,
+      "new_sha256": "13e4f1ab8621f2bd123ec99cdddd18c84570004cf14a585dc5df518e65cac027"
+    },
+    {
+      "path": "validation/repair-2026-09-12/PATIENT_DISPATCH.png",
+      "previouslyExisted": false,
+      "new_sha256": "ead49979a764c4bef9c74321b26440b9419d3f7d9bdef4a1130d846cf463de5d"
+    },
+    {
+      "path": "validation/repair-2026-09-12/before-typecheck.log",
+      "previouslyExisted": false,
+      "new_sha256": "ee158d56446297ff2a48bd32f096ff8367f2831401e485b8da6c5076344e874e"
+    },
+    {
+      "path": "validation/repair-2026-09-12/browser-check.log",
+      "previouslyExisted": false,
+      "new_sha256": "c9aed57b9da29ef14e3195784d5a94842ed804734aec0c205e160a38d1a6dc75"
+    },
+    {
+      "path": "validation/repair-2026-09-12/browser-results.json",
+      "previouslyExisted": false,
+      "new_sha256": "ff411d9e8251ed3c44887dee89d80e6c0fe0292e905b667a3a02a3e13360eb78"
+    },
+    {
+      "path": "validation/repair-2026-09-12/doctor.log",
+      "previouslyExisted": false,
+      "new_sha256": "82edfa5492303028aa632c5c00736f169e24f657e1ea4da0fc6977e3a1f19d74"
+    },
+    {
+      "path": "validation/repair-2026-09-12/npm-check.log",
+      "previouslyExisted": false,
+      "new_sha256": "bccee2f2eb6e6daa8d43c5d9b651d99ab29b4a12f53004e9132f4a4932d3d3c8"
+    }
+  ]
+}

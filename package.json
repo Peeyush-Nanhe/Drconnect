@@ -17,7 +17,9 @@
     "android:apk:preview": "node scripts/android-preview.mjs emulator --build",
     "android:apk:usb": "node scripts/android-preview.mjs usb --build",
     "typecheck": "tsc --noEmit",
-    "check": "npm run typecheck && npm run lint && npm run test:db && npm run test:home-visits && npm run test:post-consultation-chat && npm run build",
+    "check": "npm run typecheck && npm run lint && npm run test:db && npm run test:home-visits && npm run test:auth && npm run test:physio && npm run build",
+    "test:auth": "node --test tests/auth-credentials.test.mjs",
+    "test:physio": "node --test tests/physio.test.mjs",
     "test:db": "node scripts/build-staging-baseline.mjs && node --test tests/database.test.mjs",
     "test:staging": "node --env-file=.env scripts/test-staging.mjs --run",
     "sync:status": "node scripts/github-sync.mjs status",
@@ -26,7 +28,10 @@
     "test:home-visits": "node --experimental-strip-types --test tests/home-visits.test.mjs tests/home-visit-jobs.test.mjs tests/home-visit-jobs-db.test.mjs",
     "test:home-visits:staging": "node --env-file=.env scripts/test-home-visits-staging.mjs --run",
     "test:post-consultation-chat": "node --experimental-strip-types --test tests/post-consultation-chat.test.mjs tests/post-consultation-chat-db.test.mjs",
-    "test:post-consultation-chat:staging": "node --env-file=.env scripts/test-post-consultation-chat-staging.mjs --run"
+    "test:post-consultation-chat:staging": "node --env-file=.env scripts/test-post-consultation-chat-staging.mjs --run",
+    "seed:dummy": "node --env-file=.env scripts/manage-dummy.mjs --seed",
+    "cleanup:dummy": "node --env-file=.env scripts/manage-dummy.mjs --cleanup",
+    "test:emergency-flow": "node --env-file=.env scripts/test-emergency-flow.mjs --run"
   },
   "dependencies": {
     "@capacitor/android": "^7.0.0",

@@ -1,0 +1,6 @@
+- `[x]` Refactor `DoctorApp` layout in `MyDoxFull.jsx` to show Nurse/Tech alerts on top
+- `[x]` Update `syncNursing` patient logic to force confirmation modal update
+- `[x]` Add notification triggers to `NurseRequestsPanel.tsx`
+- `[x]` Add notification triggers to `TechnicianRequestsPanel.tsx`
+- `[x]` Polish visual style of Nursing/Tech alerts to match Doctor's "High Impact" alert
+- `[x]` Manual verification of the end-to-end flow

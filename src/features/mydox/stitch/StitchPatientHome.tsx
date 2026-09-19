@@ -85,9 +85,9 @@ export default function StitchPatientHome({
             </button>
             <button
               className="sp-primary"
-              onClick={activeRequest && onTrack ? onTrack : () => onAction("doctor")}
+              onClick={() => onAction("doctor")}
             >
-              {activeRequest ? "Track request" : "Book a doctor"}
+              Book a doctor
               <ChevronRight size={15} />
             </button>
           </div>

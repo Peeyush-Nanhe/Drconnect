@@ -4,7 +4,7 @@ import { Link } from "@tanstack/react-router";
 import PatientDashboard, { PatientHeader, PatientBottomNav } from "@/features/mydox/PatientDashboard";
 import MyBookingsOverlay from "@/features/mydox/MyBookingsOverlay";
 import { HomeVisitBooking, HomeVisitEntry } from "@/features/mydox/home-visits/HomeVisitBooking";
-import { HomeVisitPanel, HomeVisitOperations } from "@/features/mydox/home-visits/HomeVisitPanel";
+import { HomeVisitOperations } from "@/features/mydox/home-visits/HomeVisitPanel";
 import DrugDeliveryOverlay from "@/features/mydox/DrugDeliveryOverlay";
 import CareProgramExpansionOverlay from "@/features/mydox/CareProgramExpansionOverlay";
 import MentalWellnessHub from "@/features/mydox/MentalWellnessHub";
@@ -17,7 +17,7 @@ import { askTriage } from "@/lib/ask-ai.functions";
 import { analyzeReport } from "@/lib/report-analyzer.functions";
 import { transcribeAudio } from "@/lib/transcribe.functions";
 import { saveAiHistory, listAiHistory, getAiHistoryItem, toggleShareAiHistory, deleteAiHistory } from "@/lib/ai-history.functions";
-import { createCareRequest, cancelCareRequest, acceptCareRequest, completeCareRequest, failCareRequest, useLiveCareRequests, useRecentChatCounterparts, useMyMedicos, logRequestEvent, setRequestStage, useRequestAuditLog, useAdminAuditFeed, payAndGenerateOtp, verifyOtpAndStart, confirmOtpExchanged, TEST_DEFAULT_OTP, rateCareRequest, createCareProgramBooking, createCommunityRequest, useServiceReferrals, createServiceReferral, updateServiceReferralStatus, useRecentPatientsForDoctor, useSession, useLiveDoctorAppointments } from "@/features/mydox/backend";
+import { createCareRequest, cancelCareRequest, acceptCareRequest, completeCareRequest, failCareRequest, useLiveCareRequests, useRecentChatCounterparts, useMyMedicos, logRequestEvent, setRequestStage, useRequestAuditLog, useAdminAuditFeed, payAndGenerateOtp, verifyOtpAndStart, confirmOtpExchanged, TEST_DEFAULT_OTP, rateCareRequest, createCareProgramBooking, createCommunityRequest, useServiceReferrals, createServiceReferral, updateServiceReferralStatus, useRecentPatientsForDoctor, useSession, useLiveDoctorAppointments, useRealtimeChat, verifyAndCompleteConsultation } from "@/features/mydox/backend";
 import { SURGERY_ROLE_LABELS } from "@/features/mydox/surgery";
 import { SlotPickerCalendar } from "@/features/mydox/SlotPickerCalendar";
 import CancellationDialog from "@/features/mydox/CancellationDialog";
@@ -26,6 +26,19 @@ import { HOME_VISIT_CONSENT } from "@/features/mydox/consent-texts";
 import { TwoWayChatModal } from "@/features/mydox/TwoWayChatModal";
 import { usePostConsultationInbox } from "@/features/mydox/post-consultation-chat/usePostConsultationChat";
 import { recordHomeVisitConsent } from "@/lib/consents.functions";
+import { EmergencyResponderPanel, EmergencyPatient } from "@/features/mydox/emergency/DispatchScreens";
+import { EmergencyProfileForm, EmergencyProfileNudge } from "@/features/mydox/emergency/EmergencyProfile";
+import { useCrewStats } from "@/features/mydox/emergency/useCrewStats";
+import {
+  parseChatAttachment,
+  formatMessageSnippet,
+  processImageFile,
+  processPdfFile,
+  AttachmentMenu,
+  AttachmentPreviewBar,
+  ChatAttachmentBubbleContent,
+  ImageLightboxModal
+} from "@/features/mydox/chatAttachmentUtils";
 
 /* ── Local form capture ───────────────────────────────────────────
    Completed forms stay inside this app's configured Supabase project.
@@ -381,12 +394,29 @@ function _liveMedicoRoster() {
   const rows = (typeof LIVE_BY_VIEW !== "undefined" && LIVE_BY_VIEW.medico) || [];
   return rows.filter(p => p && p.name && p.userId);
 }
+// Preferred-doctor lists show only doctors who have actually treated a patient.
+// PATIENTS_SERVED is filled from provider_patient_counts(); until that function is
+// installed it stays null and the list is not filtered (nothing breaks).
+let PATIENTS_SERVED = null;
+function _hasTreatedPatients(m) {
+  return PATIENTS_SERVED == null || (PATIENTS_SERVED[m.userId] || 0) > 0;
+}
+// Non-doctor roles that must never appear in a specialty doctor panel,
+// matched against the profile's display name AND specialty field.
+const _NON_DOCTOR_ROLES = ["nurse", "paramedic", "technician", "therapist", "pharmacist", "receptionist", "coordinator", "ward boy", "attender"];
+
 function _medicoMatchesSpec(medico, spec) {
   if (!spec) return true;
-  const cap = (medico.specialty || "").toString().toLowerCase().trim();
-  if (!cap) return true; // unknown capability → show everywhere
+  // Exclude non-doctor roles regardless of specialty field value
+  const nameLower  = (medico.name     || "").toLowerCase().trim();
+  const specField  = (medico.specialty || "").toLowerCase().trim();
+  if (_NON_DOCTOR_ROLES.some(r =>
+    nameLower === r || nameLower.startsWith(r + " ") || specField === r
+  )) return false;
+  // No specialty on file → show in all specialty panels as a general-fallback doctor
+  if (!specField) return true;
   const targets = [spec.name, spec.shortName, spec.id].filter(Boolean).map(s => String(s).toLowerCase());
-  return targets.some(t => cap.includes(t) || t.includes(cap));
+  return targets.some(t => specField.includes(t) || t.includes(specField));
 }
 function _stableSeed(str) {
   return String(str || "x").split("").reduce((a, c) => a + c.charCodeAt(0), 0);
@@ -420,7 +450,7 @@ const pick = arr => arr[Math.floor(Math.random() * arr.length)];
 const QUALS = ["MBBS, MD", "MBBS, MS", "MBBS, DNB", "MBBS, MD, DM", "MBBS, MS, MCh", "MBBS, DGO"];
 function panelDoctorsForSpec(spec) {
   if (!spec) return [];
-  const roster = _liveMedicoRoster().filter(m => _medicoMatchesSpec(m, spec));
+  const roster = _liveMedicoRoster().filter(m => _medicoMatchesSpec(m, spec) && _hasTreatedPatients(m));
   const list = roster.map((m, i) => {
     const seed = _stableSeed(m.userId || m.name);
     const patientRating = +(4.3 + ((seed + i * 3) % 7) / 10).toFixed(1);
@@ -504,6 +534,14 @@ async function refreshLiveProviders() {
         isLive: true,
       });
     });
+    try {
+      const { data: counts, error: countErr } = await supabase.rpc("provider_patient_counts");
+      if (!countErr && Array.isArray(counts)) {
+        const map = {};
+        counts.forEach(r => { map[r.provider_id] = Number(r.patients) || 0; });
+        PATIENTS_SERVED = map;
+      }
+    } catch { /* function not installed yet: show everyone */ }
     // Prefer online accounts first in every bucket
     for (const k of Object.keys(LIVE_BY_VIEW)) {
       LIVE_BY_VIEW[k].sort((a, b) => Number(b.online) - Number(a.online));
@@ -514,8 +552,14 @@ async function refreshLiveProviders() {
 function liveOnlineByView(view) {
   return (LIVE_BY_VIEW[view] || []).filter(p => p.online);
 }
-// prime once at module load
+// prime once at module load (may return nothing if user is not yet authed)
 refreshLiveProviders();
+// Re-fetch as soon as a session is established — the RLS policy on profiles
+// requires auth, so the module-load fetch above returns [] for unauthenticated
+// visitors. We need to refresh again after login so the doctor panel is populated.
+supabase.auth.onAuthStateChange((event) => {
+  if (event === "SIGNED_IN") refreshLiveProviders();
+});
 
 // Heartbeat: while any patient/medico session is open, mark the current
 // account as online so other users' broadcasts include them. Fire-and-forget.
@@ -910,19 +954,22 @@ function TherapyPackageCard({ perSession, therapistName, therapyName, accent = "
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {THERAPY_PACKAGES.map(p => {
           const c = calc(p); const sel = pkgId === p.id; return (
-            <button key={p.id} onClick={() => setPkgId(sel ? null : p.id)} style={{ display: "flex", alignItems: "center", gap: 11, padding: "11px 12px", borderRadius: 14, border: `1.5px solid ${sel ? accent : C.line}`, background: sel ? accent + "0D" : "#fff", cursor: "pointer", textAlign: "left", fontFamily: "'Plus Jakarta Sans',sans-serif", width: "100%" }}>
-              <div style={{ width: 22, height: 22, borderRadius: "50%", border: `2px solid ${sel ? accent : C.line}`, background: sel ? accent : "#fff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{sel && <Check size={13} color="#fff" strokeWidth={3} />}</div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
-                  <span style={{ fontWeight: 800, color: C.ink, fontSize: 14 }}>{p.sessions} sessions</span>
-                  {p.discount > 0 && <span style={{ background: accent, color: "#fff", borderRadius: 99, padding: "1px 7px", fontSize: 9.5, fontWeight: 800 }}>{Math.round(p.discount * 100)}% OFF</span>}
-                  <span style={{ fontSize: 9.5, color: C.faint, fontWeight: 700 }}>{p.tag}</span>
+            <button key={p.id} onClick={() => setPkgId(sel ? null : p.id)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 10px", borderRadius: 14, border: `1.5px solid ${sel ? accent : C.line}`, background: sel ? accent + "0D" : "#fff", cursor: "pointer", textAlign: "left", fontFamily: "'Plus Jakarta Sans',sans-serif", width: "100%" }}>
+              <div style={{ width: 20, height: 20, borderRadius: "50%", border: `2px solid ${sel ? accent : C.line}`, background: sel ? accent : "#fff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{sel && <Check size={12} color="#fff" strokeWidth={3} />}</div>
+              <div style={{ flex: 1, minWidth: 0, paddingRight: 4 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                  <span style={{ fontWeight: 800, color: C.ink, fontSize: 13.5, whiteSpace: "nowrap" }}>{p.sessions} sessions</span>
+                  {p.discount > 0 && <span style={{ background: accent, color: "#fff", borderRadius: 99, padding: "1px 5px", fontSize: 9, fontWeight: 800, whiteSpace: "nowrap" }}>{Math.round(p.discount * 100)}% OFF</span>}
                 </div>
-                <p style={{ margin: "2px 0 0", fontSize: 11, color: C.sub }}>{inr(c.per)}/session{p.discount > 0 ? ` · was ${inr(perSession)}` : ""}</p>
+                <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 3, flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 10, color: C.faint, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" }}>{p.tag}</span>
+                  <span style={{ fontSize: 10, color: C.line }}>•</span>
+                  <span style={{ fontSize: 10.5, color: C.sub, whiteSpace: "nowrap" }}>{inr(c.per)}/sesh</span>
+                </div>
               </div>
-              <div style={{ textAlign: "right", flexShrink: 0 }}>
-                <p style={{ margin: 0, fontWeight: 900, color: C.ink, fontSize: 15 }}>{inr(c.total)}</p>
-                {c.save > 0 && <p style={{ margin: 0, fontSize: 10, fontWeight: 700, color: accent }}>save {inr(c.save)}</p>}
+              <div style={{ textAlign: "right", flexShrink: 0, marginLeft: "auto" }}>
+                <p style={{ margin: 0, fontWeight: 900, color: C.ink, fontSize: 14, whiteSpace: "nowrap" }}>{inr(c.total)}</p>
+                {c.save > 0 && <p style={{ margin: 0, fontSize: 9.5, fontWeight: 700, color: accent, whiteSpace: "nowrap" }}>save {inr(c.save)}</p>}
               </div>
             </button>
           );
@@ -1330,6 +1377,26 @@ function SpecialtyPickerModern({
   const [selectedDoctor, setSelectedDoctor] = React.useState(null); // chosen panel doctor
   const [availableSlots, setAvailableSlots] = React.useState(null);
 
+  const schedDates = React.useMemo(() => {
+    const out = [];
+    const now = new Date();
+    for (let i = 0; i < 14; i++) {
+      const d = new Date(now);
+      d.setDate(now.getDate() + i);
+      out.push(d);
+    }
+    return out;
+  }, []);
+  const schedTimes = React.useMemo(() => {
+    const out = [];
+    for (let h = 9; h <= 21; h++) {
+      for (const m of [0, 30]) {
+        out.push({ h, m });
+      }
+    }
+    return out;
+  }, []); // 9:00 AM → 9:30 PM, every 30 minutes
+
   React.useEffect(() => {
     if (!selectedDoctor?.userId) {
       setAvailableSlots(null);
@@ -1345,27 +1412,37 @@ function SpecialtyPickerModern({
         p_duration_minutes: 30
       });
       if (!error && data) {
-        const now = new Date();
-        now.setHours(0, 0, 0, 0);
         const mapped = data.filter(d => d.is_available).map(d => {
           const dt = new Date(d.start_time);
-          const day0 = new Date(dt); day0.setHours(0, 0, 0, 0);
-          const diffTime = Math.abs(day0 - now);
-          const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
-          return { dateIdx: diffDays, h: dt.getHours(), m: dt.getMinutes() };
-        });
+          const dateIdx = schedDates.findIndex(sd => sd.toDateString() === dt.toDateString());
+          return { dateIdx, h: dt.getHours(), m: dt.getMinutes(), start_time: d.start_time };
+        }).filter(s => s.dateIdx >= 0 && new Date(s.start_time).getTime() > Date.now());
         setAvailableSlots(mapped);
+
+        const firstAvail = Array.from({ length: 14 }, (_, i) => i).find(dIdx => mapped.some(s => s.dateIdx === dIdx));
+        setSchedDate(prev => {
+          if (prev === null) return firstAvail !== undefined ? firstAvail : 0;
+          if (!mapped.some(s => s.dateIdx === prev) && firstAvail !== undefined) return firstAvail;
+          return prev;
+        });
       } else {
         setAvailableSlots(null);
       }
     };
     fetchSlots();
-  }, [selectedDoctor]);
-  const schedDates = React.useMemo(() => { const out = []; const now = new Date(); for (let i = 0; i < 14; i++) { const d = new Date(now); d.setDate(now.getDate() + i); out.push(d); } return out; }, []);
-  const schedTimes = React.useMemo(() => { const out = []; for (let h = 9; h <= 20; h++) { for (const m of [0, 30]) { if (h === 20 && m === 30) continue; out.push({ h, m }); } } return out; }, []); // 9:00 AM → 8:00 PM
+  }, [selectedDoctor, schedDates]);
   const dayLabel = (d, i) => i === 0 ? "Today" : i === 1 ? "Tomorrow" : d.toLocaleDateString("en-US", { weekday: "short" });
   const fmtTime = t => { const ap = t.h < 12 ? "AM" : "PM"; const hh = t.h % 12 === 0 ? 12 : t.h % 12; return `${hh}:${t.m === 0 ? "00" : "30"} ${ap}`; };
-  const schedConfirmed = schedDate != null && schedTime != null;
+  const isSlotInPast = React.useMemo(() => {
+    if (schedDate == null || schedTime == null) return false;
+    const _sd = schedDates[schedDate];
+    const _st = schedTimes[schedTime];
+    if (!_sd || !_st) return false;
+    const d = new Date(_sd);
+    d.setHours(_st.h, _st.m, 0, 0);
+    return d.getTime() <= Date.now();
+  }, [schedDate, schedTime, schedDates, schedTimes]);
+  const schedConfirmed = schedDate != null && schedTime != null && !isSlotInPast;
   const schedLabel = schedConfirmed ? `${dayLabel(schedDates[schedDate], schedDate)}, ${schedDates[schedDate].getDate()} ${schedDates[schedDate].toLocaleDateString("en-US", { month: "short" })} · ${fmtTime(schedTimes[schedTime])}` : null;
 
   const providers = [
@@ -1486,7 +1563,7 @@ function SpecialtyPickerModern({
           onClick={() => {
             if (!selectedSpec) return;
             if (emergency) { onBook && onBook(selectedSpec); }
-            else { onBook && onBook({ ...selectedSpec, base: selectedDoctor ? selectedDoctor.fee : selectedSpec.base, doctor: selectedDoctor ? { userId: selectedDoctor.userId, name: selectedDoctor.name, professionalScore: selectedDoctor.professionalScore, patientRating: selectedDoctor.patientRating, hospitalRating: selectedDoctor.hospitalRating } : null, scheduled: { label: schedLabel, date: schedDates[schedDate]?.toDateString?.() || null, time: schedTimes[schedTime] ? fmtTime(schedTimes[schedTime]) : null } }); }
+            else { const _sd = schedDates[schedDate]; const _st = schedTimes[schedTime]; const _iso = (_sd && _st != null) ? (() => { const d = new Date(_sd); d.setHours(_st.h, _st.m, 0, 0); return d.toISOString(); })() : null; onBook && onBook({ ...selectedSpec, base: selectedDoctor ? selectedDoctor.fee : selectedSpec.base, doctor: selectedDoctor ? { userId: selectedDoctor.userId, name: selectedDoctor.name, professionalScore: selectedDoctor.professionalScore, patientRating: selectedDoctor.patientRating, hospitalRating: selectedDoctor.hospitalRating } : null, scheduled: { label: schedLabel, date: _sd?.toDateString?.() || null, time: _st ? fmtTime(_st) : null, iso: _iso } }); }
           }}
           disabled={!selectedSpec || (!emergency && (!docOk || !schedConfirmed))}
           style={{ width: "100%", padding: "13px", borderRadius: 13, border: "none", background: (selectedSpec && (emergency || (docOk && schedConfirmed))) ? `linear-gradient(135deg,${sc},${sc}cc)` : C.canvas, color: (selectedSpec && (emergency || (docOk && schedConfirmed))) ? "#fff" : C.faint, fontSize: 13.5, fontWeight: 800, cursor: (selectedSpec && (emergency || (docOk && schedConfirmed))) ? "pointer" : "not-allowed", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, fontFamily: "'Plus Jakarta Sans',sans-serif" }}
@@ -1513,6 +1590,26 @@ function SpecialtyPickerSimple({ providerType, selectedSpec, setSelectedSpec, em
   const [selectedDoctor, setSelectedDoctor] = React.useState(null);
   const [availableSlots, setAvailableSlots] = React.useState(null);
 
+  const schedDates = React.useMemo(() => {
+    const out = [];
+    const now = new Date();
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(now);
+      d.setDate(now.getDate() + i);
+      out.push(d);
+    }
+    return out;
+  }, []);
+  const schedTimes = React.useMemo(() => {
+    const out = [];
+    for (let h = 9; h <= 21; h++) {
+      for (const m of [0, 30]) {
+        out.push({ h, m });
+      }
+    }
+    return out;
+  }, []); // 9:00 AM → 9:30 PM, every 30 minutes
+
   React.useEffect(() => {
     if (!selectedDoctor?.userId) {
       setAvailableSlots(null);
@@ -1528,41 +1625,49 @@ function SpecialtyPickerSimple({ providerType, selectedSpec, setSelectedSpec, em
         p_duration_minutes: 30
       });
       if (!error && data) {
-        const now = new Date();
-        now.setHours(0, 0, 0, 0);
         const mapped = data.filter(d => d.is_available).map(d => {
           const dt = new Date(d.start_time);
-          const day0 = new Date(dt); day0.setHours(0, 0, 0, 0);
-          const diffTime = Math.abs(day0 - now);
-          const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
-          return { dateIdx: diffDays, h: dt.getHours(), m: dt.getMinutes() };
-        });
+          const dateIdx = schedDates.findIndex(sd => sd.toDateString() === dt.toDateString());
+          return { dateIdx, h: dt.getHours(), m: dt.getMinutes(), start_time: d.start_time };
+        }).filter(s => s.dateIdx >= 0 && new Date(s.start_time).getTime() > Date.now());
         setAvailableSlots(mapped);
+
+        // Auto-select first date that has available slots if none selected or if current selection has no slots
+        const firstAvail = [0, 1, 2, 3, 4, 5, 6].find(dIdx => mapped.some(s => s.dateIdx === dIdx));
+        setSchedDate(prev => {
+          if (prev === null) return firstAvail !== undefined ? firstAvail : 0;
+          if (!mapped.some(s => s.dateIdx === prev) && firstAvail !== undefined) return firstAvail;
+          return prev;
+        });
       } else {
         setAvailableSlots(null);
       }
     };
     fetchSlots();
-  }, [selectedDoctor]);
+  }, [selectedDoctor, schedDates]);
   const [profileDoctor, setProfileDoctor] = React.useState(null);
-  const schedDates = React.useMemo(() => { const out = []; const now = new Date(); for (let i = 0; i < 7; i++) { const d = new Date(now); d.setDate(now.getDate() + i); out.push(d); } return out; }, []);
-  const schedTimes = React.useMemo(() => {
-    const out = [];
-    for (let h = 9; h <= 21; h++) {
-      for (const m of [0, 20, 40]) {
-        if (h === 21 && m > 0) continue; // last slot is 9:00 PM
-        out.push({ h, m });
-      }
-    }
-    return out;
-  }, []); // 9:00 AM → 9:00 PM, every 20 minutes
   const fmtTime = t => { const ap = t.h < 12 ? "AM" : "PM"; const hh = t.h % 12 === 0 ? 12 : t.h % 12; return `${hh}:${t.m === 0 ? "00" : String(t.m)} ${ap}`; };
   const dayLabel = (d, i) => i === 0 ? "Today" : i === 1 ? "Tomorrow" : d.toLocaleDateString("en-US", { weekday: "short" });
-  const schedConfirmed = schedDate != null && schedTime != null;
+  const isSlotInPast = React.useMemo(() => {
+    if (schedDate == null || schedTime == null) return false;
+    const _sd = schedDates[schedDate];
+    const _st = schedTimes[schedTime];
+    if (!_sd || !_st) return false;
+    const d = new Date(_sd);
+    d.setHours(_st.h, _st.m, 0, 0);
+    return d.getTime() <= Date.now();
+  }, [schedDate, schedTime, schedDates, schedTimes]);
+  const schedConfirmed = schedDate != null && schedTime != null && !isSlotInPast;
   const schedLabel = schedConfirmed ? `${dayLabel(schedDates[schedDate], schedDate)}, ${schedDates[schedDate].getDate()} ${schedDates[schedDate].toLocaleDateString("en-US", { month: "short" })} · ${fmtTime(schedTimes[schedTime])}` : null;
   const panelDoctors = React.useMemo(() => panelDoctorsForSpec(selectedSpec), [selectedSpec?.id]);
   const needsDoctor = providerType === "doctor"; // only doctors get the professional-score panel; therapist/nurse/scan etc. stay on the simpler model
   const docOk = !needsDoctor || !!selectedDoctor;
+
+  React.useEffect(() => {
+    if (!selectedDoctor && panelDoctors && panelDoctors.length > 0) {
+      setSelectedDoctor(panelDoctors[0]);
+    }
+  }, [panelDoctors, selectedDoctor]);
 
   React.useEffect(() => { setShowAll(false); setSchedDate(null); setSchedTime(null); setSelectedDoctor(null); setProfileDoctor(null); }, [providerType]);
   React.useEffect(() => { setSchedDate(null); setSchedTime(null); setSelectedDoctor(null); setProfileDoctor(null); }, [selectedSpec?.id]);
@@ -1660,7 +1765,7 @@ function SpecialtyPickerSimple({ providerType, selectedSpec, setSelectedSpec, em
           onClick={() => {
             if (!selectedSpec) return;
             if (emergency) onBook && onBook(selectedSpec);
-            else onBook && onBook({ ...selectedSpec, base: selectedDoctor ? selectedDoctor.fee : selectedSpec.base, doctor: selectedDoctor ? { userId: selectedDoctor.userId, name: selectedDoctor.name, qualification: selectedDoctor.qualification, professionalScore: selectedDoctor.professionalScore, patientRating: selectedDoctor.patientRating, hospitalRating: selectedDoctor.hospitalRating } : null, scheduled: { label: schedLabel, date: schedDates[schedDate]?.toDateString?.() || null, time: schedTimes[schedTime] ? fmtTime(schedTimes[schedTime]) : null } });
+            else { const _sd = schedDates[schedDate]; const _st = schedTimes[schedTime]; const _iso = (_sd && _st != null) ? (() => { const d = new Date(_sd); d.setHours(_st.h, _st.m, 0, 0); return d.toISOString(); })() : null; onBook && onBook({ ...selectedSpec, base: selectedDoctor ? selectedDoctor.fee : selectedSpec.base, doctor: selectedDoctor ? { userId: selectedDoctor.userId, name: selectedDoctor.name, qualification: selectedDoctor.qualification, professionalScore: selectedDoctor.professionalScore, patientRating: selectedDoctor.patientRating, hospitalRating: selectedDoctor.hospitalRating } : null, scheduled: { label: schedLabel, date: _sd?.toDateString?.() || null, time: _st ? fmtTime(_st) : null, iso: _iso } }); }
           }}
           disabled={!selectedSpec || (!emergency && (!docOk || !schedConfirmed))}
           style={{ width: "100%", padding: "17px", borderRadius: 16, border: "none", background: (selectedSpec && (emergency || (docOk && schedConfirmed))) ? `linear-gradient(135deg,${sc},${sc}cc)` : C.canvas, color: (selectedSpec && (emergency || (docOk && schedConfirmed))) ? "#fff" : C.faint, fontSize: 16, fontWeight: 800, cursor: (selectedSpec && (emergency || (docOk && schedConfirmed))) ? "pointer" : "not-allowed", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, fontFamily: "'Plus Jakarta Sans',sans-serif" }}
@@ -2151,11 +2256,764 @@ function calBk(days, h, m, title, sub, status, color) {
   const d = new Date(); d.setDate(d.getDate() + days); d.setHours(h, m, 0, 0);
   return { date: d, title, sub, status, color };
 }
+/* ═══ Bottom Sheet: Consultation Over Dialog ═══════════════════════════ */
+function ConsultationOverDialog({ item, onClose, onConfirm }) {
+  const [notes, setNotes] = useState("");
+  const [otp, setOtp] = useState("");
+  const [errorMsg, setErrorMsg] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  if (!item) return null;
+  const itemStatusLower = (item.status || "").toLowerCase();
+  const itemRawStatusLower = (item.rawStatus || "").toLowerCase();
+  if (itemStatusLower === "cancelled" || itemStatusLower === "canceled" || itemRawStatusLower === "cancelled" || itemRawStatusLower === "canceled") {
+    return null;
+  }
+
+  const handleOtpChange = (e) => {
+    const val = e.target.value.replace(/\D/g, "").slice(0, 4);
+    setOtp(val);
+    if (errorMsg) setErrorMsg("");
+  };
+
+  const handleVerify = async () => {
+    if (otp.length !== 4 || busy) return;
+    setBusy(true);
+    setErrorMsg("");
+    try {
+      const slotId = item.careRequestId || item.appointmentId || item.id;
+      const res = await verifyAndCompleteConsultation(slotId, otp, notes);
+      if (res.success) {
+        onConfirm(item, notes);
+      } else {
+        setErrorMsg(res.error || "Incorrect OTP. Ask the patient to read the code shown in their app.");
+      }
+    } catch (e) {
+      setErrorMsg(e?.message || "Failed to verify consultation OTP.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 70,
+        background: "rgba(15,23,42,0.55)",
+        display: "flex",
+        alignItems: "flex-end",
+        justifyContent: "center",
+        fontFamily: "'Plus Jakarta Sans', sans-serif"
+      }}
+      onClick={onClose}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Consultation over"
+        style={{
+          background: "#ffffff",
+          width: "100%",
+          maxWidth: 540,
+          borderRadius: "24px 24px 0 0",
+          padding: "20px 20px calc(24px + env(safe-area-inset-bottom))",
+          boxShadow: "0 -10px 30px rgba(0,0,0,0.15)",
+          display: "flex",
+          flexDirection: "column",
+          gap: 16
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div>
+            <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: "#0F172A" }}>
+              Consultation over
+            </h3>
+            <p style={{ margin: "2px 0 0", fontSize: 13, color: "#64748B" }}>
+              Patient: <strong style={{ color: "#0F172A" }}>{item.title}</strong>
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            style={{
+              background: "#F1F5F9",
+              border: "none",
+              borderRadius: "50%",
+              width: 32,
+              height: 32,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "#475569",
+              fontSize: 16,
+              fontWeight: 700
+            }}
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Section A: Notes */}
+        <div>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+            <label style={{ fontSize: 12.5, fontWeight: 700, color: "#334155" }}>
+              Doctor's Instructions & Notes
+            </label>
+            <span style={{ fontSize: 11, color: "#94A3B8" }}>{notes.length}/1000</span>
+          </div>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value.slice(0, 1000))}
+            maxLength={1000}
+            rows={4}
+            placeholder="Advice, prescription notes, follow-up…"
+            style={{
+              width: "100%",
+              boxSizing: "border-box",
+              padding: "12px 14px",
+              borderRadius: 14,
+              border: "1.5px solid #E2E8F0",
+              fontSize: 13.5,
+              fontFamily: "inherit",
+              resize: "none",
+              outline: "none",
+              color: "#0F172A",
+              background: "#F8FAFC"
+            }}
+          />
+        </div>
+
+        {/* Section B: 4-digit OTP */}
+        <div>
+          <label style={{ display: "block", fontSize: 12.5, fontWeight: 700, color: "#334155", marginBottom: 6 }}>
+            Patient Verification Code
+          </label>
+          <input
+            type="text"
+            inputMode="numeric"
+            value={otp}
+            onChange={handleOtpChange}
+            placeholder="• • • •"
+            maxLength={4}
+            style={{
+              width: "100%",
+              boxSizing: "border-box",
+              padding: "12px 16px",
+              borderRadius: 14,
+              border: errorMsg ? "1.5px solid #EF4444" : "1.5px solid #E2E8F0",
+              fontSize: 24,
+              fontWeight: 800,
+              letterSpacing: "12px",
+              textAlign: "center",
+              fontFamily: "monospace",
+              outline: "none",
+              color: "#0F172A",
+              background: "#F8FAFC"
+            }}
+          />
+          <p style={{ margin: "6px 0 0", fontSize: 11.5, color: "#64748B", textAlign: "center" }}>
+            Ask the patient to read the 4-digit code shown in their app
+          </p>
+          {errorMsg && (
+            <p style={{ margin: "6px 0 0", fontSize: 12, color: "#DC2626", fontWeight: 600, textAlign: "center" }}>
+              {errorMsg}
+            </p>
+          )}
+        </div>
+
+        {/* Action Button */}
+        <button
+          onClick={handleVerify}
+          disabled={otp.length !== 4 || busy}
+          style={{
+            width: "100%",
+            padding: "14px",
+            borderRadius: 14,
+            border: "none",
+            background: otp.length === 4 && !busy ? "#0D9488" : "#CBD5E1",
+            color: "#ffffff",
+            fontSize: 14.5,
+            fontWeight: 800,
+            cursor: otp.length === 4 && !busy ? "pointer" : "not-allowed",
+            transition: "all 0.15s",
+            boxShadow: otp.length === 4 && !busy ? "0 4px 12px rgba(13,148,136,0.3)" : "none"
+          }}
+        >
+          {busy ? "Verifying with backend…" : "Verify OTP & close"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ═══ Full Screen: Consultation Chat (matching design spec) ═════════════════════════ */
+function CalendarChat({ patientName, onClose, specialty, subtitle }) {
+  const { messages, send, meId, ready, live } = useRealtimeChat(patientName);
+  const [text, setText] = useState("");
+  const [localSentMessages, setLocalSentMessages] = useState([]);
+  const [pendingAttachment, setPendingAttachment] = useState(null);
+  const [showAttachMenu, setShowAttachMenu] = useState(false);
+  const [selectedImageModal, setSelectedImageModal] = useState(null);
+  const endRef = useRef(null);
+  const photoInputRef = useRef(null);
+  const pdfInputRef = useRef(null);
+
+  const BASE_LIMIT = 25;
+
+  // Combine real-time Supabase messages and local synthetic messages
+  const allMessages = useMemo(() => {
+    const existingIds = new Set(messages.map((m) => m.id));
+    const uniqueLocal = localSentMessages.filter((m) => !existingIds.has(m.id));
+    return [...messages, ...uniqueLocal];
+  }, [messages, localSentMessages]);
+
+  // In doctor chat, count patient messages to display patient quota allowance
+  const patientSentCount = useMemo(() => {
+    return allMessages.filter(
+      (m) => meId && m.sender_id !== meId
+    ).length;
+  }, [allMessages, meId]);
+
+  const messagesRemaining = Math.max(0, BASE_LIMIT - patientSentCount);
+
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
+  }, [allMessages.length, pendingAttachment]);
+
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const handlePhotoSelect = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const processed = await processImageFile(file);
+      setPendingAttachment(processed);
+    } catch (err) {
+      toast(err?.message || "Failed to load photo");
+    } finally {
+      e.target.value = "";
+    }
+  };
+
+  const handlePdfSelect = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const processed = await processPdfFile(file);
+      setPendingAttachment(processed);
+    } catch (err) {
+      toast(err?.message || "Failed to load PDF");
+    } finally {
+      e.target.value = "";
+    }
+  };
+
+  const submit = async () => {
+    const t = text.trim();
+    if (!t && !pendingAttachment) return;
+    let bodyToSend = t;
+    if (pendingAttachment) {
+      bodyToSend = JSON.stringify({
+        _type: "attachment",
+        fileType: pendingAttachment.type,
+        name: pendingAttachment.name,
+        size: pendingAttachment.size,
+        dataUrl: pendingAttachment.dataUrl,
+        caption: t
+      });
+    }
+    setText("");
+    setPendingAttachment(null);
+    setShowAttachMenu(false);
+    const ok = await send(bodyToSend);
+    if (!ok) {
+      const fallbackMsg = {
+        id: "local_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6),
+        sender_id: meId || "sender",
+        recipient_id: "recipient",
+        body: bodyToSend,
+        created_at: new Date().toISOString(),
+        thread_key: "thread"
+      };
+      setLocalSentMessages((prev) => [...prev, fallbackMsg]);
+    }
+  };
+
+  const fmtTime = (iso) => {
+    try {
+      return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    } catch {
+      return "";
+    }
+  };
+
+  const getInitials = (n) => {
+    if (!n) return "VI";
+    const clean = n.replace(/^Dr\.?\s+/i, "").trim();
+    const parts = clean.split(/\s+/);
+    if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+    if (parts[0]) return parts[0].slice(0, 2).toUpperCase();
+    return "VI";
+  };
+
+  const displayName = patientName || "Dr. Vikram Iyer";
+  const initials = getInitials(displayName);
+  const sub = subtitle || specialty || "Women's Health / Gynecologist";
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Chat with ${displayName}`}
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 1100,
+        background: "#061A14",
+        display: "flex",
+        flexDirection: "column",
+        fontFamily: "'Plus Jakarta Sans', sans-serif",
+        color: "#fff"
+      }}
+    >
+      {/* Hidden File Pickers */}
+      <input
+        ref={photoInputRef}
+        type="file"
+        accept="image/*"
+        style={{ display: "none" }}
+        onChange={handlePhotoSelect}
+      />
+      <input
+        ref={pdfInputRef}
+        type="file"
+        accept="application/pdf,.pdf"
+        style={{ display: "none" }}
+        onChange={handlePdfSelect}
+      />
+
+      {/* Top Header */}
+      <header
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "12px 16px",
+          background: "#061A14",
+          borderBottom: "1px solid #0E2E23",
+          flexShrink: 0
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <button
+            onClick={onClose}
+            aria-label="Back to appointments"
+            style={{
+              background: "transparent",
+              border: "none",
+              color: "#fff",
+              cursor: "pointer",
+              padding: 4,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center"
+            }}
+          >
+            <ChevronLeft size={24} />
+          </button>
+
+          <div
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: "50%",
+              background: "#123328",
+              border: "1.5px solid #10B981",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontWeight: 800,
+              fontSize: 14,
+              color: "#10B981"
+            }}
+          >
+            {initials}
+          </div>
+
+          <div>
+            <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800, color: "#fff", lineHeight: 1.2 }}>
+              {displayName}
+            </h3>
+            <p style={{ margin: "2px 0 0", fontSize: 11, color: "#8EE0C4" }}>
+              {live ? "Online" : "Active"} · {sub}
+            </p>
+          </div>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <button
+            onClick={() => toast("Consultation History")}
+            aria-label="View history"
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: "50%",
+              background: "transparent",
+              border: "none",
+              color: "#C5D1B8",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center"
+            }}
+          >
+            <Eye size={19} />
+          </button>
+          <button
+            onClick={() => toast(`Calling ${displayName}…`)}
+            aria-label={`Call ${displayName}`}
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: "50%",
+              background: "transparent",
+              border: "none",
+              color: "#C5D1B8",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center"
+            }}
+          >
+            <Phone size={19} />
+          </button>
+        </div>
+      </header>
+
+      {/* Top 3 Metric Cards */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr 1fr",
+          gap: 10,
+          padding: "10px 14px",
+          background: "#04120E",
+          borderBottom: "1px solid #0E2E23",
+          flexShrink: 0
+        }}
+      >
+        <div
+          style={{
+            background: "#081E17",
+            borderRadius: 14,
+            padding: "10px 8px",
+            textAlign: "center",
+            border: "1px solid #123328"
+          }}
+        >
+          <div style={{ color: messagesRemaining > 5 ? "#10B981" : messagesRemaining > 0 ? "#F59E0B" : "#EF4444", fontWeight: 800, fontSize: 17 }}>
+            {messagesRemaining}/{BASE_LIMIT}
+          </div>
+          <div style={{ color: "#7B9E93", fontSize: 11, fontWeight: 600, marginTop: 2 }}>Messages Left</div>
+        </div>
+
+        <div
+          style={{
+            background: "#081E17",
+            borderRadius: 14,
+            padding: "10px 8px",
+            textAlign: "center",
+            border: "1px solid #123328"
+          }}
+        >
+          <div style={{ color: "#F59E0B", fontWeight: 800, fontSize: 17 }}>10:00</div>
+          <div style={{ color: "#7B9E93", fontSize: 11, fontWeight: 600, marginTop: 2 }}>Audio Left</div>
+        </div>
+
+        <div
+          style={{
+            background: "#081E17",
+            borderRadius: 14,
+            padding: "10px 8px",
+            textAlign: "center",
+            border: "1px solid #123328"
+          }}
+        >
+          <div style={{ color: "#38BDF8", fontWeight: 800, fontSize: 17 }}>2/2</div>
+          <div style={{ color: "#7B9E93", fontSize: 11, fontWeight: 600, marginTop: 2 }}>Calls Left</div>
+        </div>
+      </div>
+
+      {/* Main Chat Stream */}
+      <main
+        style={{
+          flex: 1,
+          overflowY: "auto",
+          padding: "12px 14px",
+          display: "flex",
+          flexDirection: "column",
+          gap: 12,
+          background: "#061A14",
+          position: "relative"
+        }}
+      >
+        {/* End-to-End Encryption Notice */}
+        <div
+          style={{
+            margin: "4px auto 12px",
+            maxWidth: "88%",
+            background: "#1E2A18",
+            border: "1px solid rgba(245, 158, 11, 0.18)",
+            borderRadius: 12,
+            padding: "10px 14px",
+            textAlign: "center",
+            color: "#C5D1B8",
+            fontSize: 11.5,
+            lineHeight: 1.45
+          }}
+        >
+          <ShieldCheck size={14} style={{ display: "inline", verticalAlign: "-2px", marginRight: 5, color: "#F59E0B" }} />
+          Messages and calls are end-to-end encrypted. No one outside this chat, not even MedConnect, can read or listen to them.
+        </div>
+
+        {ready && allMessages.length === 0 && (
+          <p style={{ margin: "auto", fontSize: 13, color: "#64748B", textAlign: "center" }}>
+            {live
+              ? "No messages yet. Send follow-up advice or questions below."
+              : "Connecting to the chat thread…"}
+          </p>
+        )}
+
+        {allMessages.map((m) => {
+          const mine = (meId && m.sender_id === meId) || m.id?.startsWith("local_");
+          const att = parseChatAttachment(m.body);
+          return (
+            <div
+              key={m.id}
+              style={{
+                alignSelf: mine ? "flex-end" : "flex-start",
+                maxWidth: "78%",
+                background: mine ? "#1A5644" : "#0F2B23",
+                color: "#FFFFFF",
+                border: mine ? "1px solid #25745C" : "1px solid #184437",
+                borderRadius: mine ? "16px 16px 4px 16px" : "16px 16px 16px 4px",
+                padding: "10px 14px",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.25)"
+              }}
+            >
+              {att ? (
+                <ChatAttachmentBubbleContent
+                  attachment={att}
+                  mine={mine}
+                  onViewImage={(img) => setSelectedImageModal(img)}
+                />
+              ) : (
+                <p style={{ margin: 0, fontSize: 14, lineHeight: 1.45 }}>{m.body}</p>
+              )}
+              <p
+                style={{
+                  margin: "4px 0 0",
+                  fontSize: 10,
+                  color: mine ? "#8EE0C4" : "#7B9E93",
+                  textAlign: "right",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "flex-end",
+                  gap: 3
+                }}
+              >
+                <span>{fmtTime(m.created_at)}</span>
+                {mine && <span style={{ fontSize: 11 }}>✓</span>}
+              </p>
+            </div>
+          );
+        })}
+        <div ref={endRef} />
+
+        {/* Floating Tool Buttons on Right */}
+        <div style={{ position: "fixed", right: 16, bottom: "calc(74px + env(safe-area-inset-bottom))", display: "flex", flexDirection: "column", gap: 10, zIndex: 10 }}>
+          <button
+            onClick={() => toast("Prescriptions & Notes")}
+            aria-label="Prescriptions tool"
+            style={{
+              width: 42,
+              height: 42,
+              borderRadius: "50%",
+              background: "#fff",
+              border: "none",
+              boxShadow: "0 4px 14px rgba(0,0,0,0.4)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer"
+            }}
+          >
+            <Scissors size={18} color="#061A14" />
+          </button>
+
+          <button
+            onClick={() => toast("MedConnect AI Assistant")}
+            aria-label="AI assistant"
+            style={{
+              width: 42,
+              height: 42,
+              borderRadius: "50%",
+              background: "#fff",
+              border: "none",
+              boxShadow: "0 4px 14px rgba(0,0,0,0.4)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer"
+            }}
+          >
+            <div
+              style={{
+                width: 24,
+                height: 24,
+                borderRadius: "50%",
+                background: "linear-gradient(135deg,#0284C7,#2563EB)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center"
+              }}
+            >
+              <MessageSquare size={13} color="#fff" />
+            </div>
+          </button>
+        </div>
+      </main>
+
+      {/* Attachment Staging Preview Bar */}
+      {pendingAttachment && (
+        <AttachmentPreviewBar
+          attachment={pendingAttachment}
+          onRemove={() => setPendingAttachment(null)}
+        />
+      )}
+
+      {/* Input Row */}
+      <div
+        style={{
+          position: "relative",
+          padding: "10px 14px calc(10px + env(safe-area-inset-bottom))",
+          background: "#061A14",
+          borderTop: "1px solid #0E2E23",
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          flexShrink: 0
+        }}
+      >
+        {/* Attachment Options Menu */}
+        {showAttachMenu && (
+          <AttachmentMenu
+            onSelectPhoto={() => photoInputRef.current?.click()}
+            onSelectPdf={() => pdfInputRef.current?.click()}
+            onClose={() => setShowAttachMenu(false)}
+          />
+        )}
+
+        <button
+          onClick={() => setShowAttachMenu((prev) => !prev)}
+          aria-label="Add attachment: photo or PDF"
+          title="Attach photo or PDF file"
+          style={{
+            width: 42,
+            height: 42,
+            borderRadius: "50%",
+            background: showAttachMenu ? "#10B981" : "#123328",
+            border: "1px solid #1C4D3E",
+            color: "#fff",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            flexShrink: 0,
+            transition: "background 0.2s"
+          }}
+        >
+          <Plus
+            size={22}
+            color="#fff"
+            style={{
+              transform: showAttachMenu ? "rotate(45deg)" : "none",
+              transition: "transform 0.2s"
+            }}
+          />
+        </button>
+
+        <input
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") submit();
+          }}
+          placeholder={pendingAttachment ? "Add a caption (optional)" : "Type a message"}
+          style={{
+            flex: 1,
+            background: "#0A241D",
+            border: "1px solid #144436",
+            borderRadius: 9999,
+            padding: "11px 18px",
+            color: "#fff",
+            fontSize: 14,
+            fontFamily: "'Plus Jakarta Sans', sans-serif",
+            outline: "none"
+          }}
+        />
+
+        <button
+          onClick={submit}
+          disabled={!text.trim() && !pendingAttachment}
+          aria-label="Send message"
+          style={{
+            width: 42,
+            height: 42,
+            borderRadius: "50%",
+            background: "#10B981",
+            border: "none",
+            color: "#fff",
+            cursor: text.trim() || pendingAttachment ? "pointer" : "default",
+            opacity: text.trim() || pendingAttachment ? 1 : 0.4,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            flexShrink: 0,
+            transition: "opacity 0.2s"
+          }}
+        >
+          <Send size={18} color="#fff" style={{ transform: "translate(1px, -1px)" }} />
+        </button>
+      </div>
+
+      {/* Image Lightbox Modal */}
+      <ImageLightboxModal
+        image={selectedImageModal}
+        onClose={() => setSelectedImageModal(null)}
+      />
+    </div>
+  );
+}
+
 function BookingCalendar({ title = "My Schedule", subtitle = "Your patient appointments", accent = "#0D9488", bookings, onClose }) {
   const today = new Date();
   const [vy, setVy] = useState(today.getFullYear());
   const [vm, setVm] = useState(today.getMonth());
   const [sel, setSel] = useState(today.toDateString());
+  const [doneMap, setDoneMap] = useState({});
+  const [overDialogItem, setOverDialogItem] = useState(null);
+  const [chatPatient, setChatPatient] = useState(null);
+
   const keyOf = (d) => d.toDateString();
   const byDay = {};
   (bookings || []).forEach(b => { const k = keyOf(b.date); (byDay[k] = byDay[k] || []).push(b); });
@@ -2171,7 +3029,13 @@ function BookingCalendar({ title = "My Schedule", subtitle = "Your patient appoi
   const selList = byDay[sel] || [];
   const fmtTime = (d) => d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
   const arrowBtn = { width: 34, height: 34, borderRadius: "50%", background: "#fff", border: "1px solid #E2E8F0", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "#0F172A", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" };
-  
+
+  const handleConsultationOver = (item, notes) => {
+    const rowKey = item.id || `${item.title}_${item.date.getTime()}`;
+    setDoneMap(prev => ({ ...prev, [rowKey]: { status: "Consultation over", notes } }));
+    setOverDialogItem(null);
+  };
+
   return (
     <div style={{ position: "absolute", inset: 0, zIndex: 60, background: "#EEF4F1", display: "flex", flexDirection: "column", fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
       {/* Top Header Bar */}
@@ -2251,35 +3115,116 @@ function BookingCalendar({ title = "My Schedule", subtitle = "Your patient appoi
               const modeLower = (b.mode || "").toLowerCase();
               const isHomeVisit = modeLower === "home_visit" || modeLower === "home" || subLower.includes("home");
               const isEmerg = b.color === C.emerg || modeLower === "emergency" || subLower.includes("emergency");
-              const badgeBg = isEmerg ? "#FEE2E2" : isHomeVisit ? "#DBEAFE" : "#E4F6EE";
-              const badgeFg = isEmerg ? "#DC2626" : isHomeVisit ? "#2563EB" : "#0C9668";
-              const timeFg = isEmerg ? "#DC2626" : isHomeVisit ? "#2563EB" : "#0C9668";
-              const barBg = isEmerg ? "#DC2626" : isHomeVisit ? "#2563EB" : "#0C9668";
+              const rowKey = b.id || `${b.title}_${b.date.getTime()}`;
+              const doneInfo = doneMap[rowKey];
+              const statusLower = (b.status || "").toLowerCase();
+              const rawStatusLower = (b.rawStatus || "").toLowerCase();
+              const isCancelled = statusLower === "cancelled" || statusLower === "canceled" || rawStatusLower === "cancelled" || rawStatusLower === "canceled";
+              const isDone = !isCancelled && (!!doneInfo || b.status === "Consultation over" || statusLower === "completed");
+              const isPatientView = (title || "").toLowerCase().includes("patient") || (title || "").toLowerCase().includes("my bookings");
+              const displayStatus = isCancelled ? "Cancelled" : isDone ? "Consultation over" : b.status;
+              const badgeBg = isCancelled ? "#FEE2E2" : isDone ? "#D1FAE5" : isEmerg ? "#FEE2E2" : isHomeVisit ? "#DBEAFE" : "#E4F6EE";
+              const badgeFg = isCancelled ? "#DC2626" : isDone ? "#065F46" : isEmerg ? "#DC2626" : isHomeVisit ? "#2563EB" : "#0C9668";
+              const timeFg = isCancelled ? "#DC2626" : isEmerg ? "#DC2626" : isHomeVisit ? "#2563EB" : "#0C9668";
+              const barBg = isCancelled ? "#DC2626" : isEmerg ? "#DC2626" : isHomeVisit ? "#2563EB" : "#0C9668";
 
               return (
-                <div key={i} style={{ background: "#ffffff", borderRadius: 20, padding: "14px 16px", display: "flex", alignItems: "center", gap: 14, boxShadow: "0 4px 14px rgba(15,23,42,0.04)", border: "1px solid #E2E8F0" }}>
-                  {/* Left Column: Time */}
-                  <div style={{ width: 50, flexShrink: 0, textAlign: "center" }}>
-                    <p style={{ margin: 0, fontWeight: 800, color: timeFg, fontSize: 15, lineHeight: 1.1 }}>{timeParts[0]}</p>
-                    <p style={{ margin: "2px 0 0", fontSize: 10, color: "#64748B", fontWeight: 800, letterSpacing: 0.5 }}>{timeParts[1]}</p>
+                <div key={i} style={{ background: "#ffffff", borderRadius: 20, padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10, boxShadow: "0 4px 14px rgba(15,23,42,0.04)", border: "1px solid #E2E8F0" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                    {/* Left Column: Time */}
+                    <div style={{ width: 50, flexShrink: 0, textAlign: "center" }}>
+                      <p style={{ margin: 0, fontWeight: 800, color: timeFg, fontSize: 15, lineHeight: 1.1 }}>{timeParts[0]}</p>
+                      <p style={{ margin: "2px 0 0", fontSize: 10, color: "#64748B", fontWeight: 800, letterSpacing: 0.5 }}>{timeParts[1]}</p>
+                    </div>
+                    {/* Vertical Accent Line */}
+                    <div style={{ width: 3.5, height: 34, borderRadius: 2, background: barBg, flexShrink: 0 }} />
+                    {/* Middle Column: Details */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ margin: 0, fontWeight: 800, color: "#0F172A", fontSize: 14.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{b.title}</p>
+                      <p style={{ margin: "2px 0 0", fontSize: 12, color: "#64748B", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{b.sub}</p>
+                    </div>
+                    {/* Right Column: Status Badge */}
+                    <span style={{ flexShrink: 0, fontSize: 11.5, fontWeight: 700, color: badgeFg, background: badgeBg, borderRadius: 999, padding: "5px 13px" }}>
+                      {displayStatus}
+                    </span>
                   </div>
-                  {/* Vertical Accent Line */}
-                  <div style={{ width: 3.5, height: 34, borderRadius: 2, background: barBg, flexShrink: 0 }} />
-                  {/* Middle Column: Details */}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ margin: 0, fontWeight: 800, color: "#0F172A", fontSize: 14.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{b.title}</p>
-                    <p style={{ margin: "2px 0 0", fontSize: 12, color: "#64748B", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{b.sub}</p>
-                  </div>
-                  {/* Right Column: Status Badge */}
-                  <span style={{ flexShrink: 0, fontSize: 11.5, fontWeight: 700, color: badgeFg, background: badgeBg, borderRadius: 999, padding: "5px 13px" }}>
-                    {b.status}
-                  </span>
+
+                  {/* Action Buttons: Consultation over OR Chat (hidden for cancelled appointments) */}
+                  {!isCancelled && (
+                    <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 8 }}>
+                      {isDone ? (
+                        <button
+                          onClick={() => setChatPatient(b.title)}
+                          aria-label={`Chat with ${b.title}`}
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 6,
+                            background: "#0D9488",
+                            color: "#ffffff",
+                            border: "none",
+                            borderRadius: 999,
+                            padding: "6px 14px",
+                            fontSize: 12,
+                            fontWeight: 700,
+                            cursor: "pointer",
+                            boxShadow: "0 1px 3px rgba(13,148,136,0.3)"
+                          }}
+                        >
+                          <MessageSquare size={14} /> Chat
+                        </button>
+                      ) : !isPatientView ? (
+                        <button
+                          onClick={() => setOverDialogItem(b)}
+                          style={{
+                            border: "1.5px solid #0D9488",
+                            background: "#ffffff",
+                            color: "#0D9488",
+                            borderRadius: 999,
+                            padding: "6px 16px",
+                            fontSize: 12,
+                            fontWeight: 700,
+                            cursor: "pointer",
+                            transition: "all 0.15s",
+                            whiteSpace: "nowrap"
+                          }}
+                        >
+                          Consultation over
+                        </button>
+                      ) : null}
+                    </div>
+                  )}
+
+                  {/* Notes beneath row when consultation is marked over */}
+                  {!isCancelled && doneInfo?.notes && (
+                    <div style={{ padding: "8px 12px", background: "#F8FAFC", borderRadius: 10, border: "1px solid #E2E8F0", fontSize: 12.5, color: "#334155" }}>
+                      <p style={{ margin: 0, fontWeight: 700, fontSize: 11, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5 }}>Doctor's Notes</p>
+                      <p style={{ margin: "4px 0 0", whiteSpace: "pre-wrap" }}>{doneInfo.notes}</p>
+                    </div>
+                  )}
                 </div>
               );
             })}
           </div>
         )}
       </div>
+
+      {/* Bottom sheet dialog: Consultation Over */}
+      {overDialogItem && (
+        <ConsultationOverDialog
+          item={overDialogItem}
+          onClose={() => setOverDialogItem(null)}
+          onConfirm={handleConsultationOver}
+        />
+      )}
+
+      {/* Full screen dialog: Post-consultation Chat */}
+      {chatPatient && (
+        <CalendarChat
+          patientName={chatPatient}
+          onClose={() => setChatPatient(null)}
+        />
+      )}
     </div>
   );
 }
@@ -3402,6 +4347,58 @@ function SurgeryInvitesCard() {
   );
 }
 
+/* Inline hub calendar: week strip + (selected day | previous patients) side by side. */
+function HubCalendarCard({ bookings, accent = "#7C3AED", onOpenFull }) {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const [sel, setSel] = React.useState(today.toDateString());
+  const days = Array.from({ length: 7 }, (_, i) => { const d = new Date(today); d.setDate(today.getDate() - 1 + i); return d; });
+  const list = bookings || [];
+  const onDay = list.filter(b => b.date.toDateString() === sel).sort((a, b) => a.date - b.date);
+  const previous = list.filter(b => b.date < new Date() && b.status === "Completed").sort((a, b) => b.date - a.date).slice(0, 4);
+  const t = (d) => d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" });
+  const box = { flex: 1, minWidth: 0, background: "#F9FAFB", borderRadius: 12, padding: "9px 10px" };
+  return (
+    <div style={{ background: "#fff", border: "1px solid #E5E7EB", borderRadius: 16, padding: 12, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+        <p style={{ margin: 0, fontWeight: 800, fontSize: 13.5, color: "#111827" }}>📅 Hub calendar</p>
+        <button type="button" onClick={onOpenFull} style={{ background: "none", border: 0, color: accent, fontWeight: 800, fontSize: 11.5, cursor: "pointer" }}>Full calendar ›</button>
+      </div>
+      <div style={{ display: "flex", gap: 4, marginBottom: 10 }}>
+        {days.map(d => {
+          const k = d.toDateString(); const active = k === sel; const n = list.filter(b => b.date.toDateString() === k).length;
+          return (
+            <button key={k} type="button" onClick={() => setSel(k)} style={{ flex: 1, border: 0, borderRadius: 10, padding: "6px 0", cursor: "pointer", background: active ? accent : "#F3F4F6", color: active ? "#fff" : "#374151", fontFamily: "inherit" }}>
+              <span style={{ display: "block", fontSize: 9.5, fontWeight: 700, opacity: .85 }}>{d.toLocaleDateString("en-IN", { weekday: "short" })}</span>
+              <span style={{ display: "block", fontSize: 14, fontWeight: 800 }}>{d.getDate()}</span>
+              <span style={{ display: "block", height: 5, marginTop: 2 }}>{n > 0 && <span style={{ display: "inline-block", width: 5, height: 5, borderRadius: "50%", background: active ? "#fff" : accent }} />}</span>
+            </button>
+          );
+        })}
+      </div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <div style={box}>
+          <p style={{ margin: "0 0 6px", fontWeight: 800, fontSize: 11, color: "#111827" }}>{sel === today.toDateString() ? "Today" : new Date(sel).toLocaleDateString("en-IN", { day: "numeric", month: "short" })} · {onDay.length}</p>
+          {onDay.length ? onDay.map((b, i) => (
+            <div key={i} style={{ marginBottom: 6 }}>
+              <p style={{ margin: 0, fontSize: 10.5, fontWeight: 800, color: b.color || accent }}>{t(b.date)}</p>
+              <p style={{ margin: 0, fontSize: 10.5, color: "#374151", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{b.title}</p>
+            </div>
+          )) : <p style={{ margin: 0, fontSize: 10.5, color: "#9CA3AF" }}>No bookings</p>}
+        </div>
+        <div style={box}>
+          <p style={{ margin: "0 0 6px", fontWeight: 800, fontSize: 11, color: "#111827" }}>Previous patients</p>
+          {previous.length ? previous.map((b, i) => (
+            <div key={i} style={{ marginBottom: 6 }}>
+              <p style={{ margin: 0, fontSize: 10.5, fontWeight: 700, color: "#374151", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{b.sub || b.title}</p>
+              <p style={{ margin: 0, fontSize: 10, color: "#9CA3AF" }}>{b.date.toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</p>
+            </div>
+          )) : <p style={{ margin: 0, fontSize: 10.5, color: "#9CA3AF" }}>None yet</p>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function HubPortalApp({ req, hubReq, hubActions, scanDispatch, scanDispatchActions, sevaActions }) {
   const [hubChat, setHubChat] = React.useState(null);
   const [showSurgery, setShowSurgery] = React.useState(false); // surgery team booking overlay
@@ -3519,7 +4516,9 @@ function HubPortalApp({ req, hubReq, hubActions, scanDispatch, scanDispatchActio
   ];
 
   return (
-    <div className="w-full h-full flex flex-col overflow-hidden" style={{ background: C.surface }}>
+    <div className="w-full h-full flex flex-col hub-scroll" style={{ background: C.surface, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
+      {/* Whole hub screen scrolls; sections keep their natural height instead of being squeezed to 0. */}
+      <style>{`.hub-scroll > * { flex: 0 0 auto !important; min-height: auto !important; }`}</style>
       {/* Hub Header */}
       <div className="flex-shrink-0 px-5 py-4" style={{ background: hubOnline ? gradHub : "#3A4A45", transition: "background .3s" }}>
         <div className="flex items-center justify-between text-white mb-3">
@@ -3528,33 +4527,25 @@ function HubPortalApp({ req, hubReq, hubActions, scanDispatch, scanDispatchActio
               <Building2 size={16} />
               <span className="font-extrabold" style={{ fontSize: 16 }}>{LOGGED_HUB.name}</span>
             </div>
-            <p className="text-xs opacity-75">{LOGGED_HUB.address} · Koregaon Park, Pune</p>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={() => setShowSeva(true)} className="rounded-full flex items-center justify-center" style={{ width: 34, height: 34, background: "rgba(255,255,255,.22)", border: "none", cursor: "pointer", color: "#fff" }} aria-label="Enrol a patient for free care"><HandCoins size={16} /></button>
-            <button onClick={() => setShowCal(true)} className="rounded-full flex items-center justify-center" style={{ width: 34, height: 34, background: "rgba(255,255,255,.22)", border: "none", cursor: "pointer", color: "#fff" }} aria-label="Hub schedule"><Calendar size={16} /></button>
             <ModuleProfilePill />
             <div className="flex flex-col items-end gap-1.5">
               <button onClick={() => { const n = !hubOnline; setHubOnline(n); toast(n ? "Hub active · accepting walk-ins & dispatch" : "Hub inactive · dispatch paused"); }} className="flex items-center gap-1.5 rounded-full px-2.5 py-1 font-bold" style={{ background: "rgba(255,255,255,.22)", fontSize: 10.5, color: "#fff", border: "none", cursor: "pointer" }}>
                 <span className="w-1.5 h-1.5 rounded-full" style={{ background: hubOnline ? "#4ADE80" : "#FCA5A5", animation: hubOnline ? "pulse 1.4s infinite" : "none" }} />
                 {hubOnline ? "Hub Active" : "Hub Inactive"}
               </button>
-              <span className="rounded-full px-2.5 py-1 font-bold"
-                style={{ background: "rgba(255,255,255,.22)", fontSize: 10, color: "rgba(255,255,255,.9)" }}>
-                Partner Pro
-              </span>
             </div>
           </div>
         </div>
         {showCal && <BookingCalendar title="Hub Schedule" subtitle="Bookings across the hub" accent={C.hub} bookings={HUB_BOOKINGS} onClose={() => setShowCal(false)} />}
         {showSeva && <SevaEnrollOverlay context="hub" onClose={() => setShowSeva(false)} onEnroll={(p) => sevaActions && sevaActions.enroll(p)} />}
         {/* Live stats strip */}
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-3 gap-2">
           {[
-            ["Rooms", `${rooms.filter(r => r.status === "occupied").length}/${LOGGED_HUB.rooms}`],
-            ["Today", "34 visits"],
-            ["Revenue", "₹28,400"],
-            ["Avg wait", "7 min"],
+            ["Visits", "34"],
+            ["Today's revenue", "₹28,400"],
+            ["Avg doctor arrival", "7 min"],
           ].map(([l, v]) => (
             <div key={l} className="rounded-xl py-2 text-center text-white" style={{ background: "rgba(255,255,255,.18)" }}>
               <p className="font-extrabold" style={{ fontSize: 13 }}>{v}</p>
@@ -3562,6 +4553,16 @@ function HubPortalApp({ req, hubReq, hubActions, scanDispatch, scanDispatchActio
             </div>
           ))}
         </div>
+      </div>
+
+      {/* Live emergency alerts (accept) + active admissions — real data from Supabase */}
+      <div className="px-4 pt-3">
+        <EmergencyResponderPanel kind="hospital" />
+      </div>
+
+      {/* Hub calendar — moved from the header icon; schedule + previous patients side by side */}
+      <div className="px-4 pt-3">
+        <HubCalendarCard bookings={HUB_BOOKINGS} accent={C.hub} onOpenFull={() => setShowCal(true)} />
       </div>
 
       {/* Preferred Doctors capsule — mirrors patient app */}
@@ -4182,6 +5183,17 @@ function HubPortalApp({ req, hubReq, hubActions, scanDispatch, scanDispatchActio
           onBroadcast={() => { const hr = hubRepeat; setHubRepeat(null); hubActions.book({ spec: hr.spec, emergency: dispEmerg, room: dispRoom, fare: hr.fare, kind: hr.cat, routeMode: dispRoute }); }}
           onClose={() => setHubRepeat(null)} />
       )}
+      {/* Enrol a patient for free care (Seva) — moved from the header to the end of the screen */}
+      <div className="px-4 pt-2 pb-6">
+        <button type="button" onClick={() => setShowSeva(true)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, background: "#ECFDF5", border: "1.5px solid #A7F3D0", borderRadius: 14, padding: "12px 14px", cursor: "pointer", textAlign: "left", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
+          <span style={{ width: 34, height: 34, borderRadius: "50%", background: "#059669", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><HandCoins size={17} /></span>
+          <span style={{ flex: 1 }}>
+            <span style={{ display: "block", fontWeight: 800, fontSize: 13, color: "#064E3B" }}>MyDox Seva · Free care enrolment</span>
+            <span style={{ display: "block", fontSize: 11, color: "#047857" }}>Enrol a patient who cannot afford treatment</span>
+          </span>
+          <ChevronRight size={16} style={{ color: "#059669" }} />
+        </button>
+      </div>
       {hubDirect && (
         <DirectRequestOverlay
           provider={hubDirect.provider} spec={hubDirect.spec} who="your hub"
@@ -6375,7 +7387,7 @@ function AcceptedPatientsCard({ rows, onOpenHistory }) {
     if (!uid) return [];
     return (rows || []).filter(r => {
       if (r.accepted_by !== uid) return false;
-      if (r.status === "accepted") return true;
+      if (["accepted", "assigned", "converging", "en_route", "arrived", "in_progress", "otp_verified"].includes(r.status)) return true;
       if (r.status === "completed" && isToday(r.completed_at || r.updated_at)) return true;
       return false;
     }).sort((a, b) => {
@@ -6637,247 +7649,26 @@ function HistoryCompletedActions({ requestId, providerName, specialty }) {
   );
 }
 
-/* ── Patient-side previous consultations ─────────────────────────
-   Lists this patient's care_requests grouped by outcome (paid, unpaid,
-   pending OTP, in progress, cancelled, failed, completed). Each row
-   carries a short "next step" advice hint. */
 function PatientHistoryOverlay({ onClose, onRebook }) {
-  const [uid, setUid] = useState(null);
-  const [rows, setRows] = useState([]);
-  const [names, setNames] = useState({});
-  const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState("all");
-
-  useEffect(() => {
-    let m = true;
-    (async () => {
-      const { data: sess } = await supabase.auth.getSession();
-      const u = sess.session?.user?.id || null;
-      if (!m) return;
-      setUid(u);
-      if (!u) { setLoading(false); return; }
-      const { data } = await supabase.from("care_requests")
-        .select("id, patient_id, specialty, emergency, accepted_by, accepted_at, status, paid_at, amount, otp, otp_verified_at, arrival_deadline, completed_at, created_at, updated_at")
-        .eq("patient_id", u)
-        .order("created_at", { ascending: false })
-        .limit(200);
-      if (!m) return;
-      const list = data || [];
-      setRows(list);
-      const provIds = Array.from(new Set(list.map(r => r.accepted_by).filter(Boolean)));
-      if (provIds.length) {
-        const { data: profs } = await supabase.from("profiles").select("id, full_name").in("id", provIds);
-        if (!m) return;
-        const nm = {}; (profs || []).forEach(p => { nm[p.id] = p.full_name || "Provider"; });
-        setNames(nm);
-      }
-      setLoading(false);
-    })();
-    return () => { m = false; };
-  }, []);
-
-  function classify(r) {
-    if (r.status === "completed") return { key: "completed", label: "Consultation over", color: "#065F46", bg: "#D1FAE5", advice: "Rate the doctor and book a follow-up if needed." };
-    if (r.status === "cancelled") return { key: "cancelled", label: "Cancelled", color: "#4B5563", bg: "#F3F4F6", advice: "You can book again anytime — nothing was charged." };
-    if (r.status === "failed") return { key: "failed", label: "Failed / expired", color: "#B91C1C", bg: "#FEE2E2", advice: "Payment window expired. Rebook if you still need care." };
-    if (r.status === "open") return { key: "pending", label: "Finding medico", color: "#92400E", bg: "#FEF3C7", advice: "Still searching. You can wait or cancel and try a nearby hub." };
-    if (r.status === "accepted") {
-      if (!r.paid_at) return { key: "unpaid", label: "Unpaid — awaiting payment", color: "#B45309", bg: "#FEF3C7", advice: "Complete the payment so your medico can be dispatched." };
-      if (!r.otp_verified_at) return { key: "paid_pending", label: "Paid — OTP pending", color: "#92400E", bg: "#FEF3C7", advice: "Meet the doctor in person and share your 4-digit OTP." };
-      return { key: "in_progress", label: "Consultation in progress", color: "#1E40AF", bg: "#DBEAFE", advice: "Tap 'Consultation over' once the doctor is done." };
-    }
-    return { key: "other", label: r.status || "—", color: "#4B5563", bg: "#F3F4F6", advice: "" };
-  }
-
-  const enriched = useMemo(() => rows.map(r => ({ r, cat: classify(r) })), [rows]);
-  const counts = useMemo(() => {
-    const c = { all: enriched.length, unpaid: 0, paid_pending: 0, in_progress: 0, pending: 0, completed: 0, cancelled: 0, failed: 0 };
-    enriched.forEach(({ cat }) => { if (c[cat.key] !== undefined) c[cat.key]++; });
-    return c;
-  }, [enriched]);
-  const visible = filter === "all" ? enriched : enriched.filter(x => x.cat.key === filter);
-  const chips = [
-    ["all", "All"], ["unpaid", "Unpaid"], ["paid_pending", "OTP pending"], ["in_progress", "In progress"],
-    ["pending", "Finding"], ["completed", "Over"], ["cancelled", "Cancelled"], ["failed", "Failed"],
-  ];
-
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.55)", zIndex: 70, display: "flex", justifyContent: "center", alignItems: "flex-end" }}>
-      <div style={{ width: "100%", maxWidth: 420, background: "#fff", borderTopLeftRadius: 22, borderTopRightRadius: 22, maxHeight: "88vh", display: "flex", flexDirection: "column", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
-        <div style={{ padding: "14px 16px", borderBottom: `1px solid ${C.line}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div>
-            <p style={{ margin: 0, fontWeight: 800, color: C.ink, fontSize: 15 }}>Previous consultations</p>
-            <p style={{ margin: "2px 0 0", fontSize: 11, color: C.sub, fontWeight: 600 }}>Status, amount and next-step advice</p>
-          </div>
-          <button onClick={onClose} style={{ background: "transparent", border: "none", fontSize: 22, color: C.sub, cursor: "pointer", lineHeight: 1 }}>×</button>
-        </div>
-        <div style={{ padding: "10px 12px", display: "flex", gap: 6, overflowX: "auto", borderBottom: `1px solid ${C.line}` }}>
-          {chips.map(([k, l]) => (
-            <button key={k} onClick={() => setFilter(k)} style={{ flexShrink: 0, background: filter === k ? C.primary : C.canvas, color: filter === k ? "#fff" : C.ink, border: "none", borderRadius: 99, padding: "6px 11px", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
-              {l}{counts[k] ? ` · ${counts[k]}` : ""}
-            </button>
-          ))}
-        </div>
-        <div style={{ flex: 1, overflowY: "auto", padding: "10px 14px 20px" }}>
-          {["all", "completed"].includes(filter) && <HomeVisitPanel audience="patient" completedOnly />}
-          {loading && <p style={{ color: C.sub, fontSize: 12 }}>Loading…</p>}
-          {!loading && visible.length === 0 && <p style={{ color: C.sub, fontSize: 12, marginTop: 14 }}>No consultations in this category yet.</p>}
-          {visible.map(({ r, cat }) => {
-            const providerName = r.accepted_by ? (names[r.accepted_by] || "Provider") : "—";
-            const when = new Date(r.created_at).toLocaleString([], { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
-            return (
-              <div key={r.id} style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 14, padding: "11px 12px", marginTop: 8 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ margin: 0, fontWeight: 800, color: C.ink, fontSize: 13 }}>{r.emergency ? "🚨 " : ""}{r.specialty || "Consultation"}</p>
-                    <p style={{ margin: "2px 0 0", fontSize: 10.5, color: C.sub, fontWeight: 600 }}>{providerName} · {when}</p>
-                  </div>
-                  {cat.key === "completed" && <HistoryCompletedActions requestId={r.id} providerName={providerName} specialty={r.specialty} />}
-                  <span style={{ background: cat.bg, color: cat.color, fontSize: 10, fontWeight: 800, borderRadius: 99, padding: "3px 8px", flexShrink: 0, whiteSpace: "nowrap" }}>{cat.label}</span>
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
-                  {r.amount != null && <span style={{ fontSize: 10.5, fontWeight: 800, color: r.paid_at ? "#065F46" : C.sub, background: r.paid_at ? "#D1FAE5" : C.canvas, borderRadius: 99, padding: "2px 8px" }}>{r.paid_at ? "Paid" : "Unpaid"} · {inr(r.amount)}</span>}
-                  {r.otp_verified_at && <span style={{ fontSize: 10.5, fontWeight: 800, color: "#1E40AF", background: "#DBEAFE", borderRadius: 99, padding: "2px 8px" }}>OTP verified</span>}
-                  {r.completed_at && <span style={{ fontSize: 10.5, fontWeight: 700, color: C.sub }}>Completed {new Date(r.completed_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>}
-                </div>
-                {cat.advice && (
-                  <p style={{ margin: "8px 0 0", fontSize: 11, color: cat.color, fontWeight: 700, lineHeight: 1.4, background: cat.bg, borderRadius: 10, padding: "7px 9px" }}>
-                    💡 {cat.advice}
-                  </p>
-                )}
-                {(cat.key === "cancelled" || cat.key === "failed" || cat.key === "completed") && onRebook && (
-                  <div style={{ marginTop: 8, display: "flex", justifyContent: "flex-end" }}>
-                    <button onClick={() => { onRebook(r); onClose(); }} style={{ background: C.primarySoft, color: C.primaryDeep, border: "none", borderRadius: 10, padding: "7px 12px", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
-                      Book again
-                    </button>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </div>
+    <MyBookingsOverlay
+      initialTab="previous"
+      title="Consultation History"
+      onClose={onClose}
+      onRebook={onRebook}
+    />
   );
 }
 
-// Full-page (in-app) variant of PatientHistoryOverlay — same data & filters,
-// styled as a page (no dim backdrop, full viewport, back button in header).
+// Full-page (in-app) variant of PatientHistoryOverlay — same unified bookings listview.
 function PatientHistoryPage({ onClose, onRebook }) {
-  const [uid, setUid] = useState(null);
-  const [rows, setRows] = useState([]);
-  const [names, setNames] = useState({});
-  const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState("all");
-
-  useEffect(() => {
-    let m = true;
-    (async () => {
-      const { data: sess } = await supabase.auth.getSession();
-      const u = sess.session?.user?.id || null;
-      if (!m) return;
-      setUid(u);
-      if (!u) { setLoading(false); return; }
-      const { data } = await supabase.from("care_requests")
-        .select("id, patient_id, specialty, emergency, accepted_by, accepted_at, status, paid_at, amount, otp, otp_verified_at, arrival_deadline, completed_at, created_at, updated_at")
-        .eq("patient_id", u)
-        .order("created_at", { ascending: false })
-        .limit(200);
-      if (!m) return;
-      const list = data || [];
-      setRows(list);
-      const provIds = Array.from(new Set(list.map(r => r.accepted_by).filter(Boolean)));
-      if (provIds.length) {
-        const { data: profs } = await supabase.from("profiles").select("id, full_name").in("id", provIds);
-        if (!m) return;
-        const nm = {}; (profs || []).forEach(p => { nm[p.id] = p.full_name || "Provider"; });
-        setNames(nm);
-      }
-      setLoading(false);
-    })();
-    return () => { m = false; };
-  }, []);
-
-  function classify(r) {
-    if (r.status === "completed") return { key: "completed", label: "Consultation over", color: "#065F46", bg: "#D1FAE5", advice: "Rate the doctor and book a follow-up if needed." };
-    if (r.status === "cancelled") return { key: "cancelled", label: "Cancelled", color: "#4B5563", bg: "#F3F4F6", advice: "You can book again anytime — nothing was charged." };
-    if (r.status === "failed") return { key: "failed", label: "Failed / expired", color: "#B91C1C", bg: "#FEE2E2", advice: "Payment window expired. Rebook if you still need care." };
-    if (r.status === "open") return { key: "pending", label: "Finding medico", color: "#92400E", bg: "#FEF3C7", advice: "Still searching. You can wait or cancel and try a nearby hub." };
-    if (r.status === "accepted") {
-      if (!r.paid_at) return { key: "unpaid", label: "Unpaid — awaiting payment", color: "#B45309", bg: "#FEF3C7", advice: "Complete the payment so your medico can be dispatched." };
-      if (!r.otp_verified_at) return { key: "paid_pending", label: "Paid — OTP pending", color: "#92400E", bg: "#FEF3C7", advice: "Meet the doctor in person and share your 4-digit OTP." };
-      return { key: "in_progress", label: "Consultation in progress", color: "#1E40AF", bg: "#DBEAFE", advice: "Tap 'Consultation over' once the doctor is done." };
-    }
-    return { key: "other", label: r.status || "—", color: "#4B5563", bg: "#F3F4F6", advice: "" };
-  }
-
-  const enriched = useMemo(() => rows.map(r => ({ r, cat: classify(r) })), [rows]);
-  const counts = useMemo(() => {
-    const c = { all: enriched.length, unpaid: 0, paid_pending: 0, in_progress: 0, pending: 0, completed: 0, cancelled: 0, failed: 0 };
-    enriched.forEach(({ cat }) => { if (c[cat.key] !== undefined) c[cat.key]++; });
-    return c;
-  }, [enriched]);
-  const visible = filter === "all" ? enriched : enriched.filter(x => x.cat.key === filter);
-  const chips = [
-    ["all", "All"], ["unpaid", "Unpaid"], ["paid_pending", "OTP pending"], ["in_progress", "In progress"],
-    ["pending", "Finding"], ["completed", "Over"], ["cancelled", "Cancelled"], ["failed", "Failed"],
-  ];
-
   return (
-    <div style={{ position: "fixed", inset: 0, background: "#fff", zIndex: 80, display: "flex", flexDirection: "column", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
-      <div style={{ padding: "14px 16px", background: "linear-gradient(135deg,#0F172A,#1E293B)", display: "flex", alignItems: "center", gap: 12, color: "#fff" }}>
-        <button onClick={onClose} aria-label="Back" style={{ background: "rgba(255,255,255,.14)", border: "none", width: 34, height: 34, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#fff", fontSize: 20, lineHeight: 1 }}>‹</button>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <p style={{ margin: 0, fontWeight: 800, fontSize: 16 }}>Consultation History</p>
-          <p style={{ margin: "2px 0 0", fontSize: 11, color: "rgba(255,255,255,.8)", fontWeight: 600 }}>Status, amount and next-step advice</p>
-        </div>
-      </div>
-      <div style={{ padding: "10px 12px", display: "flex", gap: 6, overflowX: "auto", borderBottom: `1px solid ${C.line}`, background: "#fff" }}>
-        {chips.map(([k, l]) => (
-          <button key={k} onClick={() => setFilter(k)} style={{ flexShrink: 0, background: filter === k ? C.primary : C.canvas, color: filter === k ? "#fff" : C.ink, border: "none", borderRadius: 99, padding: "6px 11px", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
-            {l}{counts[k] ? ` · ${counts[k]}` : ""}
-          </button>
-        ))}
-      </div>
-      <div style={{ flex: 1, overflowY: "auto", padding: "10px 14px 24px", background: C.canvas }}>
-        {["all", "completed"].includes(filter) && <HomeVisitPanel audience="patient" completedOnly />}
-          {loading && <p style={{ color: C.sub, fontSize: 12 }}>Loading…</p>}
-        {!loading && visible.length === 0 && <p style={{ color: C.sub, fontSize: 12, marginTop: 14 }}>No consultations in this category yet.</p>}
-        {visible.map(({ r, cat }) => {
-          const providerName = r.accepted_by ? (names[r.accepted_by] || "Provider") : "—";
-          const when = new Date(r.created_at).toLocaleString([], { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
-          return (
-            <div key={r.id} style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 14, padding: "11px 12px", marginTop: 8 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ margin: 0, fontWeight: 800, color: C.ink, fontSize: 13 }}>{r.emergency ? "🚨 " : ""}{r.specialty || "Consultation"}</p>
-                  <p style={{ margin: "2px 0 0", fontSize: 10.5, color: C.sub, fontWeight: 600 }}>{providerName} · {when}</p>
-                </div>
-                {cat.key === "completed" && <HistoryCompletedActions requestId={r.id} providerName={providerName} specialty={r.specialty} />}
-                <span style={{ background: cat.bg, color: cat.color, fontSize: 10, fontWeight: 800, borderRadius: 99, padding: "3px 8px", flexShrink: 0, whiteSpace: "nowrap" }}>{cat.label}</span>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
-                {r.amount != null && <span style={{ fontSize: 10.5, fontWeight: 800, color: r.paid_at ? "#065F46" : C.sub, background: r.paid_at ? "#D1FAE5" : "#fff", border: `1px solid ${C.line}`, borderRadius: 99, padding: "2px 8px" }}>{r.paid_at ? "Paid" : "Unpaid"} · {inr(r.amount)}</span>}
-                {r.otp_verified_at && <span style={{ fontSize: 10.5, fontWeight: 800, color: "#1E40AF", background: "#DBEAFE", borderRadius: 99, padding: "2px 8px" }}>OTP verified</span>}
-                {r.completed_at && <span style={{ fontSize: 10.5, fontWeight: 700, color: C.sub }}>Completed {new Date(r.completed_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>}
-              </div>
-              {cat.advice && (
-                <p style={{ margin: "8px 0 0", fontSize: 11, color: cat.color, fontWeight: 700, lineHeight: 1.4, background: cat.bg, borderRadius: 10, padding: "7px 9px" }}>
-                  💡 {cat.advice}
-                </p>
-              )}
-              {(cat.key === "cancelled" || cat.key === "failed" || cat.key === "completed") && onRebook && (
-                <div style={{ marginTop: 8, display: "flex", justifyContent: "flex-end" }}>
-                  <button onClick={() => { onRebook(r); onClose(); }} style={{ background: C.primarySoft, color: C.primaryDeep, border: "none", borderRadius: 10, padding: "7px 12px", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
-                    Book again
-                  </button>
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
+    <MyBookingsOverlay
+      initialTab="previous"
+      title="Consultation History"
+      onClose={onClose}
+      onRebook={onRebook}
+    />
   );
 }
 
@@ -7224,13 +8015,19 @@ function DoctorApp({ req, hubReq, online, setOnline, onAccept, sevaActions }) {
   const realBookings = (liveApps || []).map(app => {
     const st = new Date(app.start_time);
     const modeLabel = app.mode === 'home_visit' || app.mode === 'home' ? 'Home visit' : app.mode || 'Consultation';
+    const isCompleted = (app.status || "").toLowerCase() === 'completed';
     return {
       id: app.id,
+      appointmentId: app.id,
+      patientId: app.patient_id,
+      otp: app.arrival_otp || undefined,
+      notes: app.clinical_notes?.summary,
       date: st,
       title: patientNames[app.patient_id] || `Patient ID: ${app.patient_id.slice(0, 6)}`,
       sub: `${app.service} • ${modeLabel}`,
-      status: app.status === 'confirmed' || app.status === 'rescheduled' ? 'Confirmed' : app.status === 'cancelled' ? 'Cancelled' : app.status,
-      color: app.status === 'cancelled' ? C.emerg : C.primary,
+      status: isCompleted ? 'Consultation over' : (app.status === 'confirmed' || app.status === 'rescheduled' ? 'Confirmed' : app.status === 'cancelled' ? 'Cancelled' : app.status),
+      color: app.status === 'cancelled' ? C.emerg : isCompleted ? C.faint : C.primary,
+      rawStatus: app.status,
     };
   });
 
@@ -7238,6 +8035,7 @@ function DoctorApp({ req, hubReq, online, setOnline, onAccept, sevaActions }) {
     ...realBookings,
     calBk(0, 9, 0, "Priya Sharma", "Follow-up • MyDox Hub Koregaon Park", "Confirmed", C.primary),
     calBk(0, 11, 30, "Rahul Verma", "New consult • Video", "Confirmed", C.primary),
+    calBk(0, 16, 0, "Meena Tiwari", "Home visit • Bavdhan", "Confirmed", C.primary),
     calBk(1, 10, 0, "Arjun Rao", "Diabetes review • MyDox Hub", "Scheduled", C.primary),
     calBk(1, 14, 0, "Sneha Patil", "Fever & cold • Walk-in", "Scheduled", C.clinic),
     calBk(-1, 15, 0, "Kavya Reddy", "General consult • Video", "Completed", C.faint),
@@ -7317,7 +8115,6 @@ function DoctorApp({ req, hubReq, online, setOnline, onAccept, sevaActions }) {
         </div>
       </div>
       <div className="flex-1 overflow-y-auto px-5 py-4">
-        <HomeVisitPanel audience="doctor" />
         {/* Incoming alert — now at the top of the doctor view */}
         {online && activeIncoming && !acted && youCand && (
           <div className="rounded-2xl p-4 mb-4" style={{ background: C.surface, border: `1.5px solid ${activeIncoming.r.emergency ? C.emerg : activeIncoming.src === "hub" ? C.hub : C.primary}`, boxShadow: "0 8px 28px rgba(0,0,0,.12)", animation: "slidedown .35s cubic-bezier(.2,.8,.2,1)" }}>
@@ -7398,6 +8195,14 @@ function DoctorApp({ req, hubReq, online, setOnline, onAccept, sevaActions }) {
             <div className="mt-3">
               <PrimaryBtn sub hub={wonReq.initiatedBy === "hub"} onClick={() => toast("Opening turn-by-turn navigation\u2026")}><Navigation size={15} /> Navigate to hub</PrimaryBtn>
             </div>
+          </div>
+        )}
+        {/* Live emergency calls from Supabase (specialist paging). Shown right where the
+            doctor already waits for requests, so no separate screen is needed. */}
+        {online && (
+          <div className="rounded-2xl p-3 mb-3" style={{ background: "#FEF2F2", border: "1px solid #FECACA" }}>
+            <p className="font-extrabold mb-1" style={{ color: "#B91C1C", fontSize: 13 }}>🚨 Emergency calls</p>
+            <EmergencyResponderPanel kind="doctor" />
           </div>
         )}
         {online && !activeIncoming && !wonReq && (
@@ -8345,10 +9150,8 @@ function DoctorCareGroups({ onOpen }) {
 
 function MedChatOverlay({ doctor, onClose }) {
   return (
-    <TwoWayChatModal
-      reference={doctor?.reference}
-      doctorName={doctor?.name}
-      specialty={doctor?.spec}
+    <CalendarChat
+      patientName={doctor?.name || "Consultation Chat"}
       onClose={onClose}
     />
   );
@@ -9076,7 +9879,7 @@ function ConsultationInboxRows({ inbox, onOpen }) {
           <div style={{ flex: 1, minWidth: 0 }}>
             <p style={{ fontWeight: 700, color: C.ink, fontSize: 13, margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.counterpartName}</p>
             <p style={{ color: C.sub, fontSize: 10, margin: "2px 0" }}>{item.consultationLabel}</p>
-            <p style={{ color: C.sub, fontSize: 11.5, margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.lastMessage || "No messages yet"}</p>
+            <p style={{ color: C.sub, fontSize: 11.5, margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{formatMessageSnippet(item.lastMessage) || "No messages yet"}</p>
           </div>
           <div style={{ flexShrink: 0, textAlign: "right" }}>
             {item.lastMessageAt && <p style={{ color: C.faint, fontSize: 10, margin: 0 }}>{new Date(item.lastMessageAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</p>}
@@ -9686,7 +10489,7 @@ function getCurrentPatientProfile() {
   return DEMO_PATIENT_PROFILES[n] || null;
 }
 
-function HealthProfileOverlay({ onClose, onOpenRecords, allergyDone }) {
+function HealthProfileOverlay({ onClose, onOpenRecords, allergyDone, onEmergencyProfile }) {
   const [showChat, setShowChat] = React.useState(false);
   const profile = React.useMemo(() => getCurrentPatientProfile(), []);
   const p = profile || {
@@ -9716,6 +10519,16 @@ function HealthProfileOverlay({ onClose, onOpenRecords, allergyDone }) {
         </button>
       </div>
       <div style={{ flex: 1, overflowY: "auto", padding: 14, scrollbarWidth: "none" }}>
+        {onEmergencyProfile && (
+          <button type="button" onClick={onEmergencyProfile} style={{ width: "100%", marginBottom: 12, display: "flex", alignItems: "center", gap: 10, background: "#FEF2F2", border: "1.5px solid #FECACA", borderRadius: 14, padding: "11px 12px", cursor: "pointer", textAlign: "left" }}>
+            <span style={{ fontSize: 18 }}>🚨</span>
+            <span style={{ flex: 1 }}>
+              <span style={{ display: "block", fontWeight: 800, fontSize: 13, color: C.ink }}>Emergency profile</span>
+              <span style={{ display: "block", fontSize: 10.5, color: "#B91C1C", fontWeight: 700 }}>Family contacts, blood group, allergies, medicines</span>
+            </span>
+            <ChevronRight size={16} style={{ color: "#DC2626" }} />
+          </button>
+        )}
         {/* Identity card */}
         <div style={{ background: "white", border: `1px solid ${C.line}`, borderRadius: 14, padding: "12px 13px", display: "flex", gap: 12, alignItems: "center", marginBottom: 10 }}>
           <Avatar name={p.name} size={54} />
@@ -11183,6 +11996,32 @@ function CenterDispatchFlow({ config, onClose }) {
 /* ── Emergency Care pathways: call-first, condition triage, parallel dispatch
    (ambulance + right-facility hospital + on-call specialist), auto-shared
    medical info, golden-hour clock. Built on the first-accept-wins engine. */
+// Live emergency screens rendered INSIDE the app card (same URL, same shell).
+// Data comes from Supabase via EmergencyResponderPanel; accept logic unchanged.
+function InAppEmergencyScreen({ kind, onClose }) {
+  const meta = {
+    ambulance: { title: "Ambulance", sub: "Live emergency dispatch", grad: "linear-gradient(135deg,#DC2626,#B91C1C)" },
+    hospital: { title: "Emergency department", sub: "Cases paged to your hospital", grad: "linear-gradient(135deg,#DC2626,#B91C1C)" },
+  }[kind];
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0, background: "#F4F7F6", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
+      <div style={{ flexShrink: 0, background: meta.grad, color: "#fff", padding: "16px 18px", display: "flex", alignItems: "center", gap: 10 }}>
+        <Ambulance size={20} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p style={{ margin: 0, fontWeight: 800, fontSize: 16 }}>{meta.title}</p>
+          <p style={{ margin: "2px 0 0", fontSize: 11.5, opacity: .9 }}>{meta.sub}</p>
+        </div>
+        <a href="tel:108" style={{ background: "rgba(255,255,255,.2)", color: "#fff", borderRadius: 99, padding: "6px 12px", fontWeight: 800, fontSize: 12, textDecoration: "none" }}>108</a>
+        {!onClose && <ModuleProfilePill />}
+        {onClose && <button onClick={onClose} aria-label="Close" style={{ background: "rgba(255,255,255,.2)", border: 0, color: "#fff", borderRadius: "50%", width: 30, height: 30, cursor: "pointer", fontWeight: 800 }}>✕</button>}
+      </div>
+      <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "12px 14px 28px" }}>
+        <EmergencyResponderPanel kind={kind} />
+      </div>
+    </div>
+  );
+}
+
 function DispatchRow({ icon, title, waiting, doneText, done, R, C }) {
   return (
     <div style={{ background: C.surface, border: `1px solid ${done ? "#A7F3D0" : C.line}`, borderRadius: 13, padding: "11px 12px", marginBottom: 9, display: "flex", alignItems: "center", gap: 11 }}>
@@ -13295,6 +14134,10 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
   const [dashboardTab, setDashboardTab] = useState("home");
   const [bookingOpen, setBookingOpen] = useState(false);
   const dashboardScrollRef = useRef(null);
+  const [directReq, setDirectReq] = useState(null); // {provider,spec,fromOverlay,emergency,isMy,myName,preferredName}
+  const [scanDirect, setScanDirect] = useState(null); // {provider,scan}
+  const [acknowledgedBookingIds, setAcknowledgedBookingIds] = useState([]); // stop continuous confirmations
+
   const patientName = (() => { try { return localStorage.getItem("mc_user_name") || ""; } catch { return ""; } })();
   const changeDashboardTab = (tab) => {
     setDashboardTab(tab); setBookingOpen(false); setSearchFocused(false); setQuery(""); setServiceView(null);
@@ -13402,6 +14245,8 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
   const [showClinicSkin, setShowClinicSkin] = useState(false); // white-label clinic skin demo
   const [showNotifs, setShowNotifs] = useState(false); // notifications center
   const [showMyBookings, setShowMyBookings] = useState(false); // unified bookings overlay
+  const [bookingsInitialTab, setBookingsInitialTab] = useState("upcoming");
+  const [bookingsTitle, setBookingsTitle] = useState("My Bookings");
   const [showSeva, setShowSeva] = useState(false); // free-care (Seva) enrolment
   const [showSocietyShield, setShowSocietyShield] = useState(false); // society shield enrolment
   const [showInsurance, setShowInsurance] = useState(false); // B2B insurance member portal
@@ -13417,6 +14262,8 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
   const [showSpecialty, setShowSpecialty] = useState(null); // {specId,label} — dental/derm/plastic/vasc overlay
   const [dispatchFlow, setDispatchFlow] = useState(null); // shared centre dispatch (broadcast + OTP) for care referrals
   const [showEmergency, setShowEmergency] = useState(false); // emergency care pathways
+  const [showEmgProfile, setShowEmgProfile] = useState(false); // emergency contacts + medical info
+  const [emgProfileVersion, setEmgProfileVersion] = useState(0);
   const [notifs, setNotifs] = useState(PATIENT_NOTIFS);
   const { session } = useSession();
   const { rows: patientLiveApps } = useLiveDoctorAppointments(session?.user?.id);
@@ -13477,7 +14324,6 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
   }); // favourite scan centres (max 2)
   const [scanOptions, setScanOptions] = useState(null); // {scan} — ambulance opt-in step
   const [scanRepeat, setScanRepeat] = useState(null); // {scan} — favourite scan-centre pop-up
-  const [scanDirect, setScanDirect] = useState(null); // {provider,scan}
   const toggleScanPreferred = (name) => {
     setScanPreferred(cur => {
       if (cur.includes(name)) return cur.filter(n => n !== name);
@@ -13485,7 +14331,133 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
       toast(name + " added to favourite scan centres"); return [...cur, name];
     });
   };
-  const [confirmedBooking, setConfirmedBooking] = useState(null); // elective booking confirmation popup
+  // Live Nursing Engagement Sync:
+  useEffect(() => {
+    let cancelled = false;
+    const syncNursing = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user || cancelled) return;
+        const { data: engs } = await supabase
+          .from("nursing_engagements")
+          .select("id, kind, status, assignment_state, primary_nurse_id")
+          .eq("patient_id", user.id)
+          .eq("status", "active")
+          .eq("assignment_state", "assigned")
+          .order("created_at", { ascending: false })
+          .limit(1);
+        if (cancelled || !engs || !engs.length) return;
+        const latest = engs[0];
+        if (acknowledgedBookingIds.includes(latest.id)) return;
+
+        if (latest.primary_nurse_id) {
+          const { data: nurseProf } = await supabase
+            .from("profiles")
+            .select("full_name")
+            .eq("id", latest.primary_nurse_id)
+            .maybeSingle();
+          if (cancelled) return;
+          const nurseName = nurseProf?.full_name || "Nurse Pooja";
+
+          setConfirmedBooking(cur => {
+            const confirmedData = {
+              id: latest.id,
+              pending: false,
+              name: latest.kind,
+              doctor: { name: nurseName, spec: "Nursing Specialist", rating: 4.9 },
+              label: "Nurse assigned \u00B7 Confirmed",
+            };
+
+            // If we don't have a confirmed popup showing, or it's currently "pending",
+            // pop it up with the new real data.
+            if (!cur || cur.pending || (cur.id || cur.engagementId) === latest.id) {
+              if (cur?.pending) toast && toast(`${nurseName} accepted your nursing request!`);
+              return confirmedData;
+            }
+            return cur;
+          });
+        }
+      } catch (_err) {}
+    };
+
+    syncNursing();
+    const poll = setInterval(syncNursing, 2500);
+    const channel = supabase
+      .channel(`patient_nursing_sync_${Math.random().toString(36).slice(2)}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "nursing_engagements" }, () => {
+        syncNursing();
+      })
+      .subscribe();
+
+    return () => {
+      cancelled = true;
+      clearInterval(poll);
+      supabase.removeChannel(channel);
+    };
+  }, [acknowledgedBookingIds]);
+
+  // Live Technician Visit Sync (for scheduled bookings):
+  useEffect(() => {
+    let cancelled = false;
+    const syncTechnician = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user || cancelled) return;
+        const { data: visits } = await supabase
+          .from("technician_tests")
+          .select("id, test_type, status, technician_id")
+          .eq("patient_id", user.id)
+          .in("status", ["assigned", "en_route", "arrived"])
+          .order("created_at", { ascending: false })
+          .limit(2);
+        if (cancelled || !visits || !visits.length) return;
+
+        const latest = visits[0];
+        if (acknowledgedBookingIds.includes(latest.id)) return;
+
+        if (latest.status === "assigned" && latest.technician_id) {
+          const { data: techProf } = await supabase
+            .from("profiles")
+            .select("full_name")
+            .eq("id", latest.technician_id)
+            .maybeSingle();
+          if (cancelled) return;
+          const techName = techProf?.full_name || "Technician";
+
+          setConfirmedBooking(cur => {
+            const confirmedData = {
+              id: latest.id,
+              pending: false,
+              name: `${latest.test_type.toUpperCase()} Visit`,
+              doctor: { name: techName, spec: "Technician", rating: 4.8 },
+              label: `Status: ${latest.status} \u00B7 Confirmed`,
+            };
+
+            if (!cur || cur.pending || (cur.id || cur.visitId) === latest.id) {
+              if (cur?.pending) toast && toast(`${techName} accepted your technician request!`);
+              return confirmedData;
+            }
+            return cur;
+          });
+        }
+      } catch (_err) {}
+    };
+
+    syncTechnician();
+    const poll = setInterval(syncTechnician, 2500);
+    const channel = supabase
+      .channel(`patient_tech_sync_${Math.random().toString(36).slice(2)}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "technician_tests" }, () => {
+        syncTechnician();
+      })
+      .subscribe();
+
+    return () => {
+      cancelled = true;
+      clearInterval(poll);
+      supabase.removeChannel(channel);
+    };
+  }, [acknowledgedBookingIds]);
   // Per-user local persistence key (survives logout on the same device)
   const prefsKey = useMemo(() => {
     const n = (typeof window !== "undefined" && window.localStorage.getItem("mc_user_name")) || "guest";
@@ -13504,7 +14476,7 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
   }, [preferred, labPreferred, scanPreferred, prefsKey]);
   const [showPrefMgr, setShowPrefMgr] = useState(false); // preferred doctors manager
   const [repeatModal, setRepeatModal] = useState(null); // {cat,spec,fromOverlay} — repeat-provider pop-up
-  const [directReq, setDirectReq] = useState(null); // {provider,spec,fromOverlay,emergency,isMy,myName,preferredName}
+  const [confirmedBooking, setConfirmedBooking] = useState(null);
   const [emgFallback, setEmgFallback] = useState(null); // emergency: My didn't accept → ask about Preferred
   const [aiMessages, setAiMessages] = useState([]);
   const [aiLoading, setAiLoading] = useState(false);
@@ -13547,7 +14519,7 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
   // screen is waiting for payment/OTP.
   useEffect(() => {
     const canRecover = !req || ["broadcasting", "expired"].includes(req.status) || (req.status === "assigned" && !req.paid);
-    if (!canRecover) return;
+    if (!canRecover || directReq || scanDirect) return;
     let cancelled = false;
     let inFlight = false;
 
@@ -13580,7 +14552,7 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
         });
         setDirectReq(null);
         if (row.paid_at) actions?.markAcceptedCareRequestPaid?.({ row });
-        setScreen(row.paid_at ? "home" : "track");
+        setScreen("home");
       } catch (err) {
         console.warn("accepted-request recovery failed", err?.message);
       } finally {
@@ -13591,7 +14563,7 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
     tryAdopt();
     const poll = setInterval(tryAdopt, 3000);
     return () => { cancelled = true; clearInterval(poll); };
-  }, [req?.status, req?.dbId, req?.paid, actions, area]);
+  }, [req?.status, req?.dbId, req?.paid, actions, area, !!directReq, !!scanDirect]);
 
 
 
@@ -13619,9 +14591,8 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
         emergency: !!directReq.emergency,
         area,
       });
-      setDirectReq(null);
-      setScreen("track");
-      toast(`${prof?.full_name || directReq.provider?.name || "Doctor"} accepted — please pay to confirm`);
+      // The overlay stays open to show the "accepted" phase. 
+      // User clicks "Done" on the overlay to dismiss it and go to tracking.
     };
 
     const syncDirectRequest = async () => {
@@ -13676,10 +14647,13 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
     if (req.status === "completed") { setScreen("rate"); return; }
     // Show tracking for the early phases. Once converging/at_hub, don't yank the screen —
     // the patient can browse home and return via the live banner.
-    if (["broadcasting", "expired", "assigned"].includes(req.status)) setScreen("track");
+    if (!req.scheduled && ["broadcasting", "expired", "assigned"].includes(req.status)) {
+      if (directReq || scanDirect || confirmedBooking) return;
+      setScreen("track");
+    }
     // Referral review does not confirm an appointment. Booking association must
     // be persisted by the authorised booking operation, never by local request state.
-  }, [req?.status]);
+  }, [req?.status, req?.scheduled, !!directReq, !!scanDirect, !!confirmedBooking]);
 
   // An authenticated referral ID opens the ordinary review and booking screen.
   useEffect(() => {
@@ -13813,6 +14787,43 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
   const proceedNormal = (spec, fromOverlay) => {
     if ((visitMode === "home" || spec.visitMode === "home") && (spec.type || activeTab) === "doctor") { openDoctorHomeVisit(spec); return; }
     if (spec.scheduled) {
+      if (spec.scheduled.iso) {
+        const schedMs = new Date(spec.scheduled.iso).getTime();
+        if (!isNaN(schedMs) && schedMs <= Date.now()) {
+          toast && toast("Cannot book a past time slot. Please choose an upcoming slot.");
+          return;
+        }
+      }
+      const isPhysio = String(spec.name || "").toLowerCase().includes("physio") || String(spec.name || "").toLowerCase().includes("therap");
+      const fareAmount = spec.base || (spec.doctor ? spec.doctor.fee : (isPhysio ? 700 : 500));
+      const specialtyName = isPhysio ? "Physiotherapist" : (spec.name || "Consultation");
+
+      setConfirmedBooking({ name: spec.name, label: spec.scheduled.label, doctor: spec.doctor || null, bookingId: null, spec });
+      setSelectedSpec(null);
+      if (fromOverlay) setServiceView(null);
+
+      const broadcastReqData = {
+        id: "req-" + Date.now(),
+        dbId: null,
+        spec: { ...spec, type: isPhysio ? "therapist" : (spec.type || "doctor"), name: specialtyName },
+        emergency: false,
+        scheduled: spec.scheduled,
+        area: area || "Kothrud",
+        fare: { total: fareAmount },
+        hub: { name: "MyDox Hub — Koregaon Park", address: "Nearby", type: "medconnect" },
+        routeMode: "open",
+        status: "broadcasting",
+        stage: "broadcast",
+        remaining: 30,
+        candidates: [{ id: "you", name: isPhysio ? "Dr. Kavita Deshmukh" : "Dr. Rahul Nair", spec: specialtyName, rating: 4.9, distanceKm: 1.2, etaMin: 8 }],
+        initiatedBy: "patient",
+      };
+      if (typeof setReq === "function") {
+        setReq(broadcastReqData);
+      } else if (actions && typeof actions.setReqState === "function") {
+        actions.setReqState(broadcastReqData);
+      }
+
       (async () => {
         try {
           const { data: { user } } = await supabase.auth.getUser();
@@ -13820,12 +14831,19 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
           if (!spec.doctor?.userId) throw new Error("Invalid provider selected");
           if (visitMode === "home" || spec.visitMode === "home") throw new Error("Scheduled home visits for this service are unavailable. Please use its existing service booking option.");
 
-          // Convert UI selected label/date/time to ISO format
-          // spec.scheduled.date is e.g. "Thu Sep 10 2026"
-          // spec.scheduled.time is e.g. "09:30"
-          const start = new Date(`${spec.scheduled.date} ${spec.scheduled.time}`);
-          if (isNaN(start.getTime())) throw new Error("Invalid date selected");
-          const end = new Date(start.getTime() + 30 * 60000); // 30 min default duration
+          // Use the structured ISO string passed by the picker (reliable, no string parsing).
+          // Falls back to re-parsing the human-readable strings for legacy callers.
+          let start;
+          if (spec.scheduled.iso) {
+            start = new Date(spec.scheduled.iso);
+          } else {
+            // Legacy path: parse "Mon Sep 15 2026" + "9:30 AM"
+            const raw = `${spec.scheduled.date} ${spec.scheduled.time}`;
+            start = new Date(raw);
+          }
+          if (isNaN(start.getTime())) throw new Error("Invalid date/time selected — please pick a slot again");
+          if (start <= new Date()) throw new Error("Please pick a future time slot");
+          const end = new Date(start.getTime() + 30 * 60000); // 30 min appointment
 
           const isVideo = visitMode === "online" || spec.visitMode === "online";
           let data;
@@ -13946,9 +14964,9 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
     const dbPref = cat === "doctor" ? (myMedicos.get(spec.id || spec.name || "", "preferred") || myMedicos.get(spec.name || "", "preferred")) : null;
     const favs = dbPref && dbPref.medico_name && !localFavs.includes(dbPref.medico_name)
       ? [dbPref.medico_name, ...localFavs] : localFavs;
-    // Emergency + doctor: if a "My Doctor" exists, go straight to the emergency single-target flow.
-    if (emergency && cat === "doctor" && prior) { setRepeatModal({ cat, favKey, prior, spec, fromOverlay, emergency: true, favs }); return; }
-    if (PREF_CATS.includes(cat) && (prior || favs.length)) { setRepeatModal({ cat, favKey, prior, spec, fromOverlay, favs }); return; }
+    // Emergency + doctor/therapist: if a prior exists, go straight to the emergency single-target flow.
+    if (emergency && (cat === "doctor" || cat === "therapist") && prior) { setRepeatModal({ cat, favKey, prior, spec, fromOverlay, emergency: true, favs }); return; }
+    if (PREF_CATS.includes(cat) && (prior || favs.length)) { setRepeatModal({ cat, favKey, prior, spec, fromOverlay, emergency: !!emergency, favs }); return; }
     proceedNormal(spec, fromOverlay);
   };
 
@@ -14109,13 +15127,17 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
     const handlers = {
       search: () => setSearchFocused(true), ai: () => askAIWith(), companion: () => setShowCompanion(true),
       aiHistory: () => setShowAIHistory(true), emergency: () => setShowEmergency(true), sos: () => setShowSOS(true),
-      bookings: () => setShowMyBookings(true), history: () => setShowHistoryPage(true), records: () => setShowRecords(true),
+      bookings: () => { setBookingsInitialTab("upcoming"); setBookingsTitle("My Bookings"); setShowMyBookings(true); },
+      history: () => { setBookingsInitialTab("previous"); setBookingsTitle("Consultation History"); setShowMyBookings(true); },
+      records: () => setShowRecords(true),
       calendar: () => setShowCal(true), preferred: () => setShowPrefMgr(true), profile: () => setShowProfile(true),
       rewards: () => setShowRewards(true), notifications: () => setShowNotifs(true), signout: handleSignOut,
       prosthetics: () => setShowProsthetics(true), secondOpinion: () => setShowSecondOp(true),
       allergy: () => setShowBreatheFree(true), medicines: () => setShowDrugDelivery(true),
       homePackage: () => setShowHomeCare(true), family: () => setShowFamilyPlan(true),
       physio: () => { window.location.assign("/physio/book"); },
+      nurse: () => { window.location.assign("/nurse/book"); },
+      technician: () => { window.location.assign("/technician/book"); },
       dental: () => setShowSpecialty({ specId: "dental", label: "Dental Care" }),
       derm: () => setShowSpecialty({ specId: "derm", label: "Skin & Hair" }),
       plastic: () => setShowSpecialty({ specId: "plastic", label: "Plastic Surgery" }),
@@ -14148,8 +15170,11 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
         </button>
       )}
 
+      {/* Client requirement: remind patients to add emergency contacts & medical info */}
+      {dashboardTab === "home" && !bookingOpen && <EmergencyProfileNudge onOpen={() => setShowEmgProfile(true)} refreshKey={emgProfileVersion} />}
+
       {/* Stage-flow overlay — per-stage 60s timer, manual escalation only, live audit timeline */}
-      <StageFlowOverlay req={req} actions={actions} onCancel={() => requestCancel()} />
+      {!directReq && !scanDirect && <StageFlowOverlay req={req} actions={actions} onCancel={() => requestCancel()} />}
 
 
 
@@ -14474,13 +15499,51 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
           emergency={!!repeatModal.emergency}
           prior={repeatModal.prior} preferred={preferred[repeatModal.favKey] || []}
           onTogglePreferred={(name) => togglePreferred(repeatModal.favKey, name)}
-          onRequest={(p) => { const rm = repeatModal; setRepeatModal(null); setSelectedSpec(null); if (rm.fromOverlay) setServiceView(null); const isMy = rm.prior && p.name === rm.prior.name; const prefName = (rm.favs || []).find(n => !rm.prior || n !== rm.prior.name) || null; setDirectReq({ provider: p, spec: rm.spec, fromOverlay: rm.fromOverlay, emergency: !!rm.emergency, isMy, myName: rm.prior?.name || null, preferredName: prefName }); if (rm.emergency) { (async () => { try { const dbMy = myMedicos.get(rm.spec?.id || rm.spec?.name || "", "my") || myMedicos.get(rm.spec?.name || "", "my"); const dbPref = myMedicos.get(rm.spec?.id || rm.spec?.name || "", "preferred") || myMedicos.get(rm.spec?.name || "", "preferred"); let targetId = isMy ? (dbMy?.medico_id || null) : (dbPref?.medico_id || null); if (!targetId) { try { targetId = await myMedicos.lookupMedicoIdByName(p.name); } catch (_) { } } const row = await createCareRequest({ specialty: rm.spec?.name || "General", emergency: true, notes: `Direct call to ${p.name}${isMy ? " (My Doctor)" : " (Preferred)"}`, notification_stage: isMy ? "my_doctor" : "preferred", my_doctor_id: isMy ? targetId : null, preferred_id: isMy ? null : targetId }); setDirectReq(cur => cur && cur.provider?.name === p.name ? { ...cur, dbId: row.id } : cur); } catch (err) { console.warn("emergency direct request insert failed", err?.message); } })(); } }}
+          onRequest={(p) => {
+            const rm = repeatModal;
+            setRepeatModal(null);
+            setSelectedSpec(null);
+            if (rm.fromOverlay) setServiceView(null);
+            const isMy = rm.prior && p.name === rm.prior.name;
+            const prefName = (rm.favs || []).find(n => !rm.prior || n !== rm.prior.name) || null;
+            setDirectReq({ provider: p, cat: rm.cat, spec: rm.spec, fromOverlay: rm.fromOverlay, emergency: !!rm.emergency, isMy, myName: rm.prior?.name || null, preferredName: prefName });
+            if (actions && actions.directRequest) {
+              actions.directRequest({ provider: p, spec: rm.spec, emergency: !!rm.emergency, fare: rm.spec?.base || 700, area, dbId: null });
+            }
+            (async () => {
+              try {
+                const dbMy = myMedicos.get(rm.spec?.id || rm.spec?.name || "", "my") || myMedicos.get(rm.spec?.name || "", "my");
+                const dbPref = myMedicos.get(rm.spec?.id || rm.spec?.name || "", "preferred") || myMedicos.get(rm.spec?.name || "", "preferred");
+                let targetId = isMy ? (dbMy?.medico_id || null) : (dbPref?.medico_id || null);
+                if (!targetId) {
+                  try { targetId = await myMedicos.lookupMedicoIdByName(p.name); } catch (_) { }
+                }
+                const specialtyName = rm.spec?.name || (rm.cat === "therapist" ? "Physiotherapy" : "General");
+                const row = await createCareRequest({
+                  specialty: specialtyName,
+                  emergency: !!rm.emergency,
+                  notes: `Direct call to ${p.name}${isMy ? " (My Doctor)" : " (Preferred)"}`,
+                  notification_stage: isMy ? "my_doctor" : "preferred",
+                  my_doctor_id: isMy ? targetId : null,
+                  preferred_id: isMy ? null : targetId
+                });
+                setDirectReq(cur => cur && cur.provider?.name === p.name ? { ...cur, dbId: row.id } : cur);
+                if (actions && actions.directRequest) {
+                  actions.directRequest({ provider: p, spec: rm.spec, emergency: !!rm.emergency, fare: rm.spec?.base || 700, area, dbId: row.id });
+                }
+              } catch (err) {
+                console.warn("direct request insert failed", err?.message);
+              }
+            })();
+          }}
           onBroadcast={() => { const rm = repeatModal; setRepeatModal(null); proceedNormal(rm.spec, rm.fromOverlay); }}
           onClose={() => setRepeatModal(null)} />
       )}
       {directReq && (
         <DirectRequestOverlay
-          provider={directReq.provider} spec={directReq.spec} who="you"
+          provider={directReq.provider} cat={directReq.cat} spec={directReq.spec} who="you"
+          dbId={directReq.dbId}
+          reqStatus={req?.status}
           emergency={!!directReq.emergency}
           fallbackLabel={directReq.emergency ? (directReq.isMy ? (directReq.preferredName ? `Not accepting — try Preferred (${directReq.preferredName}) →` : "Not accepting — broadcast to any available →") : "Not accepting — broadcast to any available →") : undefined}
           onConfirmed={() => { const dr = directReq; setDirectReq(null); setConfirmedBooking({ name: dr.provider.name + " · " + (dr.spec?.name || "Visit"), label: "Repeat visit · same provider" }); }}
@@ -14544,7 +15607,7 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
           onClose={() => labActions && labActions.clear()} />
       )}
       {showAdmit && <HospitalFinder title="Get Admitted" subtitle="Find a hospital for you or family" ctaLabel="Request admission" ctaIcon={<Hospital size={15} />} accent="#2563EB" onSelect={(h) => { setShowAdmit(false); toast("Admission requested at " + h.name + " — they'll confirm a bed"); }} onClose={() => setShowAdmit(false)} />}
-      {showSOS && <SOSOverlay onClose={() => setShowSOS(false)} onDispatch={() => { ambulanceActions && ambulanceActions.requestSOS({ pickup: area || "Your location" }); toast("🚑 Ambulance dispatched — track it in the Ambulance tab"); }} />}
+      {showSOS && <EmergencyPatient variant="sos" onClose={() => setShowSOS(false)} />}
       {showCompanion && <HealthCompanionChat onClose={() => setShowCompanion(false)} onBookDoctor={(payload) => {
         setShowCompanion(false);
         const rawSpec = (payload && payload.specialty) ? String(payload.specialty) : "";
@@ -14565,7 +15628,11 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
       }} />}
       {showBreatheFree && <BreatheFreeFlow onClose={() => setShowBreatheFree(false)} onComplete={({ openChat }) => { setShowBreatheFree(false); setAllergyDone(true); if (openChat) setChatDoctor(BF_DOCTOR); }} />}
       {confirmedBooking && (
-        <div onClick={() => setConfirmedBooking(null)} style={{ position: "absolute", inset: 0, zIndex: 120, background: "rgba(15,23,42,.55)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+        <div onClick={() => {
+          const id = confirmedBooking.id || confirmedBooking.bookingId;
+          if (id) setAcknowledgedBookingIds(prev => [...prev, id]);
+          setConfirmedBooking(null);
+        }} style={{ position: "absolute", inset: 0, zIndex: 120, background: "rgba(15,23,42,.55)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
           <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 300, background: "#fff", borderRadius: 22, padding: "26px 22px", textAlign: "center", boxShadow: "0 24px 60px rgba(0,0,0,.3)" }}>
             <div style={{ width: 64, height: 64, borderRadius: "50%", background: "linear-gradient(135deg,#0C9668,#059669)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px", boxShadow: "0 8px 22px -6px rgba(12,150,104,.6)" }}><Check size={34} color="#fff" strokeWidth={3} /></div>
             <p style={{ margin: 0, fontWeight: 900, color: C.ink, fontSize: 19 }}>Booking Confirmed</p>
@@ -14582,7 +15649,39 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
             )}
             {confirmedBooking.label && <div style={{ margin: "12px 0 0", display: "inline-flex", alignItems: "center", gap: 7, background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 12, padding: "9px 14px" }}><span style={{ fontSize: 16 }}>📅</span><span style={{ color: "#1D4ED8", fontWeight: 800, fontSize: 13 }}>{confirmedBooking.label}</span></div>}
             <p style={{ margin: "14px 0 0", color: C.faint, fontSize: 11.5, lineHeight: 1.4 }}>{confirmedBooking.doctor ? "Your appointment is booked with this doctor. You'll get a reminder ahead of your slot." : "Your appointment is booked. You'll get a reminder, and your medico will be assigned ahead of your slot."}</p>
-            <button onClick={() => setConfirmedBooking(null)} style={{ marginTop: 18, width: "100%", background: "linear-gradient(135deg,#0C9668,#059669)", color: "#fff", border: "none", borderRadius: 14, padding: "13px", fontWeight: 800, fontSize: 14.5, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Done</button>
+            <button onClick={() => {
+              const booking = confirmedBooking;
+              const id = booking?.id || booking?.bookingId;
+              if (id) setAcknowledgedBookingIds(prev => [...prev, id]);
+              setConfirmedBooking(null);
+              if (!booking?.spec) return;
+              
+              toast && toast("Booking confirmed! Dispatched live broadcast to medicos.");
+              const isPhys = String(booking?.name || "").toLowerCase().includes("physio") || String(booking?.name || "").toLowerCase().includes("therap");
+              const fareAmt = isPhys ? Math.round(700 * 1.2) : 500;
+              const titleName = isPhys ? "Physiotherapist" : (booking?.name || "Consultation");
+              const bData = {
+                id: "req-" + Date.now(),
+                dbId: booking?.careRequestId || null,
+                spec: { ...(booking?.spec || {}), type: isPhys ? "therapist" : "doctor", name: titleName },
+                emergency: false,
+                scheduled: { label: booking?.label || "Scheduled" },
+                area: area || "Kothrud",
+                fare: { total: fareAmt },
+                hub: { name: "MyDox Hub — Koregaon Park", address: "Nearby", type: "medconnect" },
+                routeMode: "open",
+                status: "broadcasting",
+                stage: "broadcast",
+                remaining: 30,
+                candidates: [{ id: "you", name: isPhys ? "Dr. Kavita Deshmukh" : "Dr. Rahul Nair", spec: titleName, rating: 4.9, distanceKm: 1.2, etaMin: 8 }],
+                initiatedBy: "patient",
+              };
+              if (typeof setReq === "function") {
+                setReq(cur => (cur && cur.status === "broadcasting") ? cur : bData);
+              } else if (actions && typeof actions.setReqState === "function") {
+                actions.setReqState(bData);
+              }
+            }} style={{ marginTop: 18, width: "100%", background: "linear-gradient(135deg,#0C9668,#059669)", color: "#fff", border: "none", borderRadius: 14, padding: "13px", fontWeight: 800, fontSize: 14.5, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Done</button>
           </div>
         </div>
       )}
@@ -14619,7 +15718,13 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
             <div style={{ display: "flex", gap: 8 }}>
               <button onClick={() => {
                 const svc = { ...selScan, type: "scan" };
-                const fare = buildFare(svc, emergency);
+                let fare = buildFare(svc, emergency);
+                if (isPhys && emergency) {
+                  // For emergency physio, calculate base 700 + 20% surge directly to match UI
+                  const base = 700;
+                  const surge = Math.round(base * 0.2);
+                  fare = { base, convenience: 0, distance: 0, surcharge: surge, total: base + surge };
+                }
                 if (wantAmbulance) {
                   fare.total += 500;
                   fare.ambulance = 500;
@@ -14769,14 +15874,15 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
       )}
 
       {viewGroup && <CareGroupOverlay group={viewGroup} onClose={() => setViewGroup(null)} />}
-      {showProfile && <HealthProfileOverlay allergyDone={allergyDone} onClose={() => setShowProfile(false)} onOpenRecords={() => { setShowProfile(false); setShowRecords(true); }} />}
+      {showProfile && <HealthProfileOverlay allergyDone={allergyDone} onClose={() => setShowProfile(false)} onOpenRecords={() => { setShowProfile(false); setShowRecords(true); }} onEmergencyProfile={() => setShowEmgProfile(true)} />}
       {showRecords && <HealthRecordsOverlay onClose={() => setShowRecords(false)} onBookDoctor={(sugg) => { setShowRecords(false); setActiveTab("doctor"); setSelectedSpec(null); setQuery(""); toast("Pick a " + (sugg ? sugg.split(" / ")[0] : "doctor") + " below"); setBookingOpen(true); setTimeout(() => { try { pickerRef.current && pickerRef.current.scrollIntoView({ behavior: "smooth", block: "start" }); } catch (e) { } }, 80); }} />}
       {showCal && <BookingCalendar title="My Bookings" subtitle="Appointments, labs & scans" accent={C.primary} bookings={PATIENT_BOOKINGS} onClose={() => setShowCal(false)} />}
-      {showMyBookings && <MyBookingsOverlay onClose={() => setShowMyBookings(false)} onRebook={(it) => {
+      {showMyBookings && <MyBookingsOverlay initialTab={bookingsInitialTab} title={bookingsTitle} onClose={() => setShowMyBookings(false)} onRebook={(it) => {
         setShowMyBookings(false);
-        const m = it.module;
-        if (m === "Doctor / Nurse") { setBookingOpen(true); const tab = /nurse/i.test(it.title) ? "nurse" : "doctor"; setActiveTab(tab); setSelectedSpec(null); setQuery(it.title || ""); toast(`Rebook: ${it.title} — pick a provider below`); }
-        else if (m === "Lab / Scan") { setBookingOpen(true); const tab = /mri|ct|xray|scan|ultrasound/i.test(it.title) ? "scan" : "technician"; setActiveTab(tab); toast(`Rebook: ${it.title}`); }
+        if (m === "Nursing") { window.location.assign("/nurse/visits"); }
+        else if (m === "Diagnostics") { window.location.assign("/technician/visits"); }
+        else if (m === "Physiotherapy") { window.location.assign("/physio/visits"); }
+        else if (m === "Doctor / Nurse") { setBookingOpen(true); const tab = /nurse/i.test(it.title) ? "nurse" : "doctor"; setActiveTab(tab); setSelectedSpec(null); setQuery(it.title || ""); toast(`Rebook: ${it.title} — pick a provider below`); }
         else if (m === "Home Care") { setShowHomeCare(true); }
         else if (m === "Medicines") { setShowDrugDelivery(true); }
         else if (m === "Care Program") { setShowHomeCare(true); toast(`Rebook care program: ${it.title}`); }
@@ -14788,8 +15894,8 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
         else if (m === "Blood Bank") { setShowBloodBank(true); }
         else if (m === "Surgery") { setShowSurgery(true); }
       }} />}
-      {showPrevConsults && <PatientHistoryOverlay onClose={() => setShowPrevConsults(false)} onRebook={(r) => { setBookingOpen(true); setActiveTab("doctor"); toast(`Rebook a ${r.specialty || "consultation"} — pick a doctor below`); }} />}
-      {showHistoryPage && <PatientHistoryPage onClose={() => setShowHistoryPage(false)} onRebook={(r) => { setShowHistoryPage(false); setBookingOpen(true); setActiveTab("doctor"); toast(`Rebook a ${r.specialty || "consultation"} — pick a doctor below`); }} />}
+      {showPrevConsults && <PatientHistoryOverlay onClose={() => setShowPrevConsults(false)} onRebook={(r) => { setBookingOpen(true); setActiveTab("doctor"); toast(`Rebook a ${r?.specialty || r?.title || "consultation"} — pick a doctor below`); }} />}
+      {showHistoryPage && <PatientHistoryPage onClose={() => setShowHistoryPage(false)} onRebook={(r) => { setShowHistoryPage(false); setBookingOpen(true); setActiveTab("doctor"); toast(`Rebook a ${r?.specialty || r?.title || "consultation"} — pick a doctor below`); }} />}
       {showRewards && <RewardsOverlay onClose={() => setShowRewards(false)} />}
       {showHomeCare && <HomeCarePackageOverlay area={area} onClose={() => setShowHomeCare(false)} onChatDoctor={(doc) => { setShowHomeCare(false); setChatDoctor({ name: doc.name, spec: doc.spec }); }} onBook={(pkg) => toast(`${pkg.days}-day home care package requested \u2014 coordinator will call to confirm`)} />}
       {showDrugDelivery && <DrugDeliveryOverlay area={area} onClose={() => setShowDrugDelivery(false)} onOrdered={(o) => { mcCapture("medicine_delivery", o); toast(`Medicine order placed with ${o.pharmacy_name}`); }} />}
@@ -14811,7 +15917,8 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
       {showSpecialNeeds && <SpecialNeedsFlow onClose={() => setShowSpecialNeeds(false)} onBook={(b) => { mcCapture("special_needs", b); (async () => { try { const { data: { user } } = await supabase.auth.getUser(); if (user) { const { error } = await supabase.from("special_needs_bookings").insert({ patient_id: user.id, category: b.cat, subtype: b.sub, provider_name: b.provider, fee: b.fee ?? null }); if (error) { toast("⚠️ Booking could not be saved — please try again"); return; } } toast(`✅ ${b.sub} booked with ${b.provider}`); } catch (err) { console.warn("special needs save failed", err?.message); toast("⚠️ Booking could not be saved — please try again"); } })(); }} />}
       {showBloodBank && <BloodBankFlow onClose={() => setShowBloodBank(false)} onBook={(b) => { mcCapture("blood_bank", b); (async () => { try { const { data: { user } } = await supabase.auth.getUser(); if (user) { const { error } = await supabase.from("blood_bank_activity").insert({ patient_id: user.id, activity_type: b.type || "need_blood", blood_group: b.group ?? null, units: b.units ?? null, hospital: b.hospital ?? null, urgent: b.urgent ?? null, donor_name: b.name ?? null, camp_id: b.campId ?? null, camp_name: b.camp ?? null, payload: b || {} }); if (error) { toast("⚠️ Could not save to your record — please retry"); return; } } } catch (err) { console.warn("blood bank save failed", err?.message); toast("⚠️ Could not save to your record — please retry"); } })(); }} />}
       {dispatchFlow && <CenterDispatchFlow config={dispatchFlow} onClose={() => setDispatchFlow(null)} />}
-      {showEmergency && <EmergencyPathwayFlow onClose={() => setShowEmergency(false)} />}
+      {showEmergency && <EmergencyPatient onClose={() => setShowEmergency(false)} />}
+      {showEmgProfile && <EmergencyProfileForm onClose={() => setShowEmgProfile(false)} onSaved={() => setEmgProfileVersion(v => v + 1)} />}
       {showPrefMgr && <PreferredDoctorsOverlay who="patient" preferredMap={preferred} onToggle={(specId, name, slot) => togglePreferred(specId, name, slot)} onClose={() => setShowPrefMgr(false)} accent="#7C3AED" />}
       {showSecondOp && <SecondOpinionOverlay onClose={() => setShowSecondOp(false)} />}
       {showConsent && <ConsentOverlay onClose={() => setShowConsent(false)} onAccept={() => { setConsentOk(true); setShowConsent(false); setScreen("hub_discovery"); }} />}
@@ -14917,64 +16024,11 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
         {cancelDialog}
       </Screen>
     );
-    if (req.status === "assigned") return (
-      <Screen>
-        <Header title="Medico confirmed!" emergency={req.emergency} />
-        <div className="flex-1 overflow-y-auto px-5 py-4">
-          <div className="flex flex-col items-center text-center">
-            {assigned && <Avatar name={assigned.name} size={64} emergency={req.emergency} />}
-            <p className="font-extrabold mt-3" style={{ color: C.ink, fontSize: 18 }}>{assigned?.name}</p>
-            <p style={{ color: C.sub, fontSize: 13 }}>{req.spec.name} · <Stars v={assigned?.rating} /></p>
-            <span className="mt-2 rounded-full px-3 py-1" style={{ background: C.primarySoft, color: C.primaryDeep, fontSize: 11, fontWeight: 800 }}>✓ Accepted your request</span>
-          </div>
-          {req.spec?.scheduled?.label && (
-            <div className="mt-4 rounded-2xl px-4 py-3 flex items-center gap-3" style={{ background: "#EFF6FF", border: "1px solid #BFDBFE" }}>
-              <span style={{ fontSize: 18 }}>📅</span>
-              <div><p className="font-bold" style={{ color: C.ink, fontSize: 12.5, margin: 0 }}>Scheduled for</p><p style={{ color: "#1D4ED8", fontSize: 12.5, fontWeight: 700, margin: 0 }}>{req.spec.scheduled.label}</p></div>
-            </div>
-          )}
-          <div className="mt-4 rounded-2xl p-4" style={{ background: C.canvas }}>
-            <p style={{ fontWeight: 800, color: C.ink, fontSize: 13, marginBottom: 8 }}>Pay to confirm &amp; dispatch</p>
-            {[["Service fee", req.fare.base], ["Convenience", req.fare.convenience], ["Distance", req.fare.distance], ...(req.fare.surcharge ? [["Emergency +20%", req.fare.surcharge]] : [])].map(([l, v]) => (
-              <div key={l} style={{ display: "flex", justifyContent: "space-between", padding: "3px 0", fontSize: 12.5, color: C.sub }}><span>{l}</span><span>{inr(v)}</span></div>
-            ))}
-            <div style={{ height: 1, background: C.line, margin: "7px 0" }} />
-            <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 800, color: C.ink, fontSize: 15 }}><span>Total</span><span>{inr(req.fare.total)}</span></div>
-            <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
-              {["UPI", "Card", "Wallet"].map((m, i) => (<div key={m} style={{ flex: 1, textAlign: "center", border: `1.5px solid ${i === 0 ? C.primary : C.line}`, borderRadius: 10, padding: "7px 0", fontSize: 11, fontWeight: 700, color: i === 0 ? C.primaryDeep : C.sub, background: i === 0 ? C.primarySoft : "#fff" }}>{m}</div>))}
-            </div>
-          </div>
-          <p className="flex items-center gap-1.5 mt-3" style={{ color: C.sub, fontSize: 11.5 }}><ShieldCheck size={13} /> Money held in escrow · released only after OTP arrival</p>
-          <p className="flex items-center gap-1.5 mt-1.5" style={{ color: C.primaryDeep, fontSize: 11.5, fontWeight: 600 }}><MessageCircle size={13} /> Chat &amp; call open the moment you pay</p>
-          <div className="mt-4">
-            {paying === "done" ? (
-              <div className="rounded-2xl p-4 text-center" style={{ background: C.primarySoft }}>
-                <div className="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-2" style={{ background: C.primary }}><Check size={26} color="white" /></div>
-                <p style={{ fontWeight: 800, color: C.primaryDeep, fontSize: 15, margin: 0 }}>Payment received ✓</p>
-                <p style={{ color: C.sub, fontSize: 11.5, margin: "3px 0 0" }}>{inr(req.fare.total)} paid · dispatching your medico…</p>
-              </div>
-            ) : (
-              <PrimaryBtn emergency={req.emergency} onClick={() => {
-                if (paying !== "idle") return;
-                setPaying("processing");
-                setTimeout(() => {
-                  setPaying("done");
-                  setTimeout(() => { actions.pay(); setPaying("idle"); }, 900);
-                }, 800);
-              }}>
-                {paying === "processing" ? <>Processing…</> : <><Check size={16} /> Pay {inr(req.fare.total)} &amp; Dispatch</>}
-              </PrimaryBtn>
-            )}
-            <p style={{ textAlign: "center", color: C.faint, fontSize: 10, margin: "8px 0 0" }}>Demo payment · Razorpay integration coming soon</p>
-          </div>
-        </div>
-      </Screen>
-    );
-    if (req.status === "converging" || req.status === "at_hub") {
+    if (req.status === "converging" || req.status === "at_hub" || req.status === "assigned") {
       const atHub = req.status === "at_hub";
       return (
         <Screen>
-          <Header title={atHub ? "Both at the hub!" : "Converging at hub"} onBack={() => setScreen("home")} emergency={req.emergency} />
+          <Header title={atHub ? "Both at the hub!" : (req.hub?.type === "home" ? "Medico en route" : "Converging at hub")} onBack={() => setScreen("home")} emergency={req.emergency} />
           <div className="flex-1 overflow-y-auto px-5 py-4">
             <MapConverge req={req} />
             <div className="rounded-2xl p-4 mt-3" style={{ background: C.surface, border: `1px solid ${C.line}` }}>
@@ -15239,6 +16293,7 @@ function AmbulanceNav({ hospital, fromSOS, onComplete, onClose }) {
 /* Ambulance driver portal */
 function AmbulanceApp({ ambulanceJob, ambulanceActions, scanDispatch }) {
   const [online, setOnline] = useState(true);
+  const crewStats = useCrewStats(); // real numbers from this crew's emergency cases
   const [finder, setFinder] = useState(null);
   const [nav, setNav] = useState(null); // {hospital, fromSOS}
   const [scanAcceptedKey, setScanAcceptedKey] = useState(null); // scan transport job taken (by otp)
@@ -15265,7 +16320,7 @@ function AmbulanceApp({ ambulanceJob, ambulanceActions, scanDispatch }) {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
             <div style={{ width: 38, height: 38, borderRadius: 11, background: "rgba(255,255,255,.2)", display: "flex", alignItems: "center", justifyContent: "center" }}><Ambulance size={20} /></div>
-            <div><p style={{ margin: 0, fontWeight: 900, fontSize: 16 }}>Ambulance</p><p style={{ margin: 0, fontSize: 10.5, opacity: .85 }}>MH-12 EZ 4471 · Koregaon Park Unit 7</p></div>
+            <div><p style={{ margin: 0, fontWeight: 900, fontSize: 16 }}>Ambulance</p><p style={{ margin: 0, fontSize: 10.5, opacity: .85 }}>Live emergency dispatch · {online ? "receiving alerts" : "alerts paused"}</p></div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <button onClick={() => setOnline(o => !o)} style={{ display: "flex", alignItems: "center", gap: 6, background: "rgba(255,255,255,.2)", border: "none", borderRadius: 99, padding: "7px 12px", color: "#fff", fontWeight: 800, fontSize: 11.5, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}><span style={{ width: 7, height: 7, borderRadius: 50, background: online ? "#4ADE80" : "#FCA5A5" }} />{online ? "On duty" : "Off"}</button>
@@ -15273,7 +16328,7 @@ function AmbulanceApp({ ambulanceJob, ambulanceActions, scanDispatch }) {
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, marginTop: 13 }}>
-          {[["12", "Trips today"], ["4 min", "Avg response"], ["₹9,200", "Earnings"]].map(([v, l]) => (<div key={l} style={{ flex: 1, background: "rgba(255,255,255,.15)", borderRadius: 11, padding: "8px 10px" }}><p style={{ margin: 0, fontWeight: 900, fontSize: 15 }}>{v}</p><p style={{ margin: 0, fontSize: 9.5, opacity: .85 }}>{l}</p></div>))}
+          {[[crewStats ? String(crewStats.tripsToday) : "–", "Trips today"], [crewStats && crewStats.avgResponseMin != null ? `${crewStats.avgResponseMin} min` : "–", "Avg response"], [crewStats ? String(crewStats.completedToday) : "–", "Handed over today"]].map(([v, l]) => (<div key={l} style={{ flex: 1, background: "rgba(255,255,255,.15)", borderRadius: 11, padding: "8px 10px" }}><p style={{ margin: 0, fontWeight: 900, fontSize: 15 }}>{v}</p><p style={{ margin: 0, fontSize: 9.5, opacity: .85 }}>{l}</p></div>))}
         </div>
       </div>
       <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px 70px" }}>
@@ -15305,6 +16360,8 @@ function AmbulanceApp({ ambulanceJob, ambulanceActions, scanDispatch }) {
             <button onClick={() => { setScanAcceptedKey(scanDispatch.otp); startNav(scanDest, true); }} style={{ width: "100%", borderRadius: 12, padding: "12px", border: "none", background: "linear-gradient(135deg,#7C3AED,#6D28D9)", color: "#fff", fontWeight: 800, fontSize: 14, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif", display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}><Navigation size={16} /> Accept &amp; navigate</button>
           </div>
         )}
+        {/* Live emergency alerts (accept) + active assignments — real data from Supabase */}
+        <div style={{ marginBottom: 16 }}><EmergencyResponderPanel kind="ambulance" onDuty={online} /></div>
         <p style={{ margin: "4px 0 8px", fontWeight: 800, color: C.ink, fontSize: 13 }}>Nearest critical care</p>
         <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
           {quick.map(q => q.h && (
@@ -15348,25 +16405,26 @@ const Initials = ({ name, color }) => (
 
 /* Pop-up shown on a new enquiry when a prior/preferred provider exists for that category */
 function RepeatProviderModal({ cat, spec, prior, preferred, who, emergency, onRequest, onBroadcast, onTogglePreferred, onClose }) {
+  const isDoctorEmergency = emergency && (!cat || cat === "doctor");
   const catLabel = CAT_LABEL[cat] || "providers";
   const list = [];
   if (prior) list.push(prior);
   (preferred || []).forEach(nm => { if (!list.find(p => p.name === nm)) list.push({ name: nm, sub: "Preferred provider", color: "#0C9668" }); });
-  const emgList = emergency && prior ? [prior] : list;
+  const displayList = isDoctorEmergency && prior ? [prior] : list;
   const emgPrefName = (preferred || []).find(n => !prior || n !== prior.name) || null;
   return (
-    <div onClick={onClose} style={{ position: "absolute", inset: 0, zIndex: 130, background: "rgba(15,23,42,.55)", display: "flex", alignItems: emergency ? "flex-start" : "flex-end", justifyContent: "center", paddingTop: emergency ? "max(12px, env(safe-area-inset-top))" : 0 }}>
-      <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 380, background: "#fff", borderRadius: emergency ? "0 0 24px 24px" : "24px 24px 0 0", padding: "20px 18px 18px", maxHeight: "86%", overflowY: "auto" }}>
+    <div onClick={onClose} style={{ position: "absolute", inset: 0, zIndex: 130, background: "rgba(15,23,42,.55)", display: "flex", alignItems: isDoctorEmergency ? "flex-start" : "flex-end", justifyContent: "center", paddingTop: isDoctorEmergency ? "max(12px, env(safe-area-inset-top))" : 0 }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 380, background: "#fff", borderRadius: isDoctorEmergency ? "0 0 24px 24px" : "24px 24px 0 0", padding: "20px 18px 18px", maxHeight: "86%", overflowY: "auto" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
-          <p style={{ margin: 0, fontWeight: 900, color: C.ink, fontSize: 18 }}>{emergency && prior ? "Emergency · My " + (spec?.name || "Doctor") : "Same provider as before?"}</p>
+          <p style={{ margin: 0, fontWeight: 900, color: C.ink, fontSize: 18 }}>{isDoctorEmergency && prior ? "Emergency · My " + (spec?.name || "Doctor") : "Same provider as before?"}</p>
           <button onClick={onClose} style={{ border: "none", background: C.canvas, borderRadius: "50%", width: 30, height: 30, cursor: "pointer", color: C.faint, fontSize: 17, flexShrink: 0 }}>×</button>
         </div>
-        {emergency && prior ? (
+        {isDoctorEmergency && prior ? (
           <p style={{ margin: "0 0 14px", color: C.sub, fontSize: 12.5, lineHeight: 1.45 }}>Sending straight to your <b>My {spec?.name || "Doctor"}</b>. If they don't accept within 1 minute, we'll ask if you'd like to try your <b>Preferred</b> next.</p>
         ) : (
           <p style={{ margin: "0 0 14px", color: C.sub, fontSize: 12.5, lineHeight: 1.45 }}>Your <b>favourites</b> get the request first. We broadcast to all {catLabel} only if they don't take it within <b>10 minutes</b>. Tap the ♥ to favourite a provider for repeat visits.</p>
         )}
-        {emgList.map(p => {
+        {displayList.map(p => {
           const isPref = (preferred || []).includes(p.name);
           return (
             <div key={p.name} style={{ display: "flex", alignItems: "center", gap: 11, background: C.canvas, borderRadius: 14, padding: "11px 12px", marginBottom: 9 }}>
@@ -15375,12 +16433,12 @@ function RepeatProviderModal({ cat, spec, prior, preferred, who, emergency, onRe
                 <p style={{ margin: 0, fontWeight: 800, color: C.ink, fontSize: 13.5 }}>{p.name}</p>
                 <p style={{ margin: "1px 0 0", color: C.sub, fontSize: 11 }}>{p.sub}{p.rating ? ` · ★ ${p.rating}` : ""}{p.visits ? ` · ${p.visits} past visits` : ""}</p>
               </div>
-              {!emergency && (<button onClick={() => onTogglePreferred(p.name)} title="Add to favourites" style={{ border: "none", background: "transparent", cursor: "pointer", flexShrink: 0, padding: 4 }}><Heart size={20} color={isPref ? "#EF4444" : C.line} fill={isPref ? "#EF4444" : "none"} /></button>)}
-              <button onClick={() => onRequest(p)} style={{ flexShrink: 0, border: "none", background: emergency ? C.emerg : (p.color || C.primary), color: "#fff", borderRadius: 99, padding: "9px 14px", fontWeight: 800, fontSize: 12, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>{emergency ? "Call now" : "Request"}</button>
+              {!isDoctorEmergency && (<button onClick={() => onTogglePreferred(p.name)} title="Add to favourites" style={{ border: "none", background: "transparent", cursor: "pointer", flexShrink: 0, padding: 4 }}><Heart size={20} color={isPref ? "#EF4444" : C.line} fill={isPref ? "#EF4444" : "none"} /></button>)}
+              <button onClick={() => onRequest(p)} style={{ flexShrink: 0, border: "none", background: isDoctorEmergency ? C.emerg : (p.color || C.primary), color: "#fff", borderRadius: 99, padding: "9px 14px", fontWeight: 800, fontSize: 12, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>{isDoctorEmergency ? "Call now" : "Request"}</button>
             </div>
           );
         })}
-        {emergency && prior ? (
+        {isDoctorEmergency && prior ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 4 }}>
             {emgPrefName && (
               <button onClick={() => onRequest({ name: emgPrefName, sub: "Preferred " + (spec?.name || "Doctor"), color: "#0C9668" })} style={{ width: "100%", borderRadius: 12, padding: "11px", border: `1.5px solid ${C.line}`, background: C.surface, color: C.ink, fontWeight: 700, fontSize: 12.5, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Skip · call Preferred ({emgPrefName}) instead</button>
@@ -15417,9 +16475,10 @@ function EmergencyPreferredPromptModal({ myName, preferredName, spec, onTryPrefe
 }
 
 /* Direct request to one provider — they accept, else fall back to a full broadcast */
-function DirectRequestOverlay({ provider, spec, who, emergency, fallbackLabel, onConfirmed, onFallback, onClose }) {
+function DirectRequestOverlay({ provider, cat, spec, who, emergency, fallbackLabel, dbId, reqStatus, onConfirmed, onFallback, onClose }) {
+  const isDoctorEmergency = emergency && (!cat || cat === "doctor");
   const [phase, setPhase] = useState("contacting"); // contacting → accepted
-  const [left, setLeft] = useState(emergency ? 60 : 600); // emergency = 1-minute window, else 10 minutes
+  const [left, setLeft] = useState(isDoctorEmergency ? 60 : 600); // emergency doctor = 1-minute window, else 10 minutes
   const fallbackCalledRef = useRef(false);
   useEffect(() => { if (phase !== "contacting") return; if (emergency) return; const t = setTimeout(() => setPhase("accepted"), 3200); return () => clearTimeout(t); }, [phase, emergency]);
   useEffect(() => { fallbackCalledRef.current = false; }, [provider?.name, spec?.name, emergency]);
@@ -16740,9 +17799,18 @@ export default function MyDoxFull({ initialView } = {}) {
   }, []);
 
   useEffect(() => {
-    // Patient must pay on the "assigned" screen; payment moves status to "converging".
-    // (No auto-advance — handled by the Pay button.)
-  }, [req?.status, req?.id]);
+    if (req?.status === "assigned") {
+      setReq(r => {
+        if (!r || r.status !== "assigned") return r;
+        if (r.dbId) {
+          payAndGenerateOtp(r.dbId, r.fare?.total ?? null)
+            .then(otp => setReq(cur => (cur && cur.dbId === r.dbId) ? { ...cur, otp } : cur))
+            .catch(err => console.warn("payAndGenerateOtp failed", err?.message));
+        }
+        return { ...r, status: "converging", paid: true };
+      });
+    }
+  }, [req?.status, req?.id, req?.dbId, req?.fare?.total]);
 
   // Emergency auto-escalation → persist stage change to DB so real providers see it.
   useEffect(() => {
@@ -16774,14 +17842,18 @@ export default function MyDoxFull({ initialView } = {}) {
           .from("profiles").select("full_name, specialty").eq("id", row.accepted_by).maybeSingle();
         if (cancelled) return;
         const acceptedName = prof?.full_name || "Medico on the way";
+        if (dbId && !row.paid_at) {
+          payAndGenerateOtp(dbId, null).catch(() => { });
+        }
         setReq(r => {
-          if (!r || r.dbId !== dbId || r.status === "converging" || r.status === "at_hub" || r.status === "completed") return r;
+          if (!r || r.dbId !== dbId || r.status === "completed") return r;
           const winner = {
             id: "db_winner", name: acceptedName, rating: 4.9, exp: 10,
             distanceKm: 1.5, etaMin: 7, area: r.hub?.area || "", notified: true,
           };
           return {
-            ...r, status: "assigned", assignedId: winner.id, stopRebroadcast: true,
+            ...r, status: "converging", paid: true, assignedId: winner.id, stopRebroadcast: true,
+            otp: row.otp || r.otp || "0000",
             doctorEtaHub: winner.etaMin * 60, doctorInitEta: winner.etaMin * 60,
             candidates: [winner, ...(r.candidates || []).filter(c => c.id !== "db_winner")],
           };
@@ -16859,7 +17931,7 @@ export default function MyDoxFull({ initialView } = {}) {
           specialty: spec.name || spec.type || "general",
           emergency: !!emergency,
           notes: hub?.name ? `Hub: ${hub.name}` : null,
-          fare: typeof fare === "number" ? fare : null,
+          fare: typeof fare === "number" ? fare : fare?.total ? fare.total : null,
           notification_stage: initialStage,
           my_doctor_id: myDoctorId || null,
           preferred_id: preferredId || null,
@@ -16884,9 +17956,12 @@ export default function MyDoxFull({ initialView } = {}) {
         id: "db_winner", name: providerName || "Medico on the way", rating: 4.9, exp: 10,
         distanceKm: 1.5, etaMin: 7, area: nextHub?.area || "", notified: true,
       };
+      if (row.id && !row.paid_at) {
+        payAndGenerateOtp(row.id, nextFare?.total ?? null).catch(() => { });
+      }
       setReq({
         id: Date.now(), dbId: row.id, spec: svc, emergency: !!emergency, area: patientArea, fare: nextFare, hub: nextHub,
-        routeMode: "preferred", otp: row.otp || "0000", status: "assigned", stage: row.notification_stage || null,
+        routeMode: "preferred", otp: row.otp || "0000", status: "converging", paid: true, stage: row.notification_stage || null,
         elapsed: 0, remaining: 60, coverageKm: 4, candidates: [winner], assignedId: winner.id,
         doctorEtaHub: winner.etaMin * 60, doctorInitEta: winner.etaMin * 60,
         patientEtaHub: nextHub?.patEtaMin ? nextHub.patEtaMin * 60 : 0,
@@ -16987,7 +18062,7 @@ export default function MyDoxFull({ initialView } = {}) {
   };
 
   const onAccept = (src, who, etaMin) => {
-    if (src === "patient") setReq(r => r?.status === "broadcasting" ? { ...r, status: "assigned", assignedId: who, doctorEtaHub: etaMin * 60, doctorInitEta: etaMin * 60 } : r);
+    if (src === "patient") setReq(r => r?.status === "broadcasting" ? { ...r, status: "converging", paid: true, assignedId: who, doctorEtaHub: etaMin * 60, doctorInitEta: etaMin * 60 } : r);
     else setHubReq(r => r?.status === "broadcasting" ? { ...r, status: "assigned", assignedId: who, doctorEtaHub: etaMin * 60, doctorInitEta: etaMin * 60 } : r);
   };
 

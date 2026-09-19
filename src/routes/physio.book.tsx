@@ -1,8 +1,16 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
-import { useMutation } from "@tanstack/react-query";
-import { THERAPY_LABEL, bookPhysioVisit } from "@/lib/physio-patient.functions";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { SlotPickerCalendarStandalone } from "@/features/mydox/SlotPickerCalendar";
+import {
+  THERAPY_LABEL,
+  bookPhysioVisit,
+  bookPhysioVisitWithTherapist,
+  getPhysioTherapistRoster,
+  getPhysioTherapistSlots,
+  togglePhysioFavoriteTherapist,
+} from "@/lib/physio-patient.functions";
 
 export const Route = createFileRoute("/physio/book")({
   head: () => ({
@@ -42,7 +50,13 @@ function toLocalInputValue(d: Date) {
 
 function BookPhysioVisit() {
   const book = useServerFn(bookPhysioVisit);
+  const bookWithTherapist = useServerFn(bookPhysioVisitWithTherapist);
+  const fetchRoster = useServerFn(getPhysioTherapistRoster);
+  const fetchSlots = useServerFn(getPhysioTherapistSlots);
+  const toggleFavorite = useServerFn(togglePhysioFavoriteTherapist);
   const navigate = useNavigate();
+  const qc = useQueryClient();
+
   const [form, setForm] = useState({
     therapyType: "general",
     area: "",
@@ -50,12 +64,42 @@ function BookPhysioVisit() {
     address: "",
     scheduledAt: toLocalInputValue(new Date(Date.now() + 26 * 3600_000)),
     durationMin: 45,
-    urgency: "routine",
+    urgency: "planned",
     notes: "",
   });
   const [error, setError] = useState("");
+  const [selectedTherapistId, setSelectedTherapistId] = useState<string | null>(null);
+  const [slotIso, setSlotIso] = useState("");
 
-  const mutation = useMutation({
+  const rosterQuery = useQuery({
+    queryKey: ["physio-therapist-roster"],
+    queryFn: () => fetchRoster({}),
+  });
+  const roster = rosterQuery.data ?? [];
+  const selectedTherapist = roster.find((t) => t.therapistId === selectedTherapistId) ?? null;
+
+  const slotsQuery = useQuery({
+    queryKey: ["physio-therapist-slots", selectedTherapistId, form.durationMin],
+    queryFn: () =>
+      fetchSlots({
+        data: {
+          therapistId: selectedTherapistId as string,
+          durationMin: form.durationMin,
+          startDate: toLocalInputValue(new Date()).slice(0, 10),
+          endDate: toLocalInputValue(new Date(Date.now() + 14 * 86400_000)).slice(0, 10),
+        },
+      }),
+    enabled: !!selectedTherapistId,
+  });
+  const openSlotCount = (slotsQuery.data ?? []).filter((s) => s.isAvailable).length;
+
+  const favoriteMutation = useMutation({
+    mutationFn: (therapistId: string) => toggleFavorite({ data: { therapistId } }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["physio-therapist-roster"] }),
+    onError: (e: unknown) => setError(e instanceof Error ? e.message : "Could not update favourite"),
+  });
+
+  const anyAvailableMutation = useMutation({
     mutationFn: () =>
       book({
         data: {
@@ -74,6 +118,26 @@ function BookPhysioVisit() {
     onError: (e: unknown) => setError(e instanceof Error ? e.message : "Could not book the session"),
   });
 
+  const withTherapistMutation = useMutation({
+    mutationFn: () =>
+      bookWithTherapist({
+        data: {
+          therapistId: selectedTherapistId as string,
+          therapyType: form.therapyType,
+          area: form.area,
+          city: form.city,
+          address: form.address || null,
+          startTime: slotIso,
+          durationMin: form.durationMin,
+          urgency: form.urgency,
+          notes: form.notes || null,
+        },
+      }),
+    onSuccess: () => navigate({ to: "/physio/visits" }),
+    onError: (e: unknown) => setError(e instanceof Error ? e.message : "Could not book that slot"),
+  });
+
+  const pending = anyAvailableMutation.isPending || withTherapistMutation.isPending;
   const fee = THERAPY_FEE[form.therapyType];
 
   return (
@@ -96,7 +160,15 @@ function BookPhysioVisit() {
           onSubmit={(e) => {
             e.preventDefault();
             setError("");
-            mutation.mutate();
+            if (selectedTherapistId) {
+              if (!slotIso) {
+                setError("Pick an available time slot");
+                return;
+              }
+              withTherapistMutation.mutate();
+            } else {
+              anyAvailableMutation.mutate();
+            }
           }}
         >
           <div>
@@ -117,6 +189,74 @@ function BookPhysioVisit() {
                   <span className="block text-[11px] font-normal text-slate-400">₹{THERAPY_FEE[key]}/session</span>
                 </button>
               ))}
+            </div>
+          </div>
+
+          <div>
+            <div className="mb-2 text-xs font-bold text-slate-600">Choose your physiotherapist</div>
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedTherapistId(null);
+                  setSlotIso("");
+                }}
+                className={`flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left ${
+                  selectedTherapistId === null ? "border-teal-600 bg-teal-50" : "border-slate-200 bg-white"
+                }`}
+              >
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-base">
+                  📡
+                </span>
+                <span>
+                  <span className="block text-sm font-bold text-slate-900">Any available therapist</span>
+                  <span className="block text-[11px] text-slate-500">
+                    Request a time — our partner network assigns a therapist for you
+                  </span>
+                </span>
+              </button>
+
+              {rosterQuery.isLoading ? (
+                <div className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-500">Loading therapists…</div>
+              ) : (
+                roster.map((t) => (
+                  <div
+                    key={t.therapistId}
+                    className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 ${
+                      selectedTherapistId === t.therapistId ? "border-teal-600 bg-teal-50" : "border-slate-200 bg-white"
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedTherapistId(t.therapistId);
+                        setSlotIso("");
+                      }}
+                      className="flex flex-1 items-center gap-3 text-left"
+                    >
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-teal-100 text-xs font-bold text-teal-700">
+                        {t.name.split(" ").map((w) => w[0]).slice(0, 2).join("")}
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block text-sm font-bold text-slate-900">{t.name}</span>
+                        <span className="block text-[11px] text-slate-500">
+                          {t.area ? `${t.area} · ` : ""}
+                          {t.specializations.length ? t.specializations.join(", ") : "Physiotherapist"}
+                        </span>
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => favoriteMutation.mutate(t.therapistId)}
+                      aria-label="Favourite"
+                      className="shrink-0 p-1 text-lg"
+                      style={{ color: t.isFavorite ? "#EF4444" : "#CBD5E1" }}
+                    >
+                      ♥
+                    </button>
+                  </div>
+                ))
+              )}
             </div>
           </div>
 
@@ -156,23 +296,15 @@ function BookPhysioVisit() {
             />
           </label>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <label className="block text-xs font-semibold text-slate-600">
-              Date & time
-              <input
-                required
-                type="datetime-local"
-                value={form.scheduledAt}
-                min={toLocalInputValue(new Date())}
-                onChange={(e) => setForm((f) => ({ ...f, scheduledAt: e.target.value }))}
-                className="mt-1 w-full rounded-xl border border-slate-200 p-2 text-sm"
-              />
-            </label>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <label className="block text-xs font-semibold text-slate-600">
               Duration
               <select
                 value={form.durationMin}
-                onChange={(e) => setForm((f) => ({ ...f, durationMin: Number(e.target.value) }))}
+                onChange={(e) => {
+                  setForm((f) => ({ ...f, durationMin: Number(e.target.value) }));
+                  setSlotIso("");
+                }}
                 className="mt-1 w-full rounded-xl border border-slate-200 p-2 text-sm"
               >
                 {[30, 45, 60, 90].map((m) => (
@@ -189,11 +321,42 @@ function BookPhysioVisit() {
                 onChange={(e) => setForm((f) => ({ ...f, urgency: e.target.value }))}
                 className="mt-1 w-full rounded-xl border border-slate-200 p-2 text-sm"
               >
-                <option value="routine">Routine</option>
+                <option value="planned">Planned</option>
                 <option value="urgent">Urgent (same day priority)</option>
               </select>
             </label>
           </div>
+
+          {selectedTherapistId ? (
+            <div>
+              <div className="mb-2 flex items-baseline justify-between">
+                <div className="text-xs font-bold text-slate-600">
+                  {selectedTherapist?.name ?? "Therapist"}'s availability
+                </div>
+                {slotsQuery.isFetched ? (
+                  <div className="text-[11px] text-slate-500">{openSlotCount} open slots in the next 2 weeks</div>
+                ) : null}
+              </div>
+              <SlotPickerCalendarStandalone
+                days={14}
+                accent="#0D9488"
+                value={slotIso}
+                onChange={setSlotIso}
+              />
+            </div>
+          ) : (
+            <label className="block text-xs font-semibold text-slate-600">
+              Date & time
+              <input
+                required
+                type="datetime-local"
+                value={form.scheduledAt}
+                min={toLocalInputValue(new Date())}
+                onChange={(e) => setForm((f) => ({ ...f, scheduledAt: e.target.value }))}
+                className="mt-1 w-full rounded-xl border border-slate-200 p-2 text-sm"
+              />
+            </label>
+          )}
 
           <label className="block text-xs font-semibold text-slate-600">
             Notes for the therapist (optional)
@@ -213,14 +376,18 @@ function BookPhysioVisit() {
             <div className="text-sm">
               <span className="text-slate-500">Session fee: </span>
               <span className="font-extrabold">₹{fee}</span>
-              <span className="block text-[11px] text-slate-400">Payable after the session · therapist assigned by our partner network</span>
+              <span className="block text-[11px] text-slate-400">
+                {selectedTherapistId
+                  ? "Payable after the session · confirmed instantly for this therapist's slot"
+                  : "Payable after the session · therapist assigned by our partner network"}
+              </span>
             </div>
             <button
               type="submit"
-              disabled={mutation.isPending}
+              disabled={pending}
               className="rounded-full bg-teal-600 px-6 py-2 text-sm font-bold text-white disabled:opacity-60"
             >
-              {mutation.isPending ? "Booking…" : "Book session"}
+              {pending ? "Booking…" : "Book session"}
             </button>
           </div>
         </form>

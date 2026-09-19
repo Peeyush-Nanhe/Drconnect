@@ -60,8 +60,6 @@ export class Chrome {
         if (response.exceptionDetails) throw new Error('Browser evaluation failed; sensitive details withheld.');
         return response.result?.value;
       },
-      navigate: nextUrl => this.command('Page.navigate', { url: nextUrl }, sessionId),
-      reload: () => this.command('Page.reload', { ignoreCache: true }, sessionId),
       screenshot: async (path, clip) => {
         const { data } = await this.command('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false, ...(clip ? { clip } : {}) }, sessionId);
         await writeFile(path, Buffer.from(data, 'base64'));

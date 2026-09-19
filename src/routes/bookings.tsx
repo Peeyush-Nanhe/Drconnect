@@ -119,8 +119,9 @@ const MODULE_ICON: Record<Module, string> = {
 
 function classifyCareRequest(specialty: string): Module {
   const s = specialty.toLowerCase();
+  if (/(physio|therap)/.test(s)) return "Physiotherapy";
   if (/(lab|scan|xray|mri|ct|ultrasound|blood test)/.test(s)) return "Lab / Scan";
-  if (/(home|nurse|physio|caretaker)/.test(s)) return "Home Care";
+  if (/(home|nurse|caretaker)/.test(s)) return "Home Care";
   return "Doctor / Nurse";
 }
 

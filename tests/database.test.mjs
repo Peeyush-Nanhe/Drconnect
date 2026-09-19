@@ -189,5 +189,48 @@ test('retired home-visit RPCs cannot bypass the canonical secured lifecycle', as
   }
 });
 
+test('consultation passcode generation and OTP verification lifecycle', async () => {
+  const providerId = '20000000-0000-4000-8000-000000000001';
+  await signup(providerId, { role: 'provider' }, 'test.otp.doc@example.invalid');
+  const patientId = ids.patient;
+
+  // Insert a test appointment
+  const aptResult = await actor(patientId, `
+    insert into public.doctor_appointments(id, provider_id, patient_id, service, mode, start_time, end_time, fee, status)
+    values (gen_random_uuid(), $1, $2, 'General Consultation', 'video', now() + interval '10 days', now() + interval '10 days 30 minutes', 500, 'confirmed')
+    returning id;
+  `, [providerId, patientId], 'service_role');
+  const aptId = aptResult.rows[0].id;
+
+  // 1. Patient or system ensures consultation passcode
+  const ensureRes = await actor(ids.patient, `select public.ensure_consultation_passcode($1, '4921') as result`, [aptId]);
+  assert.equal(ensureRes.rows[0].result.success, true);
+  assert.equal(ensureRes.rows[0].result.otp, '4921');
+
+  // Idempotent: calling again returns the same OTP
+  const repeatRes = await actor(ids.patient, `select public.ensure_consultation_passcode($1) as result`, [aptId]);
+  assert.equal(repeatRes.rows[0].result.otp, '4921');
+
+  // 2. Doctor attempts verification with incorrect OTP -> fails
+  const wrongRes = await actor(providerId, `select public.verify_consultation_otp($1, '1234', 'test notes') as result`, [aptId]);
+  assert.equal(wrongRes.rows[0].result.success, false);
+  assert.match(wrongRes.rows[0].result.error, /Incorrect verification code/);
+
+  // Status remains confirmed
+  const checkMid = await actor(providerId, `select status from public.doctor_appointments where id = $1`, [aptId]);
+  assert.equal(checkMid.rows[0].status, 'confirmed');
+
+  // 3. Doctor enters correct OTP shared by patient -> succeeds and marks completed
+  const rightRes = await actor(providerId, `select public.verify_consultation_otp($1, '4921', 'Prescribed paracetamol 500mg') as result`, [aptId]);
+  assert.equal(rightRes.rows[0].result.success, true);
+  assert.equal(rightRes.rows[0].result.status, 'completed');
+
+  // Status is now completed, completed_at is set, clinical notes recorded
+  const checkFinal = await actor(providerId, `select status, completed_at, clinical_notes from public.doctor_appointments where id = $1`, [aptId]);
+  assert.equal(checkFinal.rows[0].status, 'completed');
+  assert.ok(checkFinal.rows[0].completed_at);
+  assert.equal(checkFinal.rows[0].clinical_notes.summary, 'Prescribed paracetamol 500mg');
+});
+
 // Detailed home-visit policy, persistence and lifecycle checks live in
 // home-visits.test.mjs. Real independent-session races run in the staging suite.
