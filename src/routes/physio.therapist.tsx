@@ -305,13 +305,7 @@ function VisitCard({
   onClaim?: (id: string) => void;
   busy?: boolean;
 }) {
-  let displayFee = v.fee ?? 0;
-  if (v.urgency === "urgent") {
-    if (displayFee === 700) displayFee = Math.round(700 * 1.2);
-    else if (!displayFee) displayFee = 840;
-  } else if (displayFee === 840) {
-    displayFee = 700;
-  }
+  const displayFee = v.fee ?? 0;
 
   return (
     <Card accent={!!onClaim || v.urgency === "urgent"}>
@@ -585,15 +579,14 @@ function TherapistHome() {
       if (cr && (String(cr.specialty || "").toLowerCase().includes("physio") || String(cr.specialty || "").toLowerCase().includes("therap"))) {
         const isEmergency = !!cr.emergency;
         const { data: pData } = await supabase.from("profiles").select("full_name").eq("id", cr.patient_id).maybeSingle();
-        const baseFare = cr.fare || 700;
-        const fare = isEmergency ? (cr.fare && cr.fare > 700 ? cr.fare : Math.round(baseFare * 1.2)) : (cr.fare && cr.fare === 840 ? 700 : (cr.fare || 700));
+        const baseFare = Number(cr.fare) || 0;
         await insertVisit({
           data: {
             reqId: cr.id,
             patientId: cr.patient_id,
             patientName: pData?.full_name || (isEmergency ? "Emergency Patient" : "Patient"),
             specialty: cr.specialty || "Physiotherapy",
-            fare,
+            fare: baseFare,
             urgency: isEmergency ? "urgent" : "planned",
             notes: cr.notes || undefined,
           }
@@ -700,7 +693,9 @@ function TherapistHome() {
                 </div>
                 <div className="text-right">
                   <span className="text-sm font-black text-teal-800">
-                    ₹{activeLiveCareRequest.emergency ? (activeLiveCareRequest.fare && activeLiveCareRequest.fare > 700 ? activeLiveCareRequest.fare : Math.round((activeLiveCareRequest.fare || 700) * 1.2)) : (activeLiveCareRequest.fare && activeLiveCareRequest.fare === 840 ? 700 : (activeLiveCareRequest.fare || 700))}
+                    ₹{activeLiveCareRequest.emergency
+                      ? Math.round((Number(activeLiveCareRequest.fare) || 0) * 1.2)
+                      : (Number(activeLiveCareRequest.fare) || 0)}
                   </span>
                 </div>
               </div>

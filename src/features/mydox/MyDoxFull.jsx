@@ -8277,7 +8277,7 @@ function DoctorApp({ req, hubReq, online, setOnline, onAccept, sevaActions }) {
       emergency: !!liveOpen.emergency,
       notes: liveOpen.notes || "",
       hub: { name: liveOpen.notes?.replace(/^Hub:\s*/, "") || "MyDox Hub — Koregaon Park", address: "Nearby", type: "medconnect" },
-      fare: { total: liveOpen.emergency ? (liveOpen.fare && liveOpen.fare > 700 ? liveOpen.fare : Math.round((liveOpen.fare || 700) * 1.2)) : (liveOpen.fare && liveOpen.fare === 840 ? 700 : (liveOpen.fare || 700)) },
+      fare: { total: liveOpen.emergency ? Math.round((Number(liveOpen.fare) || 0) * 1.2) : (Number(liveOpen.fare) || 0) },
       remaining: 30,
       status: "broadcasting",
     },
@@ -15931,7 +15931,7 @@ function PatientApp({ req, setReq, actions, scanDispatch, scanDispatchActions, a
               toast && toast("Booking confirmed! Dispatched live broadcast to medicos.");
               const isPhys = String(booking?.name || "").toLowerCase().includes("physio") || String(booking?.name || "").toLowerCase().includes("therap");
               const isUrgent = !!(booking?.emergency || booking?.spec?.emergency);
-              const baseFee = booking?.spec?.base || (isPhys ? 700 : 500);
+              const baseFee = booking?.spec?.doctor?.fee || booking?.spec?.base || (isPhys ? 700 : 500);
               const fareAmt = isUrgent ? Math.round(baseFee * 1.2) : baseFee;
               const titleName = isPhys ? "Physiotherapist" : (booking?.name || "Consultation");
               const bData = {

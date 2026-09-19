@@ -432,11 +432,9 @@ export const insertEmergencyPhysioVisit = createServerFn({ method: "POST" })
     if (existingRequested) {
       // Assign the therapist to the patient's existing visit
       const isUrgent = data.urgency === "urgent" || existingRequested.urgency === "urgent";
-      let finalFee = existingRequested.fee || data.fare || 700;
-      if (isUrgent) {
-        if (finalFee === 700) finalFee = Math.round(700 * 1.2);
-      } else {
-        if (finalFee === 840) finalFee = 700;
+      let finalFee = existingRequested.fee || data.fare || 0;
+      if (isUrgent && existingRequested.urgency !== "urgent") {
+        finalFee = Math.round(finalFee * 1.2);
       }
 
       const { error: updErr } = await sb
@@ -453,12 +451,8 @@ export const insertEmergencyPhysioVisit = createServerFn({ method: "POST" })
     }
 
     const isUrgent = data.urgency === "urgent";
-    let visitFee = data.fare || 700;
-    if (isUrgent) {
-      if (visitFee === 700) visitFee = Math.round(700 * 1.2);
-    } else {
-      if (visitFee === 840) visitFee = 700;
-    }
+    const baseFare = Number(data.fare) || 0;
+    const visitFee = isUrgent ? Math.round(baseFare * 1.2) : baseFare;
 
     const allowedTherapies = ['neuro','orthopaedic','sports','paediatric','geriatric','cardio_respiratory','post_surgical','pelvic_floor','general'];
     let mappedType = (data.therapyType || data.specialty || "").toLowerCase().replace(/[^a-z_]/g, '_');

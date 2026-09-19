@@ -261,11 +261,7 @@ export default function MyBookingsOverlay({
         const timeStr = r.scheduled_at
           ? `${new Date(r.scheduled_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })} at ${new Date(r.scheduled_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
           : `${r.area}, ${r.city}`;
-        let displayFee = r.fee;
-        if (r.urgency === "urgent" && displayFee) {
-          if (displayFee === 700) displayFee = 840;
-          if (displayFee === 1500) displayFee = 1800;
-        }
+        const displayFee = r.fee;
         rows.push({
           id: itemId,
           module: "Physiotherapy",
