@@ -451,7 +451,9 @@ export const insertEmergencyPhysioVisit = createServerFn({ method: "POST" })
     }
 
     const isUrgent = data.urgency === "urgent";
-    const baseFare = Number(data.fare) || 0;
+    const specLower = (data.specialty || data.therapyType || "").toLowerCase();
+    const fallbackBase = specLower.includes("psych") ? 1500 : specLower.includes("speech") || specLower.includes("resp") ? 1200 : specLower.includes("occup") ? 1000 : specLower.includes("neuro") ? 900 : specLower.includes("sport") || specLower.includes("geriatric") || specLower.includes("paed") ? 800 : 700;
+    const baseFare = (Number(data.fare) > 0) ? Number(data.fare) : fallbackBase;
     const visitFee = isUrgent ? Math.round(baseFare * 1.2) : baseFare;
 
     const allowedTherapies = ['neuro','orthopaedic','sports','paediatric','geriatric','cardio_respiratory','post_surgical','pelvic_floor','general'];

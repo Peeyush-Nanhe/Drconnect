@@ -17,7 +17,7 @@ import { askTriage } from "@/lib/ask-ai.functions";
 import { analyzeReport } from "@/lib/report-analyzer.functions";
 import { transcribeAudio } from "@/lib/transcribe.functions";
 import { saveAiHistory, listAiHistory, getAiHistoryItem, toggleShareAiHistory, deleteAiHistory } from "@/lib/ai-history.functions";
-import { createCareRequest, cancelCareRequest, acceptCareRequest, completeCareRequest, failCareRequest, useLiveCareRequests, useRecentChatCounterparts, useMyMedicos, logRequestEvent, setRequestStage, useRequestAuditLog, useAdminAuditFeed, payAndGenerateOtp, verifyOtpAndStart, confirmOtpExchanged, TEST_DEFAULT_OTP, rateCareRequest, createCareProgramBooking, createCommunityRequest, useServiceReferrals, createServiceReferral, updateServiceReferralStatus, useRecentPatientsForDoctor, useSession, useLiveDoctorAppointments, useRealtimeChat, verifyAndCompleteConsultation } from "@/features/mydox/backend";
+import { createCareRequest, cancelCareRequest, acceptCareRequest, completeCareRequest, failCareRequest, useLiveCareRequests, useRecentChatCounterparts, useMyMedicos, logRequestEvent, setRequestStage, useRequestAuditLog, useAdminAuditFeed, payAndGenerateOtp, verifyOtpAndStart, confirmOtpExchanged, TEST_DEFAULT_OTP, rateCareRequest, createCareProgramBooking, createCommunityRequest, useServiceReferrals, createServiceReferral, updateServiceReferralStatus, useRecentPatientsForDoctor, useSession, useLiveDoctorAppointments, useRealtimeChat, verifyAndCompleteConsultation, getSpecialtyBaseFare } from "@/features/mydox/backend";
 import { SURGERY_ROLE_LABELS } from "@/features/mydox/surgery";
 import { SlotPickerCalendar } from "@/features/mydox/SlotPickerCalendar";
 import CancellationDialog from "@/features/mydox/CancellationDialog";
@@ -8277,7 +8277,12 @@ function DoctorApp({ req, hubReq, online, setOnline, onAccept, sevaActions }) {
       emergency: !!liveOpen.emergency,
       notes: liveOpen.notes || "",
       hub: { name: liveOpen.notes?.replace(/^Hub:\s*/, "") || "MyDox Hub — Koregaon Park", address: "Nearby", type: "medconnect" },
-      fare: { total: liveOpen.emergency ? Math.round((Number(liveOpen.fare) || 0) * 1.2) : (Number(liveOpen.fare) || 0) },
+      fare: {
+        total: (() => {
+          const base = (Number(liveOpen.fare) > 0) ? Number(liveOpen.fare) : getSpecialtyBaseFare(liveOpen.specialty);
+          return liveOpen.emergency ? Math.round(base * 1.2) : base;
+        })()
+      },
       remaining: 30,
       status: "broadcasting",
     },
@@ -15777,10 +15782,12 @@ function PatientApp({ req, setReq, actions, scanDispatch, scanDispatchActions, a
                   try { targetId = await myMedicos.lookupMedicoIdByName(p.name); } catch (_) { }
                 }
                 const specialtyName = rm.spec?.name || (rm.cat === "therapist" ? "Physiotherapy" : "General");
+                const specBase = p.fee || rm.spec?.doctor?.fee || rm.spec?.base || getSpecialtyBaseFare(specialtyName);
                 const row = await createCareRequest({
                   specialty: specialtyName,
                   emergency: !!rm.emergency,
                   notes: `Direct call to ${p.name}${isMy ? " (My Doctor)" : " (Preferred)"}`,
+                  fare: specBase,
                   notification_stage: isMy ? "my_doctor" : "preferred",
                   my_doctor_id: isMy ? targetId : null,
                   preferred_id: isMy ? null : targetId

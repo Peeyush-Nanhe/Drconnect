@@ -17,7 +17,7 @@ import { listCareVenues, venueKindLabel } from "@/lib/care-venues.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { UnifiedProviderOffers } from "@/features/bookings/UnifiedProviderOffers";
-import { useLiveCareRequests, acceptCareRequest, matchesDoctorSpecialty, verifyAndCompleteConsultation } from "@/features/mydox/backend";
+import { useLiveCareRequests, acceptCareRequest, matchesDoctorSpecialty, verifyAndCompleteConsultation, getSpecialtyBaseFare } from "@/features/mydox/backend";
 import {
   LANGUAGES,
   PHYSIO_QUALIFICATIONS,
@@ -579,7 +579,7 @@ function TherapistHome() {
       if (cr && (String(cr.specialty || "").toLowerCase().includes("physio") || String(cr.specialty || "").toLowerCase().includes("therap"))) {
         const isEmergency = !!cr.emergency;
         const { data: pData } = await supabase.from("profiles").select("full_name").eq("id", cr.patient_id).maybeSingle();
-        const baseFare = Number(cr.fare) || 0;
+        const baseFare = (Number(cr.fare) > 0) ? Number(cr.fare) : getSpecialtyBaseFare(cr.specialty);
         await insertVisit({
           data: {
             reqId: cr.id,
@@ -693,9 +693,12 @@ function TherapistHome() {
                 </div>
                 <div className="text-right">
                   <span className="text-sm font-black text-teal-800">
-                    ₹{activeLiveCareRequest.emergency
-                      ? Math.round((Number(activeLiveCareRequest.fare) || 0) * 1.2)
-                      : (Number(activeLiveCareRequest.fare) || 0)}
+                    ₹{(() => {
+                      const base = (Number(activeLiveCareRequest.fare) > 0)
+                        ? Number(activeLiveCareRequest.fare)
+                        : getSpecialtyBaseFare(activeLiveCareRequest.specialty);
+                      return activeLiveCareRequest.emergency ? Math.round(base * 1.2) : base;
+                    })()}
                   </span>
                 </div>
               </div>
