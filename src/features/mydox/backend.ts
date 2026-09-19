@@ -183,13 +183,30 @@ export function useLiveCareRequests(enabled = true) {
   return { rows, loading };
 }
 
+export function getSpecialtyBaseFare(specialty?: string | null): number {
+  if (!specialty) return 500;
+  const s = specialty.toLowerCase();
+  if (s.includes("psych") || s.includes("cbt") || s.includes("mental")) return 1500;
+  if (s.includes("speech") || s.includes("lang")) return 1200;
+  if (s.includes("resp")) return 1200;
+  if (s.includes("occup")) return 1000;
+  if (s.includes("neuro")) return 900;
+  if (s.includes("cardio") || s.includes("heart")) return 900;
+  if (s.includes("sport") || s.includes("geriatric") || s.includes("paed") || s.includes("pedi")) return 800;
+  if (s.includes("physio") || s.includes("ortho") || s.includes("therap")) return 700;
+  if (s.includes("surgeon") || s.includes("surgery") || s.includes("onco") || s.includes("plastic")) return 1500;
+  if (s.includes("nurse") || s.includes("care")) return 800;
+  if (s.includes("tech") || s.includes("ecg") || s.includes("lab")) return 600;
+  return 500;
+}
+
 export async function createCareRequest(input: {
   specialty: string;
   emergency?: boolean;
   notes?: string;
   lat?: number;
   lng?: number;
-  fare?: number;
+  fare?: number | null;
   my_doctor_id?: string | null;
   preferred_id?: string | null;
   notification_stage?: "my_doctor" | "preferred" | "broadcast" | null;
@@ -199,6 +216,10 @@ export async function createCareRequest(input: {
   const uid = sess.session?.user?.id;
   if (!uid) throw new Error("Not signed in");
   const stage = input.notification_stage ?? (input.my_doctor_id ? "my_doctor" : "broadcast");
+  const resolvedFare = (input.fare != null && Number(input.fare) > 0)
+    ? Number(input.fare)
+    : getSpecialtyBaseFare(input.specialty);
+
   const { data, error } = await supabase
     .from("care_requests")
     .insert({
@@ -208,7 +229,7 @@ export async function createCareRequest(input: {
       notes: input.notes ?? null,
       lat: input.lat ?? null,
       lng: input.lng ?? null,
-      fare: input.fare ?? null,
+      fare: resolvedFare,
       my_doctor_id: input.my_doctor_id ?? null,
       preferred_id: input.preferred_id ?? null,
       notification_stage: stage,
