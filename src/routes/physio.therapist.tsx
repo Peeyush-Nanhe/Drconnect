@@ -307,8 +307,10 @@ function VisitCard({
 }) {
   let displayFee = v.fee ?? 0;
   if (v.urgency === "urgent") {
-    if (displayFee === 700) displayFee = 840;
-    if (displayFee === 1500) displayFee = 1800;
+    if (displayFee === 700) displayFee = Math.round(700 * 1.2);
+    else if (!displayFee) displayFee = 840;
+  } else if (displayFee === 840) {
+    displayFee = 700;
   }
 
   return (
@@ -581,14 +583,19 @@ function TherapistHome() {
     try {
       const cr = await acceptCareRequest(reqId);
       if (cr && (String(cr.specialty || "").toLowerCase().includes("physio") || String(cr.specialty || "").toLowerCase().includes("therap"))) {
+        const isEmergency = !!cr.emergency;
         const { data: pData } = await supabase.from("profiles").select("full_name").eq("id", cr.patient_id).maybeSingle();
+        const baseFare = cr.fare || 700;
+        const fare = isEmergency ? (cr.fare && cr.fare > 700 ? cr.fare : Math.round(baseFare * 1.2)) : (cr.fare && cr.fare === 840 ? 700 : (cr.fare || 700));
         await insertVisit({
           data: {
             reqId: cr.id,
             patientId: cr.patient_id,
-            patientName: pData?.full_name || "Emergency Patient",
+            patientName: pData?.full_name || (isEmergency ? "Emergency Patient" : "Patient"),
             specialty: cr.specialty || "Physiotherapy",
-            fare: cr.fare ? Math.round(cr.fare * 1.2) : Math.round(700 * 1.2)
+            fare,
+            urgency: isEmergency ? "urgent" : "planned",
+            notes: cr.notes || undefined,
           }
         });
       }
@@ -675,7 +682,11 @@ function TherapistHome() {
                   <span className="rounded-full bg-red-100 px-2.5 py-0.5 text-[11px] font-extrabold text-red-700">
                     EMERGENCY (≤2h)
                   </span>
-                ) : null}
+                ) : (
+                  <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-[11px] font-extrabold text-blue-700">
+                    Scheduled
+                  </span>
+                )}
               </div>
 
               <div className="mt-2 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
@@ -689,7 +700,7 @@ function TherapistHome() {
                 </div>
                 <div className="text-right">
                   <span className="text-sm font-black text-teal-800">
-                    ₹{activeLiveCareRequest.fare || 700}
+                    ₹{activeLiveCareRequest.emergency ? (activeLiveCareRequest.fare && activeLiveCareRequest.fare > 700 ? activeLiveCareRequest.fare : Math.round((activeLiveCareRequest.fare || 700) * 1.2)) : (activeLiveCareRequest.fare && activeLiveCareRequest.fare === 840 ? 700 : (activeLiveCareRequest.fare || 700))}
                   </span>
                 </div>
               </div>

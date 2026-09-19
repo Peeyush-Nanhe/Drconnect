@@ -8275,8 +8275,9 @@ function DoctorApp({ req, hubReq, online, setOnline, onAccept, sevaActions }) {
       dbId: liveOpen.id,
       spec: { name: liveOpen.specialty || "General Physician", type: "doctor" },
       emergency: !!liveOpen.emergency,
+      notes: liveOpen.notes || "",
       hub: { name: liveOpen.notes?.replace(/^Hub:\s*/, "") || "MyDox Hub — Koregaon Park", address: "Nearby", type: "medconnect" },
-      fare: { total: liveOpen.fare || 800 },
+      fare: { total: liveOpen.emergency ? (liveOpen.fare && liveOpen.fare > 700 ? liveOpen.fare : Math.round((liveOpen.fare || 700) * 1.2)) : (liveOpen.fare && liveOpen.fare === 840 ? 700 : (liveOpen.fare || 700)) },
       remaining: 30,
       status: "broadcasting",
     },
@@ -8508,18 +8509,22 @@ function DoctorApp({ req, hubReq, online, setOnline, onAccept, sevaActions }) {
         {/* Incoming alert — now at the top of the doctor view */}
         {online && activeIncoming && !acted && youCand && (
           <div className="rounded-2xl p-4 mb-4" style={{ background: C.surface, border: `1.5px solid ${activeIncoming.r.emergency ? C.emerg : activeIncoming.src === "hub" ? C.hub : C.primary}`, boxShadow: "0 8px 28px rgba(0,0,0,.12)", animation: "slidedown .35s cubic-bezier(.2,.8,.2,1)" }}>
-            {activeIncoming.r.emergency && (
+            {activeIncoming.r.emergency ? (
               <div className="flex items-center justify-center gap-1.5 rounded-full py-1.5 mb-3 font-bold" style={{ background: C.emergSoft, color: C.emergDeep, fontSize: 12 }}>
                 <Zap size={13} /> EMERGENCY · attend within 2 hours
               </div>
-            )}
+            ) : (activeIncoming.r.scheduled || activeIncoming.r.notes?.includes("Scheduled")) ? (
+              <div className="flex items-center justify-center gap-1.5 rounded-full py-1.5 mb-3 font-bold" style={{ background: "#EFF6FF", color: "#1D4ED8", fontSize: 12 }}>
+                <Calendar size={13} /> {activeIncoming.r.scheduled?.label || "Scheduled Consultation"}
+              </div>
+            ) : null}
             {activeIncoming.src === "hub" && (
               <div className="flex items-center justify-center gap-1.5 rounded-full py-1.5 mb-3 font-bold" style={{ background: C.hubSoft, color: C.hub, fontSize: 12 }}>
                 <Building2 size={13} /> From Health Hub · Walk-in patient
               </div>
             )}
             <div className="flex items-center justify-center gap-1.5 rounded-full py-1.5 mb-3 font-bold" style={{ background: C.primarySoft, color: C.primaryDeep, fontSize: 11.5 }}>
-              <Radio size={12} /> Broadcast to nearby {broadcastType} · first to accept wins
+              <Radio size={12} /> {(!activeIncoming.r.emergency && (activeIncoming.r.scheduled || activeIncoming.r.notes?.includes("Scheduled"))) ? `Scheduled broadcast to nearby ${broadcastType} · accept to claim slot` : `Broadcast to nearby ${broadcastType} · first to accept wins`}
             </div>
             <div className="flex items-center justify-between mb-3">
               <div>
@@ -15925,13 +15930,15 @@ function PatientApp({ req, setReq, actions, scanDispatch, scanDispatchActions, a
               
               toast && toast("Booking confirmed! Dispatched live broadcast to medicos.");
               const isPhys = String(booking?.name || "").toLowerCase().includes("physio") || String(booking?.name || "").toLowerCase().includes("therap");
-              const fareAmt = isPhys ? Math.round(700 * 1.2) : 500;
+              const isUrgent = !!(booking?.emergency || booking?.spec?.emergency);
+              const baseFee = booking?.spec?.base || (isPhys ? 700 : 500);
+              const fareAmt = isUrgent ? Math.round(baseFee * 1.2) : baseFee;
               const titleName = isPhys ? "Physiotherapist" : (booking?.name || "Consultation");
               const bData = {
                 id: "req-" + Date.now(),
                 dbId: booking?.careRequestId || null,
                 spec: { ...(booking?.spec || {}), type: isPhys ? "therapist" : "doctor", name: titleName },
-                emergency: false,
+                emergency: isUrgent,
                 scheduled: { label: booking?.label || "Scheduled" },
                 area: area || "Kothrud",
                 fare: { total: fareAmt },
