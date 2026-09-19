@@ -17,7 +17,7 @@ import { askTriage } from "@/lib/ask-ai.functions";
 import { analyzeReport } from "@/lib/report-analyzer.functions";
 import { transcribeAudio } from "@/lib/transcribe.functions";
 import { saveAiHistory, listAiHistory, getAiHistoryItem, toggleShareAiHistory, deleteAiHistory } from "@/lib/ai-history.functions";
-import { createCareRequest, cancelCareRequest, acceptCareRequest, completeCareRequest, failCareRequest, useLiveCareRequests, useRecentChatCounterparts, useMyMedicos, logRequestEvent, setRequestStage, useRequestAuditLog, useAdminAuditFeed, payAndGenerateOtp, verifyOtpAndStart, confirmOtpExchanged, TEST_DEFAULT_OTP, rateCareRequest, createCareProgramBooking, createCommunityRequest, useServiceReferrals, createServiceReferral, updateServiceReferralStatus, useRecentPatientsForDoctor, useSession, useLiveDoctorAppointments, useRealtimeChat, verifyAndCompleteConsultation } from "@/features/mydox/backend";
+import { createCareRequest, cancelCareRequest, acceptCareRequest, completeCareRequest, failCareRequest, useLiveCareRequests, useRecentChatCounterparts, useMyMedicos, logRequestEvent, setRequestStage, useRequestAuditLog, useAdminAuditFeed, payAndGenerateOtp, verifyOtpAndStart, confirmOtpExchanged, TEST_DEFAULT_OTP, rateCareRequest, createCareProgramBooking, createCommunityRequest, useServiceReferrals, createServiceReferral, updateServiceReferralStatus, useRecentPatientsForDoctor, useSession, useLiveDoctorAppointments, useRealtimeChat, verifyAndCompleteConsultation, getSpecialtyBaseFare } from "@/features/mydox/backend";
 import { SURGERY_ROLE_LABELS } from "@/features/mydox/surgery";
 import { SlotPickerCalendar } from "@/features/mydox/SlotPickerCalendar";
 import CancellationDialog from "@/features/mydox/CancellationDialog";
@@ -453,9 +453,9 @@ function panelDoctorsForSpec(spec) {
   const roster = _liveMedicoRoster().filter(m => _medicoMatchesSpec(m, spec) && _hasTreatedPatients(m));
   const list = roster.map((m, i) => {
     const seed = _stableSeed(m.userId || m.name);
-    const patientRating = +(4.3 + ((seed + i * 3) % 7) / 10).toFixed(1);
-    const hospitalRating = +(4.2 + ((seed + i * 5) % 8) / 10).toFixed(1);
-    const professionalScore = Math.max(72, Math.min(99, Math.round(((patientRating / 5) * 55) + ((hospitalRating / 5) * 35) + 10 - (i * 1.5))));
+    const patientRating = +(4.5 + ((seed + i * 3) % 5) / 10).toFixed(1);
+    const hospitalRating = +(4.4 + ((seed + i * 5) % 6) / 10).toFixed(1);
+    const professionalScore = Math.max(82, Math.min(99, Math.round(((patientRating / 5) * 55) + ((hospitalRating / 5) * 35) + 10 - (i * 1.5))));
     return {
       id: (spec.id || "spec") + "_panel_" + m.userId,
       userId: m.userId,
@@ -464,7 +464,7 @@ function panelDoctorsForSpec(spec) {
       exp: 5 + (seed % 19),
       patientRating, hospitalRating, professionalScore,
       reviews: 40 + (seed % 260),
-      fee: (spec.base || 500) + (i * 100),
+      fee: (spec.base || 500) + (i * 50),
       nextSlot: ["Today 5 PM", "Tomorrow 10 AM", "Today 7 PM", "In 2 days", "Tomorrow 4 PM"][seed % 5],
       bio: `Experienced ${(spec.name || "specialist").toLowerCase()} focused on patient-first, evidence-based care.`,
     };
@@ -647,6 +647,67 @@ function providerHandles(providerSpecialty, term) {
   if (caps.length === 0) return true;
   const t = String(term).toLowerCase().trim();
   return caps.some(c => c.includes(t) || t.includes(c));
+}
+export function matchesDoctorSpecialty(doctorSpecialty, requestSpecialty) {
+  if (!requestSpecialty) return true; // generic broadcast open to any provider
+  const doc = String(doctorSpecialty || "").toLowerCase().trim();
+  const req = String(requestSpecialty || "").toLowerCase().trim();
+
+  if (!doc) {
+    return req.includes("general") || req.includes("consult") || req === "doctor";
+  }
+  if (doc === req) return true;
+
+  // Physiotherapy group
+  const isPhysioReq = req.includes("physio") || req.includes("therap");
+  const isPhysioDoc = doc.includes("physio") || doc.includes("therap");
+  if (isPhysioReq || isPhysioDoc) {
+    return isPhysioReq && isPhysioDoc;
+  }
+
+  // Cardiology group
+  const isCardioReq = req.includes("cardio") || req.includes("heart");
+  const isCardioDoc = doc.includes("cardio") || doc.includes("heart");
+  if (isCardioReq || isCardioDoc) {
+    return isCardioReq && isCardioDoc;
+  }
+
+  // Neurology group
+  const isNeuroReq = req.includes("neuro") || req.includes("brain") || req.includes("nerve");
+  const isNeuroDoc = doc.includes("neuro") || doc.includes("brain") || doc.includes("nerve");
+  if (isNeuroReq || isNeuroDoc) {
+    return isNeuroReq && isNeuroDoc;
+  }
+
+  // Pediatrics group
+  const isPediaReq = req.includes("child") || req.includes("pediatric") || req.includes("paediatric");
+  const isPediaDoc = doc.includes("child") || doc.includes("pediatric") || doc.includes("paediatric");
+  if (isPediaReq || isPediaDoc) {
+    return isPediaReq && isPediaDoc;
+  }
+
+  // Orthopedics group
+  const isOrthoReq = req.includes("ortho") || req.includes("bone") || req.includes("joint");
+  const isOrthoDoc = doc.includes("ortho") || doc.includes("bone") || doc.includes("joint");
+  if (isOrthoReq || isOrthoDoc) {
+    return isOrthoReq && isOrthoDoc;
+  }
+
+  // General Physician group
+  const isGeneralReq = req.includes("general") || req.includes("consult") || req.includes("physician") || req === "doctor";
+  const isGeneralDoc = doc.includes("general") || doc.includes("physician") || doc === "gp" || doc.includes("family");
+  if (isGeneralReq && isGeneralDoc) {
+    return true;
+  }
+
+  // Dr. Vikram Iyer / Family Clinic in Koregaon Park handles General Physician / Family & Neurology
+  if (doc.includes("vikram") || doc.includes("iyer") || doc.includes("family")) {
+    if (req.includes("general") || req.includes("physician") || req.includes("gp") || req.includes("family") || req.includes("neuro") || req.includes("consult")) {
+      return true;
+    }
+  }
+
+  return doc.includes(req) || req.includes(doc);
 }
 function buildLiveCategory(view, seededFallback, filters) {
   const f = filters || {};
@@ -3005,7 +3066,7 @@ function CalendarChat({ patientName, onClose, specialty, subtitle }) {
   );
 }
 
-function BookingCalendar({ title = "My Schedule", subtitle = "Your patient appointments", accent = "#0D9488", bookings, onClose }) {
+function BookingCalendar({ title = "My Schedule", subtitle = "Your patient appointments", accent = "#0D9488", bookings, onViewPatient, onClose }) {
   const today = new Date();
   const [vy, setVy] = useState(today.getFullYear());
   const [vm, setVm] = useState(today.getMonth());
@@ -3174,23 +3235,43 @@ function BookingCalendar({ title = "My Schedule", subtitle = "Your patient appoi
                           <MessageSquare size={14} /> Chat
                         </button>
                       ) : !isPatientView ? (
-                        <button
-                          onClick={() => setOverDialogItem(b)}
-                          style={{
-                            border: "1.5px solid #0D9488",
-                            background: "#ffffff",
-                            color: "#0D9488",
-                            borderRadius: 999,
-                            padding: "6px 16px",
-                            fontSize: 12,
-                            fontWeight: 700,
-                            cursor: "pointer",
-                            transition: "all 0.15s",
-                            whiteSpace: "nowrap"
-                          }}
-                        >
-                          Consultation over
-                        </button>
+                        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                          {onViewPatient && (
+                            <button
+                              onClick={() => onViewPatient(b.title)}
+                              style={{
+                                border: "1px solid #CBD5E1",
+                                background: "#F8FAFC",
+                                color: "#334155",
+                                borderRadius: 999,
+                                padding: "6px 12px",
+                                fontSize: 11.5,
+                                fontWeight: 700,
+                                cursor: "pointer",
+                                whiteSpace: "nowrap"
+                              }}
+                            >
+                              Patient Profile
+                            </button>
+                          )}
+                          <button
+                            onClick={() => setOverDialogItem(b)}
+                            style={{
+                              border: "1.5px solid #0D9488",
+                              background: "#ffffff",
+                              color: "#0D9488",
+                              borderRadius: 999,
+                              padding: "6px 16px",
+                              fontSize: 12,
+                              fontWeight: 700,
+                              cursor: "pointer",
+                              transition: "all 0.15s",
+                              whiteSpace: "nowrap"
+                            }}
+                          >
+                            Consultation over
+                          </button>
+                        </div>
                       ) : null}
                     </div>
                   )}
@@ -3802,7 +3883,10 @@ function DoctorPanel({ spec, selectedDoctor, onSelect, preferredNames = [], onTo
           : { label: "🏆 TOP SCORE", color: "#92400E", banner: { bg: "#FEF3C7", border: "#FDE68A", fg: "#92400E", text: "Suggested Doctor", note: "❤ save one to make them yours", icon: <Star size={12} fill="#B45309" color="#B45309" /> } };
       // "Preferred" row inside the reveal — only when it's different from primary and exists
       const revealPref = (!primaryIsPref && prefDoc && prefDoc.name !== primaryDoc.name) ? prefDoc : null;
-      const revealOthers = all.filter(d => d.name !== primaryDoc.name && d.name !== (revealPref?.name)).slice(0, 5);
+      let revealOthers = all.filter(d => d.name !== primaryDoc.name && d.name !== (revealPref?.name)).slice(0, 6);
+      if (revealOthers.length === 0) {
+        revealOthers = all.filter(d => d.name !== primaryDoc.name).slice(0, 5);
+      }
       return (
         <div style={{ marginTop: 2, marginBottom: 16 }}>
           <div style={{ background: primaryBadge.banner.bg, border: `1px solid ${primaryBadge.banner.border}`, borderRadius: 12, padding: "9px 12px", marginBottom: 8 }}>
@@ -3824,7 +3908,13 @@ function DoctorPanel({ spec, selectedDoctor, onSelect, preferredNames = [], onTo
                 </>
               )}
               <p style={{ margin: "0 0 8px", fontSize: 12.5, fontWeight: 800, color: C.ink }}>Top doctors in your area</p>
-              <div style={{ background: C.highlight2, border: `1px solid ${C.line}`, borderRadius: 12, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 9 }}>{revealOthers.map((d, i) => cardRow(d, i))}</div>
+              <div style={{ background: C.highlight2, border: `1px solid ${C.line}`, borderRadius: 12, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 9 }}>
+                {revealOthers.length > 0 ? (
+                  revealOthers.map((d, i) => cardRow(d, i))
+                ) : (
+                  <p style={{ margin: 0, fontSize: 12, color: C.sub, textAlign: "center", padding: "10px 0" }}>No other doctors currently online</p>
+                )}
+              </div>
             </>
           )}
         </div>
@@ -5987,8 +6077,8 @@ const EMR_PATIENTS = [
     vitals: { bp: "118/76 mmHg", pulse: "78 /min", temp: "98.4 °F", spo2: "99%", wt: "61 kg" },
     meds: [{ name: "Thyronorm", strength: "50 mcg", freq: "OD", food: "Empty stomach" }],
     visits: [
-      { id: "v1", date: "12 Jun 2026", dx: "Hypothyroidism — follow-up", note: "TSH 3.2, clinically stable. Continue same dose, repeat TFT in 3 months.", by: "Dr. Aditi Sharma" },
-      { id: "v2", date: "02 Mar 2026", dx: "Acute viral fever", note: "Symptomatic management, advised rest & fluids. Settled.", by: "Dr. Aditi Sharma" },
+      { id: "v1", date: "12 Jun 2026", dx: "Hypothyroidism — follow-up", note: "TSH 3.2, clinically stable. Continue same dose, repeat TFT in 3 months.", by: "Dr. Vikram Iyer" },
+      { id: "v2", date: "02 Mar 2026", dx: "Acute viral fever", note: "Symptomatic management, advised rest & fluids. Settled.", by: "Dr. Vikram Iyer" },
     ]
   },
   {
@@ -7992,6 +8082,7 @@ function DoctorApp({ req, hubReq, online, setOnline, onAccept, sevaActions }) {
   const [showReferService, setShowReferService] = useState(false); // recommend app services to a patient
   const [showMyServiceReferrals, setShowMyServiceReferrals] = useState(false); // referrals status tracker
   const [showHistory, setShowHistory] = useState(false); // completed consultation history
+  const [viewPatientProfile, setViewPatientProfile] = useState(null); // patient health profile modal
 
   const { session } = useSession();
   const { rows: liveApps } = useLiveDoctorAppointments(session?.user?.id);
@@ -8033,7 +8124,7 @@ function DoctorApp({ req, hubReq, online, setOnline, onAccept, sevaActions }) {
 
   const DOC_BOOKINGS = [
     ...realBookings,
-    calBk(0, 9, 0, "Priya Sharma", "Follow-up • MyDox Hub Koregaon Park", "Confirmed", C.primary),
+    calBk(0, 9, 0, "Priya Sharma", "Follow-up • Dr. Iyer's Family Clinic, Koregaon Park", "Confirmed", C.primary),
     calBk(0, 11, 30, "Rahul Verma", "New consult • Video", "Confirmed", C.primary),
     calBk(0, 16, 0, "Meena Tiwari", "Home visit • Bavdhan", "Confirmed", C.primary),
     calBk(1, 10, 0, "Arjun Rao", "Diabetes review • MyDox Hub", "Scheduled", C.primary),
@@ -8044,6 +8135,155 @@ function DoctorApp({ req, hubReq, online, setOnline, onAccept, sevaActions }) {
   // Live subscription to real broadcast care_requests inserted by patients on other devices.
   // Any 'open' row within a generous 15-minute window is treated as an incoming ping — so a medico
   // who comes online a moment after the patient hit "Broadcast" still sees the request.
+  const [showDoctorProfile, setShowDoctorProfile] = useState(false);
+  const [profileSpecialty, setProfileSpecialty] = useState(null);
+  const [profileName, setProfileName] = useState(null);
+  const [profileDegree, setProfileDegree] = useState(null);
+
+  useEffect(() => {
+    const userId = session?.user?.id;
+    if (!userId) return;
+    let alive = true;
+    (async () => {
+      try {
+        const { data: p } = await supabase
+          .from("profiles")
+          .select("full_name, specialty, view")
+          .eq("id", userId)
+          .maybeSingle();
+        if (p && alive) {
+          if (p.specialty) setProfileSpecialty(p.specialty);
+          if (p.full_name) setProfileName(p.full_name);
+        }
+        const { data: pt } = await supabase
+          .from("physio_therapists")
+          .select("full_name, qualification, specializations")
+          .eq("user_id", userId)
+          .maybeSingle();
+        if (pt && alive) {
+          setProfileSpecialty("Physiotherapy");
+          if (pt.full_name) setProfileName(pt.full_name);
+          if (pt.qualification) setProfileDegree(pt.qualification);
+        }
+      } catch (e) {
+        console.warn("DoctorApp profile load error:", e);
+      }
+    })();
+    return () => { alive = false; };
+  }, [session?.user?.id]);
+
+  const currentName = profileName || (typeof window !== "undefined" && window.localStorage.getItem("mc_user_name")) || YOU.name;
+
+  const currentSpecialty = useMemo(() => {
+    if (profileSpecialty) return profileSpecialty;
+    if (typeof window !== "undefined") {
+      const stored = window.localStorage.getItem("mc_user_specialty");
+      if (stored) return stored;
+    }
+    const lower = currentName.toLowerCase();
+    if (lower.includes("anita")) return "Cardiology";
+    if (lower.includes("vikram")) return "Family Physician & Neurologist";
+    if (lower.includes("kavita") || lower.includes("therapist") || lower.includes("physio")) return "Physiotherapy";
+    if (lower.includes("leela")) return "Child Specialist";
+    return "General Physician";
+  }, [profileSpecialty, currentName]);
+
+  const isTherapist = currentSpecialty.toLowerCase().includes("physio") || currentSpecialty.toLowerCase().includes("therap");
+  const defaultDegree = isTherapist ? (profileDegree || "MPT (Ortho & Neuro)") : currentSpecialty.includes("Cardio") ? "MD, DM (Cardiology)" : currentSpecialty.includes("Neuro") ? "MD, DM (Neurology)" : "MBBS, MD";
+  const specialtyLabel = isTherapist ? `Physiotherapist · ${defaultDegree}` : `${currentSpecialty} · ★ 4.9`;
+
+  const storageKey = `mc_doc_status_toggles_${currentName.replace(/[^a-zA-Z0-9]/g, "_")}`;
+  const [statusToggles, setStatusToggles] = useState(() => {
+    try {
+      if (typeof window !== "undefined") {
+        const saved = window.localStorage.getItem(storageKey);
+        if (saved) return JSON.parse(saved);
+      }
+    } catch {}
+    return {
+      homeVisits: true,
+      clinicVisits: true,
+      videoConsults: true,
+      emergency: true,
+      disabledSkills: {},
+    };
+  });
+
+  const toggleStatus = (key) => {
+    setStatusToggles(prev => {
+      const next = { ...prev, [key]: !prev[key] };
+      try {
+        if (typeof window !== "undefined") {
+          window.localStorage.setItem(storageKey, JSON.stringify(next));
+        }
+      } catch {}
+      return next;
+    });
+  };
+
+  const toggleSkill = (skill) => {
+    setStatusToggles(prev => {
+      const disabledSkills = { ...(prev.disabledSkills || {}) };
+      if (disabledSkills[skill]) {
+        delete disabledSkills[skill];
+      } else {
+        disabledSkills[skill] = true;
+      }
+      const next = { ...prev, disabledSkills };
+      try {
+        if (typeof window !== "undefined") {
+          window.localStorage.setItem(storageKey, JSON.stringify(next));
+        }
+      } catch {}
+      return next;
+    });
+  };
+
+  const doctorSkills = useMemo(() => {
+    if (isTherapist) {
+      return ["Orthopedic Physiotherapy", "Neurological Rehab", "Sports Injury", "Post-Surgery Recovery", "Geriatric Rehab", "Movement Therapy"];
+    }
+    if (currentSpecialty.toLowerCase().includes("cardio")) {
+      return ["Clinical Cardiology", "ECG & Heart Review", "Hypertension", "Post-Angioplasty Care", "Preventive Cardiac Care"];
+    }
+    if (currentSpecialty.toLowerCase().includes("neuro")) {
+      return ["Clinical Neurology", "Stroke Rehabilitation", "Headache & Migraine", "Neuropathy Review", "Epilepsy Management"];
+    }
+    if (currentSpecialty.toLowerCase().includes("child") || currentSpecialty.toLowerCase().includes("pedia")) {
+      return ["Child Healthcare", "Pediatric Vaccination", "Growth & Nutrition", "Newborn Care", "Pediatric Infection"];
+    }
+    return ["General Consult", "Fever & Infection", "Diabetes Review", "Hypertension Care", "Preventive Health"];
+  }, [isTherapist, currentSpecialty]);
+
+  const doctorAcceptsRequest = useCallback((r) => {
+    if (!r) return false;
+    const reqSpec = r.specialty || r.spec?.name || "";
+    if (!matchesDoctorSpecialty(currentSpecialty, reqSpec)) return false;
+
+    // Gating by visit mode and emergency toggles
+    const isEmerg = !!(r.emergency || r.spec?.emergency);
+    if (isEmerg && statusToggles.emergency === false) return false;
+
+    const notesStr = String(r.notes || r.hub?.name || "").toLowerCase();
+    const isHome = notesStr.includes("home") || (r.home_visit_status && r.home_visit_status !== "none");
+    const isVideo = notesStr.includes("video") || notesStr.includes("tele");
+    if (isHome && statusToggles.homeVisits === false) return false;
+    if (isVideo && statusToggles.videoConsults === false) return false;
+    if (!isHome && !isVideo && statusToggles.clinicVisits === false) return false;
+
+    // Gating by skills toggles if specific skill was disabled
+    if (statusToggles.disabledSkills) {
+      for (const [skill, disabled] of Object.entries(statusToggles.disabledSkills)) {
+        if (disabled) {
+          const sLower = skill.toLowerCase();
+          if (reqSpec.toLowerCase().includes(sLower) || notesStr.includes(sLower)) {
+            return false;
+          }
+        }
+      }
+    }
+    return true;
+  }, [currentSpecialty, statusToggles]);
   const { rows: liveRows } = useLiveCareRequests(online);
   const liveOpen = useMemo(() => {
     if (!online) return null;
@@ -8061,8 +8301,14 @@ function DoctorApp({ req, hubReq, online, setOnline, onAccept, sevaActions }) {
       dbId: liveOpen.id,
       spec: { name: liveOpen.specialty || "General Physician", type: "doctor" },
       emergency: !!liveOpen.emergency,
+      notes: liveOpen.notes || "",
       hub: { name: liveOpen.notes?.replace(/^Hub:\s*/, "") || "MyDox Hub — Koregaon Park", address: "Nearby", type: "medconnect" },
-      fare: { total: liveOpen.fare || 800 },
+      fare: {
+        total: (() => {
+          const base = (Number(liveOpen.fare) > 0) ? Number(liveOpen.fare) : getSpecialtyBaseFare(liveOpen.specialty);
+          return liveOpen.emergency ? Math.round(base * 1.2) : base;
+        })()
+      },
       // Give the medico a fresh 30s countdown from the moment they see the ping,
       // instead of racing the patient's original 15s local timer.
       remaining: 30,
@@ -8106,6 +8352,181 @@ function DoctorApp({ req, hubReq, online, setOnline, onAccept, sevaActions }) {
           </div>
         </div>
         {showCal && <BookingCalendar title="My Schedule" subtitle="Your patient appointments" accent={C.primary} bookings={DOC_BOOKINGS} onClose={() => setShowCal(false)} />}
+        {showDoctorProfile && (
+          <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(15,23,42,.65)", display: "flex", alignItems: "flex-end", justifyContent: "center" }} onClick={() => setShowDoctorProfile(false)}>
+            <div style={{ width: "100%", maxWidth: 440, background: "#fff", borderRadius: "24px 24px 0 0", padding: "22px 20px 28px", maxHeight: "88vh", overflowY: "auto", fontFamily: "'Plus Jakarta Sans', sans-serif" }} onClick={(e) => e.stopPropagation()}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <Avatar name={currentName} size={48} />
+                  <div>
+                    <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: "#0F172A" }}>{currentName}</h2>
+                    <p style={{ margin: "2px 0 0", fontSize: 12, fontWeight: 600, color: isTherapist ? "#0EA5E9" : "#0D9488" }}>{specialtyLabel}</p>
+                  </div>
+                </div>
+                <button onClick={() => setShowDoctorProfile(false)} style={{ background: "#F1F5F9", border: "none", borderRadius: "50%", width: 32, height: 32, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 700, color: "#64748B" }}>✕</button>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 16 }}>
+                <div style={{ background: "#F8FAFC", borderRadius: 12, padding: "10px 8px", textAlign: "center", border: "1px solid #E2E8F0" }}>
+                  <p style={{ margin: 0, fontSize: 16, fontWeight: 800, color: "#0F172A" }}>4.9 ★</p>
+                  <p style={{ margin: "2px 0 0", fontSize: 10, fontWeight: 600, color: "#64748B" }}>RATING</p>
+                </div>
+                <div style={{ background: "#F8FAFC", borderRadius: 12, padding: "10px 8px", textAlign: "center", border: "1px solid #E2E8F0" }}>
+                  <p style={{ margin: 0, fontSize: 16, fontWeight: 800, color: "#0F172A" }}>8+ Yrs</p>
+                  <p style={{ margin: "2px 0 0", fontSize: 10, fontWeight: 600, color: "#64748B" }}>EXPERIENCE</p>
+                </div>
+                <div style={{ background: "#F8FAFC", borderRadius: 12, padding: "10px 8px", textAlign: "center", border: "1px solid #E2E8F0" }}>
+                  <p style={{ margin: 0, fontSize: 16, fontWeight: 800, color: isTherapist ? "#0EA5E9" : "#0D9488" }}>{isTherapist ? "₹700" : "₹800"}</p>
+                  <p style={{ margin: "2px 0 0", fontSize: 10, fontWeight: 600, color: "#64748B" }}>BASE FEE</p>
+                </div>
+              </div>
+
+              {/* Quick Persona Switcher for testing Provider Roles */}
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                  <p style={{ margin: 0, fontSize: 11, fontWeight: 800, color: "#475569", textTransform: "uppercase" }}>Provider Profile & Role</p>
+                  <span style={{ fontSize: 10, fontWeight: 600, color: isTherapist ? "#0EA5E9" : "#0D9488" }}>Tap to switch identity</span>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                  {[
+                    { name: "Dr. Kavita Deshmukh", spec: "Physiotherapy", role: "Physiotherapist" },
+                    { name: "Dr. Rahul Nair", spec: "General Physician", role: "General Physician" },
+                    { name: "Dr. Anita Rao", spec: "Cardiology", role: "Cardiologist" },
+                    { name: "Dr. Vikram Iyer", spec: "General Physician & Neurology", role: "Family Clinic & Neurologist · Koregaon Park" },
+                  ].map(p => {
+                    const isSelected = currentName.includes(p.name.split(" ")[1]);
+                    const isP = p.spec === "Physiotherapy";
+                    return (
+                      <button
+                        key={p.name}
+                        type="button"
+                        onClick={() => {
+                          setProfileName(p.name);
+                          setProfileSpecialty(p.spec);
+                          if (typeof window !== "undefined") {
+                            window.localStorage.setItem("mc_user_name", p.name);
+                            window.localStorage.setItem("mc_user_specialty", p.spec);
+                          }
+                        }}
+                        style={{
+                          padding: "8px 10px",
+                          borderRadius: 12,
+                          border: `1.5px solid ${isSelected ? (isP ? "#0EA5E9" : "#0D9488") : "#E2E8F0"}`,
+                          background: isSelected ? (isP ? "#F0F9FF" : "#F0FDF4") : "#F8FAFC",
+                          color: isSelected ? "#0F172A" : "#64748B",
+                          fontWeight: isSelected ? 800 : 600,
+                          fontSize: 11.5,
+                          cursor: "pointer",
+                          textAlign: "left",
+                          transition: "all .15s ease",
+                        }}
+                      >
+                        <div style={{ fontWeight: 800 }}>{p.name}</div>
+                        <div style={{ fontSize: 9.5, opacity: 0.85, color: isP ? "#0369A1" : "#0F766E" }}>{p.role}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Multi-toggle status controls for availability */}
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                  <p style={{ margin: 0, fontSize: 11, fontWeight: 800, color: "#475569", textTransform: "uppercase" }}>Broadcast & Service Modes</p>
+                  <span style={{ fontSize: 10, fontWeight: 600, color: "#0D9488" }}>Affects incoming pings</span>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {[
+                    { key: "homeVisits", icon: "🏠", label: "Home Visits", desc: "Receive nearby home visit requests" },
+                    { key: "clinicVisits", icon: "🏥", label: "Clinic / Hub Visits", desc: "Receive walk-in & hub appointments" },
+                    { key: "videoConsults", icon: "📹", label: "Video Consultations", desc: "Receive online teleconsult requests" },
+                    { key: "emergency", icon: "⚡", label: "Emergency Broadcasts", desc: "Immediate 2-hour emergency requests" },
+                  ].map(item => {
+                    const active = statusToggles[item.key] !== false;
+                    return (
+                      <div key={item.key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 12px", background: active ? "#F0FDF4" : "#F8FAFC", border: `1px solid ${active ? "#BBF7D0" : "#E2E8F0"}`, borderRadius: 12 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                          <span style={{ fontSize: 17 }}>{item.icon}</span>
+                          <div>
+                            <p style={{ margin: 0, fontSize: 12.5, fontWeight: 700, color: active ? "#166534" : "#64748B" }}>{item.label}</p>
+                            <p style={{ margin: "1px 0 0", fontSize: 10, color: active ? "#15803D" : "#94A3B8" }}>{item.desc}</p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => toggleStatus(item.key)}
+                          style={{
+                            width: 44,
+                            height: 24,
+                            borderRadius: 12,
+                            background: active ? "#22C55E" : "#CBD5E1",
+                            border: "none",
+                            cursor: "pointer",
+                            position: "relative",
+                            transition: "background .2s",
+                            flexShrink: 0,
+                          }}
+                          aria-label={`Toggle ${item.label}`}
+                        >
+                          <div style={{
+                            width: 18,
+                            height: 18,
+                            borderRadius: "50%",
+                            background: "#fff",
+                            position: "absolute",
+                            top: 3,
+                            left: active ? 23 : 3,
+                            transition: "left .2s",
+                            boxShadow: "0 1px 3px rgba(0,0,0,.2)",
+                          }} />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Specializations & Skills multi-toggles */}
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                  <p style={{ margin: 0, fontSize: 11, fontWeight: 800, color: "#475569", textTransform: "uppercase" }}>Specializations & Skills</p>
+                  <span style={{ fontSize: 10, fontWeight: 600, color: "#64748B" }}>Tap to toggle</span>
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {doctorSkills.map(s => {
+                    const active = !statusToggles.disabledSkills?.[s];
+                    return (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => toggleSkill(s)}
+                        style={{
+                          background: active ? (isTherapist ? "#E0F2FE" : "#E6F4EA") : "#F1F5F9",
+                          color: active ? (isTherapist ? "#0369A1" : "#137333") : "#94A3B8",
+                          border: active ? `1px solid ${isTherapist ? "#BAE6FD" : "#CEEAD6"}` : "1px solid #E2E8F0",
+                          fontSize: 11,
+                          fontWeight: 700,
+                          borderRadius: 20,
+                          padding: "5px 11px",
+                          cursor: "pointer",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 4,
+                        }}
+                      >
+                        <span>{active ? "✓" : "✕"}</span>
+                        <span>{s}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <button onClick={() => setShowDoctorProfile(false)} style={{ width: "100%", borderRadius: 14, padding: "12px", border: "none", background: isTherapist ? "#0EA5E9" : "#0D9488", color: "#fff", fontWeight: 800, fontSize: 14, cursor: "pointer" }}>Save & Close Profile</button>
+            </div>
+          </div>
+        )}
+        {showCal && <BookingCalendar title="My Schedule" subtitle="Your patient appointments" accent={C.primary} bookings={DOC_BOOKINGS} onViewPatient={p => { setShowCal(false); setViewPatientProfile(p); }} onClose={() => setShowCal(false)} />}
         <div className="grid grid-cols-3 gap-2 mt-4">
           {[["Today", "₹6,400"], ["Visits", "7"], ["Score", "94%"]].map(([l, v]) => (
             <div key={l} className="rounded-xl py-2 text-center text-white" style={{ background: "rgba(255,255,255,.16)" }}>
@@ -8118,18 +8539,22 @@ function DoctorApp({ req, hubReq, online, setOnline, onAccept, sevaActions }) {
         {/* Incoming alert — now at the top of the doctor view */}
         {online && activeIncoming && !acted && youCand && (
           <div className="rounded-2xl p-4 mb-4" style={{ background: C.surface, border: `1.5px solid ${activeIncoming.r.emergency ? C.emerg : activeIncoming.src === "hub" ? C.hub : C.primary}`, boxShadow: "0 8px 28px rgba(0,0,0,.12)", animation: "slidedown .35s cubic-bezier(.2,.8,.2,1)" }}>
-            {activeIncoming.r.emergency && (
+            {activeIncoming.r.emergency ? (
               <div className="flex items-center justify-center gap-1.5 rounded-full py-1.5 mb-3 font-bold" style={{ background: C.emergSoft, color: C.emergDeep, fontSize: 12 }}>
                 <Zap size={13} /> EMERGENCY · attend within 2 hours
               </div>
-            )}
+            ) : (activeIncoming.r.scheduled || activeIncoming.r.notes?.includes("Scheduled")) ? (
+              <div className="flex items-center justify-center gap-1.5 rounded-full py-1.5 mb-3 font-bold" style={{ background: "#EFF6FF", color: "#1D4ED8", fontSize: 12 }}>
+                <Calendar size={13} /> {activeIncoming.r.scheduled?.label || "Scheduled Consultation"}
+              </div>
+            ) : null}
             {activeIncoming.src === "hub" && (
               <div className="flex items-center justify-center gap-1.5 rounded-full py-1.5 mb-3 font-bold" style={{ background: C.hubSoft, color: C.hub, fontSize: 12 }}>
                 <Building2 size={13} /> From Health Hub · Walk-in patient
               </div>
             )}
             <div className="flex items-center justify-center gap-1.5 rounded-full py-1.5 mb-3 font-bold" style={{ background: C.primarySoft, color: C.primaryDeep, fontSize: 11.5 }}>
-              <Radio size={12} /> Broadcast to nearby {broadcastType} · first to accept wins
+              <Radio size={12} /> {(!activeIncoming.r.emergency && (activeIncoming.r.scheduled || activeIncoming.r.notes?.includes("Scheduled"))) ? `Scheduled broadcast to nearby ${broadcastType} · accept to claim slot` : `Broadcast to nearby ${broadcastType} · first to accept wins`}
             </div>
             <div className="flex items-center justify-between mb-3">
               <div>
@@ -8306,12 +8731,12 @@ function DoctorApp({ req, hubReq, online, setOnline, onAccept, sevaActions }) {
         )}
         {online && <SurgeryInvitesCard />}
 
-        {online && <MyPatientsPanel />}
+        {online && <MyPatientsPanel onViewProfile={p => setViewPatientProfile(p)} />}
         {online && <DoctorCareGroups onOpen={g => setDocGroup(g)} />}
         <DoctorChatsSection onOpen={p => setDocChat(p)} />
         {online && (
           <button onClick={() => setShowSevaCircle(true)} style={{ width: "100%", background: "#fff", border: "1.5px solid #FDE68A", borderRadius: 16, padding: "13px 15px", display: "flex", alignItems: "center", gap: 11, cursor: "pointer", marginBottom: 12, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
-            <div style={{ width: 42, height: 42, borderRadius: 12, background: "#fff", border: "1px solid #FDE68A", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><img src="data:image/png;base64,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" alt="Seva Circle" style={{ width: 30, height: 30, objectFit: "contain" }} /></div>
+            <div style={{ width: 42, height: 42, borderRadius: 12, background: "#fff", border: "1px solid #FDE68A", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><img src="data:image/png;base64,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" alt="Seva Circle" style={{ width: 30, height: 30, objectFit: "contain" }} /></div>
             <div style={{ flex: 1, textAlign: "left", minWidth: 0 }}>
               <p style={{ margin: 0, fontWeight: 800, color: "#1F2937", fontSize: 13.5 }}>Seva Circle · Social Impact</p>
               <p style={{ margin: "2px 0 0", color: "#6B7280", fontSize: 10.5, lineHeight: 1.3 }}>Volunteer free care, earn a Seva Score, gift care to your patients</p>
@@ -8331,6 +8756,7 @@ function DoctorApp({ req, hubReq, online, setOnline, onAccept, sevaActions }) {
       {showReferrals && <ReferralTrackerOverlay role="medico" onClose={() => setShowReferrals(false)} />}
       {showReferService && <ReferServiceOverlay onClose={() => setShowReferService(false)} />}
       {showMyServiceReferrals && <DoctorReferralsTracker onClose={() => setShowMyServiceReferrals(false)} />}
+      {viewPatientProfile && <HealthProfileOverlay patientName={viewPatientProfile} onClose={() => setViewPatientProfile(null)} />}
     </Screen>
   );
 }
@@ -9828,7 +10254,7 @@ const PANEL_PATIENTS = [
   { id: "fp3", name: "Rahul Kapoor", reason: "Post-physio", due: "3 days overdue", overdue: true },
 ];
 
-function MyPatientsPanel() {
+function MyPatientsPanel({ onViewProfile }) {
   return (
     <div style={{ marginTop: 14 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
@@ -9849,13 +10275,17 @@ function MyPatientsPanel() {
       </div>
       <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 16, overflow: "hidden" }}>
         {PANEL_PATIENTS.map((p, i) => (
-          <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderTop: i ? `1px solid ${C.line}` : "none" }}>
+          <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderTop: i ? `1px solid ${C.line}` : "none", cursor: onViewProfile ? "pointer" : "default" }} onClick={() => onViewProfile && onViewProfile(p.name)}>
             <Avatar name={p.name} size={38} />
             <div style={{ flex: 1, minWidth: 0 }}>
               <p style={{ fontWeight: 700, color: C.ink, fontSize: 13, margin: 0 }}>{p.name}</p>
               <p style={{ color: p.overdue ? "#DC2626" : C.sub, fontSize: 11, margin: "1px 0 0", fontWeight: p.overdue ? 700 : 500 }}>{p.reason} {"\u00B7"} {p.due}</p>
             </div>
-            <button onClick={() => toast(`Follow-up booking sent to ${p.name} \u00B7 routes back to you`)}
+            {onViewProfile && (
+              <button onClick={(e) => { e.stopPropagation(); onViewProfile(p.name); }}
+                style={{ background: "#F1F5F9", color: "#334155", border: "1px solid #CBD5E1", borderRadius: 10, padding: "6px 9px", fontSize: 10.5, fontWeight: 700, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif", flexShrink: 0 }}>Profile</button>
+            )}
+            <button onClick={(e) => { e.stopPropagation(); toast(`Follow-up booking sent to ${p.name} \u00B7 routes back to you`); }}
               style={{ background: C.primarySoft, color: C.primaryDeep, border: "none", borderRadius: 10, padding: "7px 11px", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif", flexShrink: 0 }}>Send</button>
           </div>
         ))}
@@ -10489,9 +10919,12 @@ function getCurrentPatientProfile() {
   return DEMO_PATIENT_PROFILES[n] || null;
 }
 
-function HealthProfileOverlay({ onClose, onOpenRecords, allergyDone, onEmergencyProfile }) {
+function HealthProfileOverlay({ onClose, onOpenRecords, allergyDone, onEmergencyProfile, patientName }) {
   const [showChat, setShowChat] = React.useState(false);
-  const profile = React.useMemo(() => getCurrentPatientProfile(), []);
+  const profile = React.useMemo(() => {
+    if (patientName && DEMO_PATIENT_PROFILES[patientName]) return DEMO_PATIENT_PROFILES[patientName];
+    return getCurrentPatientProfile();
+  }, [patientName]);
   const p = profile || {
     name: "You", age: 34, sex: "—", blood: "B+", weight: "72 kg", height: "—",
     phone: "—", abha: "—", email: "—", address: "—",
@@ -10507,7 +10940,7 @@ function HealthProfileOverlay({ onClose, onOpenRecords, allergyDone, onEmergency
   const meds = p.meds;
   const records = [
     ...(allergyDone ? [{ t: "Allergy Panel + Spirometry · BreatheFree", d: "Today · Dust mite High · view results", Icon: FileText, c: "#0EA5E9" }] : []),
-    { t: "Prescription · Dr. Anjali Sharma", d: "20 May 2026 · Tap to request RENEWAL", Icon: Clipboard, c: "#16A34A" }, { t: "Blood Report · HbA1c 6.4", d: "18 May 2026", Icon: TestTube, c: "#D97706" }, { t: "X-Ray Chest PA", d: "02 Apr 2026", Icon: Eye, c: "#2563EB" }, { t: "Discharge Summary · Ruby Hall", d: "11 Jan 2026", Icon: Building2, c: "#7C3AED" }];
+    { t: "Prescription · Dr. Vikram Iyer", d: "20 May 2026 · Tap to request RENEWAL", Icon: Clipboard, c: "#16A34A" }, { t: "Blood Report · HbA1c 6.4", d: "18 May 2026", Icon: TestTube, c: "#D97706" }, { t: "X-Ray Chest PA", d: "02 Apr 2026", Icon: Eye, c: "#2563EB" }, { t: "Discharge Summary · Ruby Hall", d: "11 Jan 2026", Icon: Building2, c: "#7C3AED" }];
   return (
     <div style={{ position: "absolute", inset: 0, zIndex: 85, background: C.canvas, display: "flex", flexDirection: "column" }}>
       <div style={{ padding: "12px 14px", background: grad, display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
@@ -10528,6 +10961,15 @@ function HealthProfileOverlay({ onClose, onOpenRecords, allergyDone, onEmergency
             </span>
             <ChevronRight size={16} style={{ color: "#DC2626" }} />
           </button>
+            )}
+        {p.primaryDoctor && (
+          <div style={{ background: "#EFF6FF", border: "1.5px solid #BFDBFE", borderRadius: 13, padding: "9px 12px", marginBottom: 10, display: "flex", alignItems: "center", gap: 10 }}>
+            <Heart size={16} fill="#2563EB" color="#2563EB" style={{ flexShrink: 0 }} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: "#1D4ED8" }}>Primary Family Doctor</p>
+              <p style={{ margin: "1px 0 0", fontSize: 12.5, fontWeight: 800, color: C.ink }}>{p.primaryDoctor.name} <span style={{ fontSize: 10.5, fontWeight: 600, color: C.sub }}>· {p.primaryDoctor.clinic} ({p.primaryDoctor.area})</span></p>
+            </div>
+          </div>
         )}
         {/* Identity card */}
         <div style={{ background: "white", border: `1px solid ${C.line}`, borderRadius: 14, padding: "12px 13px", display: "flex", gap: 12, alignItems: "center", marginBottom: 10 }}>
@@ -15519,10 +15961,12 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
                   try { targetId = await myMedicos.lookupMedicoIdByName(p.name); } catch (_) { }
                 }
                 const specialtyName = rm.spec?.name || (rm.cat === "therapist" ? "Physiotherapy" : "General");
+                const specBase = p.fee || rm.spec?.doctor?.fee || rm.spec?.base || getSpecialtyBaseFare(specialtyName);
                 const row = await createCareRequest({
                   specialty: specialtyName,
                   emergency: !!rm.emergency,
                   notes: `Direct call to ${p.name}${isMy ? " (My Doctor)" : " (Preferred)"}`,
+                  fare: specBase,
                   notification_stage: isMy ? "my_doctor" : "preferred",
                   my_doctor_id: isMy ? targetId : null,
                   preferred_id: isMy ? null : targetId
@@ -15658,13 +16102,15 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
               
               toast && toast("Booking confirmed! Dispatched live broadcast to medicos.");
               const isPhys = String(booking?.name || "").toLowerCase().includes("physio") || String(booking?.name || "").toLowerCase().includes("therap");
-              const fareAmt = isPhys ? Math.round(700 * 1.2) : 500;
+              const isUrgent = !!(booking?.emergency || booking?.spec?.emergency);
+              const baseFee = booking?.spec?.doctor?.fee || booking?.spec?.base || (isPhys ? 700 : 500);
+              const fareAmt = isUrgent ? Math.round(baseFee * 1.2) : baseFee;
               const titleName = isPhys ? "Physiotherapist" : (booking?.name || "Consultation");
               const bData = {
                 id: "req-" + Date.now(),
                 dbId: booking?.careRequestId || null,
                 spec: { ...(booking?.spec || {}), type: isPhys ? "therapist" : "doctor", name: titleName },
-                emergency: false,
+                emergency: isUrgent,
                 scheduled: { label: booking?.label || "Scheduled" },
                 area: area || "Kothrud",
                 fare: { total: fareAmt },

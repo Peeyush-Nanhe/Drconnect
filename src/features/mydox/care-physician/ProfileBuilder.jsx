@@ -18,6 +18,14 @@ const empty = {
   is_available: true,
 };
 
+const DUTY_PREF_OPTIONS = [
+  { id: "all", label: "All" },
+  { id: "ward", label: "Ward" },
+  { id: "icu", label: "ICU" },
+  { id: "emergency", label: "Emergency" },
+  { id: "night", label: "Night shift" },
+];
+
 function Option({ active, disabled, children, onClick }) {
   return <button type="button" disabled={disabled} onClick={onClick} style={{ border: `2px solid ${active ? C.purple : C.line}`, background: active ? C.soft : "#fff", color: disabled ? "#94A3B8" : C.ink, borderRadius: 11, padding: 9, fontWeight: 800, cursor: disabled ? "not-allowed" : "pointer", fontFamily: "inherit", textAlign: "left", opacity: disabled ? .6 : 1 }}>{children}</button>;
 }
@@ -33,6 +41,20 @@ export default function ProfileBuilder({ initial, onDone, onCancel }) {
 
   function toggle(key, value) {
     setForm((current) => ({ ...current, [key]: toggleArray(current[key] || [], value) }));
+  }
+
+  function handleDutyToggle(id) {
+    setForm((current) => {
+      const active = current.duty_types || ["all"];
+      if (id === "all") {
+        return { ...current, duty_types: ["all"] };
+      }
+      const withoutAll = active.filter((x) => x !== "all");
+      const next = withoutAll.includes(id)
+        ? withoutAll.filter((x) => x !== id)
+        : [...withoutAll, id];
+      return { ...current, duty_types: next.length === 0 ? ["all"] : next };
+    });
   }
 
   function next() {
@@ -94,7 +116,39 @@ export default function ProfileBuilder({ initial, onDone, onCancel }) {
 
       {step === 3 ? <section>
         <h2 style={{ fontSize: 18, margin: "4px 0" }}>Work preferences</h2><p style={{ color: C.sub, fontSize: 12, marginTop: 0 }}>Choose duties, age groups and specialties you want to receive.</p>
-        <h3 style={{ fontSize: 12 }}>Duty types</h3><div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 7 }}>{DUTY_TYPES.map((d) => <Option key={d.id} active={form.duty_types.includes(d.id)} disabled={d.requiresGated && !hasGatedProcedure} onClick={() => toggle("duty_types", d.id)}>{d.emoji} {d.label}{d.requiresGated ? " 🔒" : ""}</Option>)}</div>
+        <h3 style={{ fontSize: 12, fontWeight: 800, color: C.sub, textTransform: "uppercase", letterSpacing: 0.4, marginTop: 14, marginBottom: 8 }}>Duty types</h3>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
+          {DUTY_PREF_OPTIONS.map((opt) => {
+            const isAll = opt.id === "all";
+            const isAllActive = !form.duty_types || form.duty_types.length === 0 || form.duty_types.includes("all");
+            const active = isAll ? isAllActive : (!isAllActive && form.duty_types.includes(opt.id));
+            return (
+              <button
+                key={opt.id}
+                type="button"
+                onClick={() => handleDutyToggle(opt.id)}
+                style={{
+                  border: `2px solid ${active ? C.purple : C.line}`,
+                  background: active ? C.soft : "#fff",
+                  color: "#0F172A",
+                  borderRadius: 14,
+                  padding: "10px 20px",
+                  fontWeight: 800,
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                  fontSize: 14,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  boxShadow: active ? "0 2px 5px rgba(109,40,217,0.15)" : "none",
+                  transition: "all 0.15s ease",
+                }}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
         <h3 style={{ fontSize: 12 }}>Age groups</h3><div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 7 }}>{AGE_GROUPS.map((a) => <Option key={a.id} active={form.age_groups.includes(a.id)} onClick={() => toggle("age_groups", a.id)}>{a.emoji} {a.label}</Option>)}</div>
         <h3 style={{ fontSize: 12 }}>Specialty interests</h3><div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 7 }}>{SPECIALTIES.map((s) => <Option key={s.id} active={form.specialty_interests.includes(s.id)} onClick={() => toggle("specialty_interests", s.id)}>{s.emoji} {s.label}</Option>)}</div>
       </section> : null}
