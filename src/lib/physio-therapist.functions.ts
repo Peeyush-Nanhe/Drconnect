@@ -405,25 +405,60 @@ export const setTherapistOnline = createServerFn({ method: "POST" })
 
 export const insertEmergencyPhysioVisit = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .validator((d: { reqId: string, patientId: string, patientName: string, specialty: string, fare: number }) => d)
+  .validator((d: { reqId: string, patientId: string, patientName: string, specialty: string, fare: number, urgency?: string, scheduledAt?: string, therapyType?: string, area?: string, notes?: string }) => d)
   .handler(async ({ data, context }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const sb = (supabaseAdmin || context.supabase) as any;
     
-    // Check if this request is already inserted? Optional, but insert might create duplicates if clicked multiple times.
-    const { data: existing } = await sb.from("physio_visits").select("id").eq("notes", `Emergency ${data.specialty} request (ID: ${data.reqId})`).maybeSingle();
-    if (existing) return { ok: true };
+    // Check if this request is already inserted by reqId in notes
+    const { data: existing } = await sb.from("physio_visits").select("id").like("notes", `%${data.reqId}%`).maybeSingle();
+    if (existing) return { ok: true, visitId: existing.id };
 
     const { data: therapist } = await sb.from("physio_therapists").select("id").eq("user_id", context.userId).maybeSingle();
     if (!therapist) {
-      // If the user isn't in physio_therapists, they can't be assigned a visit.
       throw new Error("You must be registered as a therapist to accept this.");
     }
 
+    // Check if an existing requested session already exists for this patient
+    const { data: existingRequested } = await sb
+      .from("physio_visits")
+      .select("id, therapy_type, urgency, fee, scheduled_at, area")
+      .eq("patient_id", data.patientId)
+      .eq("status", "requested")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (existingRequested) {
+      // Assign the therapist to the patient's existing visit
+      const isUrgent = data.urgency === "urgent" || existingRequested.urgency === "urgent";
+      let finalFee = existingRequested.fee || data.fare || 0;
+      if (isUrgent && existingRequested.urgency !== "urgent") {
+        finalFee = Math.round(finalFee * 1.2);
+      }
+
+      const { error: updErr } = await sb
+        .from("physio_visits")
+        .update({
+          therapist_id: therapist.id,
+          status: "assigned",
+          fee: finalFee,
+          urgency: isUrgent ? "urgent" : "planned",
+        })
+        .eq("id", existingRequested.id);
+      if (updErr) throw new Error(updErr.message);
+      return { ok: true, visitId: existingRequested.id };
+    }
+
+    const isUrgent = data.urgency === "urgent";
+    const specLower = (data.specialty || data.therapyType || "").toLowerCase();
+    const fallbackBase = specLower.includes("psych") ? 1500 : specLower.includes("speech") || specLower.includes("resp") ? 1200 : specLower.includes("occup") ? 1000 : specLower.includes("neuro") ? 900 : specLower.includes("sport") || specLower.includes("geriatric") || specLower.includes("paed") ? 800 : 700;
+    const baseFare = (Number(data.fare) > 0) ? Number(data.fare) : fallbackBase;
+    const visitFee = isUrgent ? Math.round(baseFare * 1.2) : baseFare;
+
     const allowedTherapies = ['neuro','orthopaedic','sports','paediatric','geriatric','cardio_respiratory','post_surgical','pelvic_floor','general'];
-    let mappedType = data.specialty.toLowerCase().replace(/[^a-z_]/g, '_');
+    let mappedType = (data.therapyType || data.specialty || "").toLowerCase().replace(/[^a-z_]/g, '_');
     if (!allowedTherapies.includes(mappedType)) {
-      // Basic heuristics for common names
       if (mappedType.includes("neuro")) mappedType = "neuro";
       else if (mappedType.includes("ortho")) mappedType = "orthopaedic";
       else if (mappedType.includes("sport")) mappedType = "sports";
@@ -437,15 +472,15 @@ export const insertEmergencyPhysioVisit = createServerFn({ method: "POST" })
         patient_name: data.patientName,
         therapist_id: therapist.id,
         therapy_type: mappedType,
-        area: "Emergency Location",
+        area: data.area || (isUrgent ? "Emergency Location" : "Pune"),
         city: "Pune",
-        scheduled_at: new Date().toISOString(),
+        scheduled_at: data.scheduledAt || new Date().toISOString(),
         duration_min: 45,
         session_number: 1,
         status: "assigned",
-        urgency: "urgent",
-        fee: data.fare,
-        notes: `Emergency ${data.specialty} request (ID: ${data.reqId})`
+        urgency: isUrgent ? "urgent" : "planned",
+        fee: visitFee,
+        notes: data.notes || (isUrgent ? `Emergency ${data.specialty} request (ID: ${data.reqId})` : `Consultation request (ID: ${data.reqId})`)
     });
     if (error) throw new Error(error.message);
     return { ok: true };
