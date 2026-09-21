@@ -75,6 +75,7 @@ export interface EmergencyCase {
   doctor_wave: number;
   doctor_wave_at: string | null;
 
+  otp?: string | null;
   cancelled_reason: string | null;
   created_at: string;
   updated_at: string;

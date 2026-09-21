@@ -43,7 +43,9 @@ type Module =
   | "Surgery"
   | "Physiotherapy"
   | "Nursing"
-  | "Diagnostics";
+  | "Diagnostics"
+  | "Ambulance"
+  | "Hospital";
 
 type Item = {
   id: string;
@@ -100,13 +102,17 @@ const MODULE_ICON: Record<Module, string> = {
   Physiotherapy: "🧘",
   Nursing: "👩‍⚕️",
   Diagnostics: "🧪",
+  Ambulance: "🚑",
+  Hospital: "🏥",
 };
 
 function classifyCareRequest(specialty: string): Module {
   const s = specialty.toLowerCase();
   if (/(lab|scan|xray|mri|ct|ultrasound|blood test)/.test(s)) return "Diagnostics";
-  if (/(nurse|caretaker)/.test(s)) return "Nursing";
+  if (/(nurse|caretaker|attendant)/.test(s)) return "Nursing";
   if (/(physio|therap)/.test(s)) return "Physiotherapy";
+  if (/(ambulance|paramedic|sos)/.test(s)) return "Ambulance";
+  if (/(hospital|surgery|admission|admit)/.test(s)) return "Hospital";
   return "Doctor / Nurse";
 }
 
@@ -175,18 +181,21 @@ export default function MyBookingsOverlay({
     let mounted = true;
     (async () => {
       setLoading(true);
-      const [cr, cp, pr, sn, bb, sb, mo, da, pv, sc, comm] = await Promise.all([
+      const [cr, cp, pr, sn, bb, sb, mo, da, pv, sc, comm, ne, tt, ec] = await Promise.all([
         supabase.from("care_requests").select("id, specialty, status, notes, created_at, visit_type, accepted_by, rating_provider, otp, emergency").eq("patient_id", uid).order("created_at", { ascending: false }).limit(200),
         supabase.from("care_program_bookings").select("id, program, tier, summary, status, created_at").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
         supabase.from("prosthetics_bookings").select("id, category, subtype, provider_name, status, created_at").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
         supabase.from("special_needs_bookings").select("id, category, subtype, provider_name, status, created_at").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
         supabase.from("blood_bank_activity").select("id, activity_type, blood_group, units, hospital, status, created_at").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
-        supabase.from("surgery_bookings").select("id, procedure, patient_name, mode, status, created_at").eq("facility_id", uid).order("created_at", { ascending: false }).limit(100),
+        supabase.from("surgery_bookings").select("id, procedure, patient_name, mode, status, created_at, otp").eq("facility_id", uid).order("created_at", { ascending: false }).limit(100),
         supabase.from("medicine_orders").select("id, pharmacy_name, delivery_speed, items, prescription_attached, total, status, created_at").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
         supabase.from("doctor_appointments").select("id, service, mode, status, start_time, end_time, created_at, provider_id, arrival_otp").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
         supabase.from("physio_visits").select("id, therapy_type, area, city, session_number, status, created_at, therapist_id, scheduled_at, fee, otp, urgency").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
         supabase.from("specialty_care_bookings").select("id, specialty_label, concern, mode, provider_name, status, created_at").eq("patient_id", uid).order("created_at", { ascending: false }).limit(100),
         supabase.from("community_requests").select("id, type, notes, status, created_at").eq("requester_id", uid).order("created_at", { ascending: false }).limit(100),
+        supabase.from("nursing_engagements").select("id, kind, status, created_at, primary_nurse_id").eq("patient_id", uid).order("created_at", { ascending: false }).limit(50),
+        supabase.from("technician_tests").select("id, test_type, test_label, status, created_at, technician_id, otp").eq("patient_id", uid).order("created_at", { ascending: false }).limit(50),
+        supabase.from("emergency_cases").select("id, category, state, created_at, ambulance_status, otp").eq("patient_id", uid).order("created_at", { ascending: false }).limit(50),
       ]);
 
       const rows: Item[] = [];
@@ -194,6 +203,9 @@ export default function MyBookingsOverlay({
       const crRows = (cr.data as { id: string; specialty: string; status: string; notes: string | null; created_at: string; visit_type: string; accepted_by: string | null; rating_provider: number | null; otp: string | null; emergency?: boolean }[] | null) ?? [];
       const daRows = (da.data as { id: string; service: string | null; mode: string | null; status: string; start_time: string; end_time: string; created_at: string; provider_id: string | null; arrival_otp: string | null }[] | null) ?? [];
       const pvRows = (pv.data as { id: string; therapy_type: string; area: string; city: string; session_number: number; status: string; created_at: string; therapist_id: string | null; scheduled_at: string | null; fee: number | null; otp: string | null; urgency?: string }[] | null) ?? [];
+      const neRows = (ne.data as { id: string; kind: string; status: string; created_at: string; primary_nurse_id: string | null }[] | null) ?? [];
+      const ttRows = (tt.data as { id: string; test_type: string; test_label: string | null; status: string; created_at: string; technician_id: string | null; otp: string | null }[] | null) ?? [];
+      const ecRows = (ec.data as { id: string; category: string; state: string; created_at: string; ambulance_status: string; otp: string | null }[] | null) ?? [];
       const scRows = (sc.data as { id: string; specialty_label: string; concern: string; mode: string; provider_name: string; status: string; created_at: string }[] | null) ?? [];
       const commRows = (comm.data as { id: string; type: string; notes: string | null; status: string; created_at: string }[] | null) ?? [];
 
@@ -201,6 +213,8 @@ export default function MyBookingsOverlay({
         ...crRows.map((r) => r.accepted_by).filter((id): id is string => Boolean(id)),
         ...daRows.map((r) => r.provider_id).filter((id): id is string => Boolean(id)),
         ...pvRows.map((r) => r.therapist_id).filter((id): id is string => Boolean(id)),
+        ...neRows.map((r) => r.primary_nurse_id).filter((id): id is string => Boolean(id)),
+        ...ttRows.map((r) => r.technician_id).filter((id): id is string => Boolean(id)),
       ]));
 
       const doctorNames = new Map<string, string>();
@@ -283,6 +297,44 @@ export default function MyBookingsOverlay({
         });
       }
 
+      for (const r of neRows) {
+        const docName = r.primary_nurse_id ? doctorNames.get(r.primary_nurse_id) : "Nurse Specialist";
+        rows.push({
+          id: `ne:${r.id}`,
+          module: "Nursing",
+          title: r.kind || "Home Nursing",
+          status: r.status,
+          createdAt: r.created_at,
+          doctorName: docName,
+        });
+      }
+
+      for (const r of ttRows) {
+        const docName = r.technician_id ? doctorNames.get(r.technician_id) : "Technician Specialist";
+        rows.push({
+          id: `tt:${r.id}`,
+          module: "Diagnostics",
+          title: r.test_label || r.test_type || "Diagnostic Test",
+          status: r.status,
+          createdAt: r.created_at,
+          doctorName: docName,
+          otp: r.otp || undefined,
+        });
+      }
+
+      for (const r of ecRows) {
+        rows.push({
+          id: `ec:${r.id}`,
+          module: "Ambulance",
+          title: `${r.category.toUpperCase()} Emergency — Ambulance`,
+          subtitle: `Status: ${r.ambulance_status.replace(/_/g, " ")}`,
+          status: r.state === "open" ? r.ambulance_status : r.state,
+          createdAt: r.created_at,
+          doctorName: "Ambulance Crew",
+          otp: r.otp || undefined,
+        });
+      }
+
       for (const r of scRows) {
         const itemId = `sc:${r.id}`;
         const saved = readReview(itemId, r.provider_name);
@@ -321,8 +373,8 @@ export default function MyBookingsOverlay({
       for (const r of (bb.data as { id: string; activity_type: string; blood_group: string | null; units: number | null; hospital: string | null; status: string; created_at: string }[] | null) ?? []) {
         rows.push({ id: `bb:${r.id}`, module: "Blood Bank", title: `${r.activity_type}${r.blood_group ? ` · ${r.blood_group}` : ""}${r.units ? ` · ${r.units}u` : ""}`, subtitle: r.hospital ?? undefined, status: r.status, createdAt: r.created_at });
       }
-      for (const r of (sb.data as { id: string; procedure: string; patient_name: string; mode: string; status: string; created_at: string }[] | null) ?? []) {
-        rows.push({ id: `sb:${r.id}`, module: "Surgery", title: r.procedure, subtitle: `${r.patient_name} · ${r.mode}`, status: r.status, createdAt: r.created_at });
+      for (const r of (sb.data as { id: string; procedure: string; patient_name: string; mode: string; status: string; created_at: string; otp: string | null }[] | null) ?? []) {
+        rows.push({ id: `sb:${r.id}`, module: "Hospital", title: r.procedure, subtitle: `${r.patient_name} · ${r.mode}`, status: r.status, createdAt: r.created_at, otp: r.otp || undefined });
       }
       for (const r of (mo.data as { id: string; pharmacy_name: string; delivery_speed: string; items: unknown; prescription_attached: boolean | null; total: number | null; status: string; created_at: string }[] | null) ?? []) {
         rows.push({ id: `mo:${r.id}`, module: "Medicines", title: `Medicine delivery${Array.isArray(r.items) && r.items.length ? ` · ${r.items.length} item${r.items.length !== 1 ? "s" : ""}` : r.prescription_attached ? " · prescription" : ""}`, subtitle: `${r.pharmacy_name} · ${r.delivery_speed}${r.total ? ` · ₹${Math.round(Number(r.total)).toLocaleString("en-IN")}` : ""}`, status: r.status, createdAt: r.created_at });
@@ -477,7 +529,7 @@ export default function MyBookingsOverlay({
                                     cursor: "pointer",
                                   }}
                                 >
-                                  🔑 {it.module === "Physiotherapy" ? "Session OTP (tap to view)" : "Consultation OTP (tap to view)"}
+                                  🔑 {it.module === "Physiotherapy" ? "Session OTP" : it.module === "Ambulance" ? "Pickup OTP" : it.module === "Diagnostics" ? "Test OTP" : "Consultation OTP"} (tap to view)
                                 </button>
                               </div>
                             )}
@@ -1588,7 +1640,16 @@ function BookingOtpModal({
   useEffect(() => {
     const [prefix, rawId] = target.item.id.split(":");
     if (!rawId) return;
-    const table = prefix === "cr" ? "care_requests" : prefix === "da" ? "doctor_appointments" : null;
+    const tableMap: Record<string, string> = {
+      cr: "care_requests",
+      da: "doctor_appointments",
+      pv: "physio_visits",
+      ne: "nursing_engagements",
+      tt: "technician_tests",
+      ec: "emergency_cases",
+      sb: "surgery_bookings",
+    };
+    const table = tableMap[prefix];
     if (!table) return;
 
     let active = true;
@@ -1712,7 +1773,7 @@ function BookingOtpModal({
             </div>
             <div>
               <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: "#0F172A" }}>
-                {target.item.module === "Physiotherapy" ? "Session Passcode" : "Consultation Passcode"}
+                {target.item.module === "Physiotherapy" ? "Session Passcode" : target.item.module === "Ambulance" ? "Pickup Passcode" : "Consultation Passcode"}
               </h2>
               <p style={{ margin: 0, fontSize: 12, color: "#64748B", fontWeight: 500 }}>
                 Verification code generated from Supabase
@@ -1864,11 +1925,13 @@ function BookingOtpModal({
             <span style={{ fontSize: 22 }}>✅</span>
             <div>
               <div style={{ fontWeight: 800, fontSize: 13.5, color: "#065F46" }}>
-                {target.item.module === "Physiotherapy" ? "Session Verified & Completed!" : "Consultation Verified & Completed!"}
+                {target.item.module === "Physiotherapy" ? "Session Verified & Completed!" : target.item.module === "Ambulance" ? "Ambulance Pickup Verified!" : "Consultation Verified & Completed!"}
               </div>
               <div style={{ fontSize: 11.5, color: "#047857", marginTop: 2 }}>
                 {target.item.module === "Physiotherapy"
                   ? "Your therapist has verified the OTP. Session completed!"
+                  : target.item.module === "Ambulance"
+                  ? "The ambulance driver has verified your pickup code."
                   : "Your doctor has verified the OTP. Chat option is now enabled!"}
               </div>
             </div>
@@ -1887,16 +1950,20 @@ function BookingOtpModal({
               gap: 10,
             }}
           >
-            <span style={{ fontSize: 18, lineHeight: 1 }}>{target.item.module === "Physiotherapy" ? "🧘" : "🩺"}</span>
+            <span style={{ fontSize: 18, lineHeight: 1 }}>{target.item.module === "Physiotherapy" ? "🧘" : target.item.module === "Ambulance" ? "🚑" : "🩺"}</span>
             <div>
               <div style={{ fontWeight: 800, fontSize: 13, color: "#92400E", lineHeight: 1.35 }}>
                 {target.item.module === "Physiotherapy"
                   ? `Share this OTP with ${displayDocName} once your session is over`
+                  : target.item.module === "Ambulance"
+                  ? "Share this OTP with the ambulance driver upon arrival"
                   : `Share this OTP with ${displayDocName} once your consultation is over`}
               </div>
               <div style={{ fontSize: 11.5, color: "#78350F", marginTop: 4, lineHeight: 1.45 }}>
                 {target.item.module === "Physiotherapy"
                   ? "Please do not share this passcode beforehand. Your physiotherapist inserts this 4-digit code in Patient Verification Code to verify and complete the session."
+                  : target.item.module === "Ambulance"
+                  ? "Please share this code only with the assigned ambulance crew once they arrive at your pickup location."
                   : "Please do not share this passcode beforehand. Your doctor inserts this 4-digit code in Patient Verification Code to verify and complete the session."}
               </div>
             </div>

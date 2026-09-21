@@ -14136,7 +14136,18 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
   const dashboardScrollRef = useRef(null);
   const [directReq, setDirectReq] = useState(null); // {provider,spec,fromOverlay,emergency,isMy,myName,preferredName}
   const [scanDirect, setScanDirect] = useState(null); // {provider,scan}
-  const [acknowledgedBookingIds, setAcknowledgedBookingIds] = useState([]); // stop continuous confirmations
+  // Booking-confirmed popups the patient has already seen. Persisted so the live
+  // nursing/technician sync (poll + realtime) never re-opens the same popup after
+  // a reload, tab switch or remount.
+  const ACK_POPUPS_KEY = "mydox_ack_booking_popups";
+  const [acknowledgedBookingIds, setAcknowledgedBookingIds] = useState(() => {
+    try { return JSON.parse((typeof window !== "undefined" && window.localStorage.getItem(ACK_POPUPS_KEY)) || "[]"); }
+    catch { return []; }
+  });
+  useEffect(() => {
+    try { window.localStorage.setItem(ACK_POPUPS_KEY, JSON.stringify(acknowledgedBookingIds.slice(-200))); } catch { }
+  }, [acknowledgedBookingIds]);
+  const ackBookingPopup = (id) => { if (id) setAcknowledgedBookingIds(prev => prev.includes(id) ? prev : [...prev, id]); };
 
   const patientName = (() => { try { return localStorage.getItem("mc_user_name") || ""; } catch { return ""; } })();
   const changeDashboardTab = (tab) => {
@@ -14357,21 +14368,23 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
             .eq("id", latest.primary_nurse_id)
             .maybeSingle();
           if (cancelled) return;
-          const nurseName = nurseProf?.full_name || "Nurse Pooja";
+          const nurseName = nurseProf?.full_name || null;
+          ackBookingPopup(latest.id); // show this confirmation once only
 
           setConfirmedBooking(cur => {
             const confirmedData = {
               id: latest.id,
               pending: false,
+              role: "nurse",
               name: latest.kind,
-              doctor: { name: nurseName, spec: "Nursing Specialist", rating: 4.9 },
+              doctor: nurseName ? { name: nurseName, spec: "Nurse" } : null,
               label: "Nurse assigned \u00B7 Confirmed",
             };
 
             // If we don't have a confirmed popup showing, or it's currently "pending",
             // pop it up with the new real data.
             if (!cur || cur.pending || (cur.id || cur.engagementId) === latest.id) {
-              if (cur?.pending) toast && toast(`${nurseName} accepted your nursing request!`);
+              if (cur?.pending) toast && toast(`${nurseName || "A nurse"} accepted your nursing request!`);
               return confirmedData;
             }
             return cur;
@@ -14422,19 +14435,21 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
             .eq("id", latest.technician_id)
             .maybeSingle();
           if (cancelled) return;
-          const techName = techProf?.full_name || "Technician";
+          const techName = techProf?.full_name || null;
+          ackBookingPopup(latest.id); // show this confirmation once only
 
           setConfirmedBooking(cur => {
             const confirmedData = {
               id: latest.id,
               pending: false,
-              name: `${latest.test_type.toUpperCase()} Visit`,
-              doctor: { name: techName, spec: "Technician", rating: 4.8 },
+              role: "technician",
+              name: `${String(latest.test_type || "").toUpperCase()} Visit`,
+              doctor: techName ? { name: techName, spec: "Technician" } : null,
               label: `Status: ${latest.status} \u00B7 Confirmed`,
             };
 
             if (!cur || cur.pending || (cur.id || cur.visitId) === latest.id) {
-              if (cur?.pending) toast && toast(`${techName} accepted your technician request!`);
+              if (cur?.pending) toast && toast(`${techName || "A technician"} accepted your technician request!`);
               return confirmedData;
             }
             return cur;
@@ -14815,7 +14830,7 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
         status: "broadcasting",
         stage: "broadcast",
         remaining: 30,
-        candidates: [{ id: "you", name: isPhysio ? "Dr. Kavita Deshmukh" : "Dr. Rahul Nair", spec: specialtyName, rating: 4.9, distanceKm: 1.2, etaMin: 8 }],
+        candidates: [], // filled only by real acceptances from care_requests
         initiatedBy: "patient",
       };
       if (typeof setReq === "function") {
@@ -15630,7 +15645,7 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
       {confirmedBooking && (
         <div onClick={() => {
           const id = confirmedBooking.id || confirmedBooking.bookingId;
-          if (id) setAcknowledgedBookingIds(prev => [...prev, id]);
+          ackBookingPopup(id);
           setConfirmedBooking(null);
         }} style={{ position: "absolute", inset: 0, zIndex: 120, background: "rgba(15,23,42,.55)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
           <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 300, background: "#fff", borderRadius: 22, padding: "26px 22px", textAlign: "center", boxShadow: "0 24px 60px rgba(0,0,0,.3)" }}>
@@ -15642,17 +15657,17 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
                 <Avatar name={confirmedBooking.doctor.name} size={40} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <p style={{ margin: 0, fontWeight: 800, color: C.ink, fontSize: 13.5 }}>{confirmedBooking.doctor.name}</p>
-                  <p style={{ margin: "1px 0 0", fontSize: 11, color: C.faint, fontWeight: 600 }}>{confirmedBooking.doctor.qualification}</p>
-                  <p style={{ margin: "3px 0 0", fontSize: 10.5, fontWeight: 700, color: "#B45309" }}>Score {confirmedBooking.doctor.professionalScore} · ★ {confirmedBooking.doctor.patientRating} patients · ★ {confirmedBooking.doctor.hospitalRating} hospital</p>
+                  {(confirmedBooking.doctor.qualification || confirmedBooking.doctor.spec) && <p style={{ margin: "1px 0 0", fontSize: 11, color: C.faint, fontWeight: 600 }}>{confirmedBooking.doctor.qualification || confirmedBooking.doctor.spec}</p>}
+                  {(confirmedBooking.doctor.professionalScore != null || confirmedBooking.doctor.patientRating != null || confirmedBooking.doctor.hospitalRating != null) && <p style={{ margin: "3px 0 0", fontSize: 10.5, fontWeight: 700, color: "#B45309" }}>{[confirmedBooking.doctor.professionalScore != null && `Score ${confirmedBooking.doctor.professionalScore}`, confirmedBooking.doctor.patientRating != null && `★ ${confirmedBooking.doctor.patientRating} patients`, confirmedBooking.doctor.hospitalRating != null && `★ ${confirmedBooking.doctor.hospitalRating} hospital`].filter(Boolean).join(" · ")}</p>}
                 </div>
               </div>
             )}
             {confirmedBooking.label && <div style={{ margin: "12px 0 0", display: "inline-flex", alignItems: "center", gap: 7, background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 12, padding: "9px 14px" }}><span style={{ fontSize: 16 }}>📅</span><span style={{ color: "#1D4ED8", fontWeight: 800, fontSize: 13 }}>{confirmedBooking.label}</span></div>}
-            <p style={{ margin: "14px 0 0", color: C.faint, fontSize: 11.5, lineHeight: 1.4 }}>{confirmedBooking.doctor ? "Your appointment is booked with this doctor. You'll get a reminder ahead of your slot." : "Your appointment is booked. You'll get a reminder, and your medico will be assigned ahead of your slot."}</p>
+            <p style={{ margin: "14px 0 0", color: C.faint, fontSize: 11.5, lineHeight: 1.4 }}>{confirmedBooking.doctor ? `Your appointment is booked with this ${confirmedBooking.role || "doctor"}. You'll get a reminder ahead of your slot.` : confirmedBooking.role ? `Your ${confirmedBooking.role} has been assigned. You'll get a reminder ahead of your slot.` : "Your appointment is booked. You'll get a reminder, and your medico will be assigned ahead of your slot."}</p>
             <button onClick={() => {
               const booking = confirmedBooking;
               const id = booking?.id || booking?.bookingId;
-              if (id) setAcknowledgedBookingIds(prev => [...prev, id]);
+              ackBookingPopup(id);
               setConfirmedBooking(null);
               if (!booking?.spec) return;
               
@@ -15673,7 +15688,7 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
                 status: "broadcasting",
                 stage: "broadcast",
                 remaining: 30,
-                candidates: [{ id: "you", name: isPhys ? "Dr. Kavita Deshmukh" : "Dr. Rahul Nair", spec: titleName, rating: 4.9, distanceKm: 1.2, etaMin: 8 }],
+                candidates: [], // filled only by real acceptances from care_requests
                 initiatedBy: "patient",
               };
               if (typeof setReq === "function") {
@@ -16043,7 +16058,7 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
             </div>
             {assigned && (
               <div className="rounded-2xl p-4 mt-3" style={{ background: C.surface, border: `1.5px solid ${atHub ? C.primary : C.line}` }}>
-                <div className="flex items-center gap-3 mb-3"><Avatar name={assigned.name} emergency={req.emergency} /><div className="flex-1"><p className="font-extrabold" style={{ color: C.ink, fontSize: 15 }}>{assigned.name}</p><p style={{ color: C.sub, fontSize: 12 }}>{req.spec.name} · {assigned.exp} yrs</p></div></div>
+                <div className="flex items-center gap-3 mb-3"><Avatar name={assigned.name} emergency={req.emergency} /><div className="flex-1"><p className="font-extrabold" style={{ color: C.ink, fontSize: 15 }}>{assigned.name}</p><p style={{ color: C.sub, fontSize: 12 }}>{req.spec.name}{assigned.exp != null ? ` · ${assigned.exp} yrs` : ""}</p></div></div>
                 <div className="grid grid-cols-3 gap-2 mb-3"><Stat label="OTP" value={req.otp || TEST_DEFAULT_OTP} /><Stat label="Rx ₹300" value="Add" color="#EC4899" /><Stat label="Hub" value={req.hub?.type === "clinic" ? "Clinic" : req.hub ? "MyDox Hub" : "Scan Centre"} /><Stat label="Fee" value={inr(req.fare.total)} /></div>
                 <div className="rounded-2xl p-3 mb-3" style={{ background: "#FFFBEB", border: "1.5px solid #FCD34D" }}>
                   <p style={{ margin: "0 0 4px", fontSize: 11.5, color: "#92400E", fontWeight: 800, lineHeight: 1.4 }}>Share this OTP with the doctor</p>
@@ -17841,15 +17856,16 @@ export default function MyDoxFull({ initialView } = {}) {
         const { data: prof } = await supabase
           .from("profiles").select("full_name, specialty").eq("id", row.accepted_by).maybeSingle();
         if (cancelled) return;
-        const acceptedName = prof?.full_name || "Medico on the way";
+        const acceptedName = prof?.full_name || "Your medico";
         if (dbId && !row.paid_at) {
           payAndGenerateOtp(dbId, null).catch(() => { });
         }
         setReq(r => {
           if (!r || r.dbId !== dbId || r.status === "completed") return r;
           const winner = {
-            id: "db_winner", name: acceptedName, rating: 4.9, exp: 10,
-            distanceKm: 1.5, etaMin: 7, area: r.hub?.area || "", notified: true,
+            id: "db_winner", name: acceptedName, spec: prof?.specialty || undefined,
+            etaMin: 7, // simulated until live GPS tracking is wired
+            area: r.hub?.area || "", notified: true,
           };
           return {
             ...r, status: "converging", paid: true, assignedId: winner.id, stopRebroadcast: true,

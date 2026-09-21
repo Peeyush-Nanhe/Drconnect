@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Ambulance, Building2, Car, Check, Loader2, Phone, RefreshCw, Stethoscope, X } from "lucide-react";
-import { EMERGENCY_CATALOG, categoryDef } from "./catalog";
+import { categoryDef, prefetchEmergencyCatalog, useEmergencyCatalog } from "./catalog";
 import { useAmbulanceTrack, useEmergencyCase } from "./hooks";
 import { emergencyContacts, etaLabel, statusHeadline } from "./types";
 import type { EmergencyCase, EmergencyCategory, TransportMode, TriageAnswer } from "./types";
@@ -9,6 +9,10 @@ import type { DeviceLocation } from "../ambulance/location";
 import { useDeviceLocation } from "../ambulance/useDeviceLocation";
 import { EmergencyProfileForm, FamilyAlert, familyAlertMessage, useEmergencyProfile } from "./EmergencyProfile";
 import "./emergency.css";
+
+// Warm the database-backed catalog the moment the emergency chunk loads, so the
+// first tap on SOS does not wait on a round trip.
+prefetchEmergencyCatalog();
 
 /** 108 and 112 stay on screen at every step. The app is never the only option. */
 function EmergencyCalls() {
@@ -106,6 +110,7 @@ function MedicalSummary({ emergency }: { emergency: EmergencyCase }) {
 /** The crew rings these if the patient cannot speak. Saved once, in the emergency profile. */
 function ContactsCard({ emergency }: { emergency: EmergencyCase }) {
   const caseContacts = emergencyContacts(emergency);
+  const { catalog } = useEmergencyCatalog();
   const { profile, reload } = useEmergencyProfile();
   const [editing, setEditing] = useState(false);
   // Contacts are copied into the case when it is created. If the patient adds them
@@ -118,7 +123,7 @@ function ContactsCard({ emergency }: { emergency: EmergencyCase }) {
     : [];
   const contacts = caseContacts.length ? caseContacts : saved;
   const message = familyAlertMessage({
-    category: categoryDef(emergency.category)?.label ?? null,
+    category: categoryDef(catalog, emergency.category)?.label ?? null,
     lat: emergency.pickup_lat,
     lng: emergency.pickup_lng,
   });
@@ -166,7 +171,8 @@ function LiveDispatch({
   onRefresh: () => void;
 }) {
   const track = useAmbulanceTrack(emergency);
-  const def = categoryDef(emergency.category);
+  const { catalog } = useEmergencyCatalog();
+  const def = categoryDef(catalog, emergency.category);
   const eta = etaLabel(track.latest?.eta_seconds ?? emergency.ambulance_eta_seconds);
 
   const pickup: DeviceLocation | null = useMemo(
@@ -337,7 +343,7 @@ function LiveDispatch({
  * Phone number, name, emergency contacts and pickup are never typed — they come
  * from the profile and the live GPS fix.
  */
-export function EmergencyWizard({ onClose }: { onClose: () => void }) {
+export function EmergencyWizard({ onClose, hospitalContext }: { onClose: () => void, hospitalContext?: string }) {
   const controller = useEmergencyCase();
   const emergency = controller.case;
   const live = controller.open && !!emergency;
@@ -355,7 +361,9 @@ export function EmergencyWizard({ onClose }: { onClose: () => void }) {
   // Warm the GPS from the moment the screen opens, so tapping Send does not
   // wait on a cold fix.
   const gps = useDeviceLocation(controller.userId ? `emergency:${controller.userId}` : null, !live);
-  const def = categoryDef(category);
+  // Categories and triage questions are read from the database, never bundled.
+  const { catalog, loading: catalogLoading, error: catalogError, reload: reloadCatalog } = useEmergencyCatalog();
+  const def = categoryDef(catalog, category);
 
   /**
    * Losing GPS must never lose the emergency. Without a fix the case is still
@@ -379,6 +387,7 @@ export function EmergencyWizard({ onClose }: { onClose: () => void }) {
         transport,
         location: withoutLocation ? null : gps.location,
         requestKey: requestKey.current,
+        hospitalId: hospitalContext,
       });
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Could not send. Call 108 now.");
@@ -433,8 +442,21 @@ export function EmergencyWizard({ onClose }: { onClose: () => void }) {
             {stage === "entry" && (
               <>
                 <h3>What is happening?</h3>
+                {catalogLoading && !catalog.length && (
+                  <p className="emg-note" aria-live="polite">
+                    <Loader2 size={14} className="emg-spin" /> Loading emergency options…
+                  </p>
+                )}
+                {catalogError && !catalog.length && (
+                  <div className="emg-error" role="alert">
+                    {catalogError}
+                    <button type="button" className="emg-ghost" onClick={reloadCatalog}>
+                      <RefreshCw size={14} /> Retry
+                    </button>
+                  </div>
+                )}
                 <div className="emg-grid">
-                  {EMERGENCY_CATALOG.map((entry) => (
+                  {catalog.map((entry) => (
                     <button
                       key={entry.id}
                       type="button"

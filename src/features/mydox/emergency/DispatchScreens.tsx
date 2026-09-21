@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Building2, Check, Phone, RefreshCw, Stethoscope, X } from "lucide-react";
+import { Ambulance, Building2, Check, Phone, RefreshCw, Stethoscope, X } from "lucide-react";
 import { EmergencyWizard } from "./EmergencyUI";
 import { AmbulanceEmergencyPortal } from "./AmbulanceEmergencyPortal";
 import { useEmergencyNotifications } from "./hooks";
-import { categoryDef } from "./catalog";
+import { categoryDef, useEmergencyCatalog } from "./catalog";
 import { emergencyContacts } from "./types";
 import type { EmergencyCase, ResponderRole } from "./types";
 import { fetchAllOpenCases, fetchMyHospital, setHospitalEmergencyMode } from "./service";
@@ -36,7 +36,8 @@ export function EmergencyPatient({
 }
 
 function CaseSummary({ emergency, showPhones }: { emergency: EmergencyCase; showPhones: boolean }) {
-  const def = categoryDef(emergency.category);
+  const { catalog } = useEmergencyCatalog();
+  const def = categoryDef(catalog, emergency.category);
   const contacts = emergencyContacts(emergency);
   return (
     <>
@@ -111,6 +112,8 @@ function HospitalPanel() {
 
   const dispatch = useEmergencyNotifications(hospital?.lat ?? null, hospital?.lng ?? null, "hospital");
 
+  const [showAmbulanceWizard, setShowAmbulanceWizard] = useState(false);
+
   if (!userId) return null;
   if (loadError) {
     return (
@@ -164,23 +167,52 @@ function HospitalPanel() {
           {hospital.has_blood_bank && <span>Blood bank</span>}
           <span>{hospital.er_beds_available} ER beds free</span>
         </div>
-        <button
-          type="button"
-          className={hospital.emergency_mode ? "emg-ghost" : "emg-primary"}
-          disabled={busyId === hospital.id}
-          onClick={() =>
-            guard(hospital.id, async () => {
-              await setHospitalEmergencyMode(hospital.id, !hospital.emergency_mode);
-              load();
-            })
-          }
-        >
-          {hospital.emergency_mode ? "Emergency mode is ON · turn off" : "Turn on emergency mode"}
-        </button>
+        <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+          <button
+            type="button"
+            className={hospital.emergency_mode ? "emg-ghost" : "emg-primary"}
+            style={{ flex: 1 }}
+            disabled={busyId === hospital.id}
+            onClick={() =>
+              guard(hospital.id, async () => {
+                await setHospitalEmergencyMode(hospital.id, !hospital.emergency_mode);
+                load();
+              })
+            }
+          >
+            {hospital.emergency_mode ? "Emergency mode is ON" : "Turn on emergency mode"}
+          </button>
+          <button
+            type="button"
+            className="emg-primary"
+            style={{ flex: 1.2, background: "#DC2626", borderColor: "#DC2626" }}
+            onClick={() => setShowAmbulanceWizard(true)}
+          >
+            <Ambulance size={16} /> Request Ambulance
+          </button>
+        </div>
         {!hospital.emergency_mode && (
           <p className="emg-note">While this is off, no emergency case is routed to this hospital.</p>
         )}
       </section>
+
+      {showAmbulanceWizard && (
+        <div className="emg-modal-overlay" onClick={() => setShowAmbulanceWizard(false)}>
+          <div className="emg-modal" onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <h3 style={{ margin: 0 }}>Book Ambulance for Patient</h3>
+              <button onClick={() => setShowAmbulanceWizard(false)} className="emg-close"><X size={20} /></button>
+            </div>
+            <EmergencyWizard
+              onClose={() => {
+                setShowAmbulanceWizard(false);
+                dispatch.refresh();
+              }}
+              hospitalContext={hospital.id}
+            />
+          </div>
+        </div>
+      )}
 
       {(actionError || dispatch.error) && (
         <div className="emg-error" role="alert">

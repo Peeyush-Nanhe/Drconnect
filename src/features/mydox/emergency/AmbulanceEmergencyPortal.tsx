@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Ambulance, Check, Navigation, Phone, RefreshCw, Timer, X } from "lucide-react";
+import { Ambulance, Check, Navigation, Phone, RefreshCw, Timer, X, KeyRound } from "lucide-react";
 import { useAmbulanceBeacon, useEmergencyNotifications } from "./hooks";
-import { categoryDef } from "./catalog";
+import { categoryDef, useEmergencyCatalog } from "./catalog";
 import { emergencyContacts, isOpenCase } from "./types";
 import type { EmergencyCase } from "./types";
+import { verifyAndCompleteConsultation } from "@/features/mydox/backend";
 import "./emergency.css";
 
 function mapsUrl(emergency: EmergencyCase) {
@@ -31,7 +32,8 @@ function Waiting({ since }: { since: string }) {
 
 /** Everything the crew needs before they move, none of it typed by the patient. */
 function CaseDetails({ emergency }: { emergency: EmergencyCase }) {
-  const def = categoryDef(emergency.category);
+  const { catalog } = useEmergencyCatalog();
+  const def = categoryDef(catalog, emergency.category);
   const contacts = emergencyContacts(emergency);
   return (
     <>
@@ -94,6 +96,28 @@ function ActiveTrip({
   busy: boolean;
 }) {
   const beacon = useAmbulanceBeacon(emergency, userId);
+  const [otp, setOtp] = useState("");
+  const [verifying, setVerifying] = useState(false);
+  const [otpError, setOtpError] = useState<string | null>(null);
+
+  const handleVerifyOtp = async () => {
+    if (otp.length !== 4) return;
+    setVerifying(true);
+    setOtpError(null);
+    try {
+      const res = await verifyAndCompleteConsultation(emergency.id, otp);
+      if (res.success) {
+        onAdvance("transporting");
+      } else {
+        setOtpError(res.error || "Incorrect OTP");
+      }
+    } catch (e: any) {
+      setOtpError(e.message || "Verification failed");
+    } finally {
+      setVerifying(false);
+    }
+  };
+
   return (
     <section className="emg-card emg-card-active">
       <div className="emg-badge">ACCEPTED · {emergency.status.replace(/_/g, " ").toUpperCase()}</div>
@@ -123,9 +147,36 @@ function ActiveTrip({
         </button>
       )}
       {emergency.status === "ambulance_arrived" && !!emergency.hospital_id && (
-        <button type="button" className="emg-ghost" disabled={busy} onClick={() => onAdvance("transporting")}>
-          Start transport to hospital
-        </button>
+        <div style={{ marginTop: 12, padding: 16, background: "#FEF3C7", borderRadius: 14, border: "1.5px solid #FDE68A" }}>
+          <p style={{ margin: "0 0 10px", fontSize: 13, fontWeight: 800, color: "#92400E", display: "flex", alignItems: "center", gap: 6 }}>
+            <KeyRound size={16} /> Patient Pickup OTP
+          </p>
+          <p style={{ margin: "0 0 12px", fontSize: 11, color: "#92400E", fontWeight: 600 }}>Ask the patient for the 4-digit code shown in their MyBookings screen.</p>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              placeholder="4-digit code"
+              value={otp}
+              onChange={e => {
+                setOtp(e.target.value.replace(/\D/g, "").slice(0, 4));
+                setOtpError(null);
+              }}
+              style={{ flex: 1, padding: "10px 14px", borderRadius: 10, border: "2px solid #FDE68A", fontSize: 16, fontWeight: 700, textAlign: "center", letterSpacing: 4 }}
+            />
+            <button
+              type="button"
+              className="emg-primary"
+              style={{ margin: 0, padding: "0 20px" }}
+              disabled={busy || verifying || otp.length !== 4}
+              onClick={handleVerifyOtp}
+            >
+              {verifying ? "..." : "Verify"}
+            </button>
+          </div>
+          {otpError && <p style={{ margin: "8px 0 0", fontSize: 11, color: "#DC2626", fontWeight: 700 }}>{otpError}</p>}
+        </div>
       )}
       {emergency.status === "ambulance_arrived" && !emergency.hospital_id && (
         <p className="emg-note">

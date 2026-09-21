@@ -88,6 +88,8 @@ export interface CreateCaseInput {
   location?: { lat: number; lng: number; accuracy: number; capturedAt: string } | null;
   /** Stable across retries of the same attempt. */
   requestKey: string;
+  /** Optional hospital to pre-assign (for hospital-initiated bookings) */
+  hospitalId?: string | null;
 }
 
 export async function createEmergencyCase(input: CreateCaseInput): Promise<EmergencyCase> {
@@ -102,6 +104,7 @@ export async function createEmergencyCase(input: CreateCaseInput): Promise<Emerg
         p_captured_at: input.location?.capturedAt ?? null,
         p_transport: input.transport,
         p_request_key: input.requestKey,
+        p_hospital_id: input.hospitalId ?? null,
       })
       .abortSignal(signal)
       .single(),
