@@ -29,6 +29,8 @@ import { recordHomeVisitConsent } from "@/lib/consents.functions";
 import { EmergencyResponderPanel, EmergencyPatient } from "@/features/mydox/emergency/DispatchScreens";
 import { EmergencyProfileForm, EmergencyProfileNudge } from "@/features/mydox/emergency/EmergencyProfile";
 import { useCrewStats } from "@/features/mydox/emergency/useCrewStats";
+import { technicianTestType, fetchNursingDayRate } from "@/features/mydox/care-staff-booking";
+import { StaffBookingSheet, TechnicianCareCard } from "@/features/mydox/StaffBookingSheet";
 import {
   parseChatAttachment,
   formatMessageSnippet,
@@ -2003,7 +2005,6 @@ function PatientBookingSheet({
 // Nurse kinds - available to all portals
 const NURSE_KINDS = [
   { id: "n_gen", name: "General Duty Nurse", Icon: Heart, desc: "Day / night home care", avail: 10, base: 800, color: "#DB2777" },
-  { id: "n_baby", name: "Mother & Baby Nurse", Icon: Baby, desc: "Newborn & postnatal", avail: 5, base: 1100, color: "#DB2777" },
 ];
 
 // Care procedures - available to all portals
@@ -9990,6 +9991,9 @@ function CareerOverlay({ onClose }) {
 
 function NursingCareCard({ onBook }) {
   const [days, setDays] = React.useState(7);
+  // The day rate is nursing_settings.day_rate — the same number the server charges.
+  const [rate, setRate] = React.useState(null);
+  React.useEffect(() => { let off = false; fetchNursingDayRate().then(r => { if (!off) setRate(r); }); return () => { off = true; }; }, []);
   return (
     <div style={{ padding: "8px 14px 0" }}>
       <div style={{ background: "white", border: "2px solid #DB2777", borderRadius: 16, padding: "12px 13px" }}>
@@ -9999,7 +10003,7 @@ function NursingCareCard({ onBook }) {
             <p style={{ fontWeight: 800, color: C.ink, fontSize: 13.5, margin: 0 }}>Home Nursing Care</p>
             <p style={{ color: C.faint, fontSize: 10.5, margin: 0 }}>Verified freelance nurses {"\u00B7"} first to accept gets assigned</p>
           </div>
-          <span style={{ background: "#FCE7F3", color: "#DB2777", borderRadius: 99, padding: "3px 8px", fontSize: 9.5, fontWeight: 800 }}>{"\u20B9"}800/day</span>
+          <span style={{ background: "#FCE7F3", color: "#DB2777", borderRadius: 99, padding: "3px 8px", fontSize: 9.5, fontWeight: 800 }}>{rate != null ? `\u20B9${rate}/day` : "\u2026"}</span>
         </div>
         <div style={{ display: "flex", gap: 5, alignItems: "center", marginBottom: 8 }}>
           <span style={{ fontSize: 10.5, color: C.sub, fontWeight: 700, flexShrink: 0 }}>Duration:</span>
@@ -10007,7 +10011,7 @@ function NursingCareCard({ onBook }) {
             <button key={d} onClick={() => setDays(d)} style={{ flex: 1, padding: "6px 0", borderRadius: 99, border: `1.5px solid ${days === d ? "#DB2777" : C.line}`, background: days === d ? "#DB2777" : "white", color: days === d ? "white" : C.sub, fontSize: 10.5, fontWeight: 800, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>{d}d</button>
           ))}
         </div>
-        <button onClick={() => onBook && onBook(days, 800 * days)} style={{ width: "100%", background: "#DB2777", borderRadius: 11, padding: "10px 12px", fontSize: 13, fontWeight: 800, color: "#fff", border: "none", cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>Book {days}-day nursing {"\u00B7"} {inr(800 * days)}</button>
+        <button onClick={() => onBook && onBook(days)} style={{ width: "100%", background: "#DB2777", borderRadius: 11, padding: "10px 12px", fontSize: 13, fontWeight: 800, color: "#fff", border: "none", cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>Book {days}-day nursing{rate != null ? <> {"\u00B7"} {inr(rate * days)}</> : null}</button>
       </div>
     </div>
   );
@@ -14429,8 +14433,9 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
         if (acknowledgedBookingIds.includes(latest.id)) return;
 
         if (latest.status === "assigned" && latest.technician_id) {
+          // technician_tests.technician_id points at technicians.id, not a profile id.
           const { data: techProf } = await supabase
-            .from("profiles")
+            .from("technicians")
             .select("full_name")
             .eq("id", latest.technician_id)
             .maybeSingle();
@@ -14945,8 +14950,17 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
 
   // Picker "Book" handler. New enquiry for a medico category → offer favourites/previous provider first.
   const PREF_CATS = ["doctor", "therapist", "technician", "care", "nurse", "diet"];
+  // Nurse and technician bookings open the booking sheet (same flow as home
+  // physiotherapy) and write to the tables their portals read —
+  // nursing_engagements / technician_tests — never the doctor dispatcher.
+  const [staffSheet, setStaffSheet] = useState(null); // { kind: "nurse" | "technician", days?, testType? }
+  const openNurseBooking = (days) => setStaffSheet({ kind: "nurse", days: days || 7 });
+  const openTechnicianBooking = (spec) => setStaffSheet({ kind: "technician", testType: technicianTestType(spec) });
+
   const handleBook = (spec, fromOverlay) => {
     if (!spec) return;
+    if (activeTab === "nurse" || spec.type === "nurse") { if (fromOverlay) setServiceView(null); openNurseBooking(spec.days); return; }
+    if (activeTab === "technician" || activeTab === "test" || spec.type === "technician") { if (fromOverlay) setServiceView(null); openTechnicianBooking(spec); return; }
     if ((visitMode === "home" || spec.visitMode === "home") && (spec.type || activeTab) === "doctor") { openDoctorHomeVisit(spec); return; }
     if (activeTab === "scan") { startScanDispatch(spec); if (fromOverlay) setServiceView(null); return; }
     if (spec.doctor) { proceedNormal(spec, fromOverlay); return; } // already chose a named doctor — no need to ask again
@@ -15437,14 +15451,13 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
 
               {/* UNIFIED BOOKING INTERFACE — large-target, elderly-friendly version */}
               {activeTab === "nurse" && (
-                <NursingCareCard onBook={(days, total) => {
-                  const svc = { id: "nursing", name: days + "-day Home Nursing", base: total, color: "#DB2777", type: "nurse", shortName: "Nurse" };
-                  const homeHub = { id: "home", name: "Your Home", type: "home", address: area + ", Pune", patEtaMin: 0, specialities: [], amenities: [] };
-                  actions.book({ spec: svc, emergency: false, area, fare: buildFare(svc, false), hub: homeHub });
-                }} />
+                <NursingCareCard onBook={(days) => openNurseBooking(days)} />
+              )}
+              {(activeTab === "technician" || activeTab === "test") && (
+                <TechnicianCareCard onBook={(testType) => setStaffSheet({ kind: "technician", testType })} />
               )}
               <div style={{ padding: "10px 14px 0" }}>
-                {!(visitMode === "home" && activeTab === "doctor") && (
+                {!(visitMode === "home" && activeTab === "doctor") && !["nurse", "technician", "test"].includes(activeTab) && (
                 <SpecialtyPickerSimple
                   providerType={activeTab}
                   selectedSpec={selectedSpec}
@@ -15642,15 +15655,29 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
         setBookingOpen(true); setTimeout(() => { try { pickerRef.current && pickerRef.current.scrollIntoView({ behavior: "smooth", block: "start" }); } catch (e) { } }, 80);
       }} />}
       {showBreatheFree && <BreatheFreeFlow onClose={() => setShowBreatheFree(false)} onComplete={({ openChat }) => { setShowBreatheFree(false); setAllergyDone(true); if (openChat) setChatDoctor(BF_DOCTOR); }} />}
+      {staffSheet && (
+        <StaffBookingSheet
+          kind={staffSheet.kind}
+          area={area}
+          initialDays={staffSheet.days}
+          initialTestType={staffSheet.testType}
+          onClose={() => setStaffSheet(null)}
+          onBooked={(b) => {
+            setStaffSheet(null);
+            setSelectedSpec(null);
+            setConfirmedBooking({ id: b.id, refType: b.refType, pending: b.pending, role: b.role, name: b.name, label: b.label, doctor: b.doctor || null });
+          }}
+        />
+      )}
       {confirmedBooking && (
         <div onClick={() => {
           const id = confirmedBooking.id || confirmedBooking.bookingId;
-          ackBookingPopup(id);
+          if (!confirmedBooking.pending) ackBookingPopup(id); // a pending request must still announce its assignment
           setConfirmedBooking(null);
         }} style={{ position: "absolute", inset: 0, zIndex: 120, background: "rgba(15,23,42,.55)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
           <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 300, background: "#fff", borderRadius: 22, padding: "26px 22px", textAlign: "center", boxShadow: "0 24px 60px rgba(0,0,0,.3)" }}>
             <div style={{ width: 64, height: 64, borderRadius: "50%", background: "linear-gradient(135deg,#0C9668,#059669)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px", boxShadow: "0 8px 22px -6px rgba(12,150,104,.6)" }}><Check size={34} color="#fff" strokeWidth={3} /></div>
-            <p style={{ margin: 0, fontWeight: 900, color: C.ink, fontSize: 19 }}>Booking Confirmed</p>
+            <p style={{ margin: 0, fontWeight: 900, color: C.ink, fontSize: 19 }}>{confirmedBooking.pending ? "Request Sent" : "Booking Confirmed"}</p>
             <p style={{ margin: "6px 0 0", color: C.sub, fontSize: 13, fontWeight: 600 }}>{confirmedBooking.name}</p>
             {confirmedBooking.doctor && (
               <div style={{ margin: "12px 0 0", background: C.canvas, borderRadius: 14, padding: "12px 14px", textAlign: "left", display: "flex", alignItems: "center", gap: 10 }}>
@@ -15663,11 +15690,11 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
               </div>
             )}
             {confirmedBooking.label && <div style={{ margin: "12px 0 0", display: "inline-flex", alignItems: "center", gap: 7, background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 12, padding: "9px 14px" }}><span style={{ fontSize: 16 }}>📅</span><span style={{ color: "#1D4ED8", fontWeight: 800, fontSize: 13 }}>{confirmedBooking.label}</span></div>}
-            <p style={{ margin: "14px 0 0", color: C.faint, fontSize: 11.5, lineHeight: 1.4 }}>{confirmedBooking.doctor ? `Your appointment is booked with this ${confirmedBooking.role || "doctor"}. You'll get a reminder ahead of your slot.` : confirmedBooking.role ? `Your ${confirmedBooking.role} has been assigned. You'll get a reminder ahead of your slot.` : "Your appointment is booked. You'll get a reminder, and your medico will be assigned ahead of your slot."}</p>
+            <p style={{ margin: "14px 0 0", color: C.faint, fontSize: 11.5, lineHeight: 1.4 }}>{confirmedBooking.pending ? `We've sent your request to verified ${confirmedBooking.role || "provider"}s nearby. You'll be notified the moment one accepts.` : confirmedBooking.doctor ? `Your appointment is booked with this ${confirmedBooking.role || "doctor"}. You'll get a reminder ahead of your slot.` : confirmedBooking.role ? `Your ${confirmedBooking.role} has been assigned. You'll get a reminder ahead of your slot.` : "Your appointment is booked. You'll get a reminder, and your medico will be assigned ahead of your slot."}</p>
             <button onClick={() => {
               const booking = confirmedBooking;
               const id = booking?.id || booking?.bookingId;
-              ackBookingPopup(id);
+              if (!booking?.pending) ackBookingPopup(id); // a pending request must still announce its assignment
               setConfirmedBooking(null);
               if (!booking?.spec) return;
               

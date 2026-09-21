@@ -505,7 +505,13 @@ function TechnicianHome() {
               onChange={(v) => online.mutate(v)}
               onlineLabel="Taking test visits"
             />
-          ) : null}
+          ) : null}          <a
+            href="/provider/availability"
+            className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700"
+            title="Set the hours patients can book you for"
+          >
+            My hours
+          </a>
           <button
             type="button"
             onClick={() => setTab("profile")}
