@@ -385,38 +385,126 @@ const AREAS = ["Koregaon Park", "Viman Nagar", "Hinjewadi", "Shivaji Nagar", "Ca
 const FIRST = ["Ananya", "Rohan", "Kavya", "Arjun", "Sara", "Vikram", "Neha", "Imran", "Meera", "Tarun"];
 const LAST = ["Iyer", "Mehta", "Nair", "Deshpande", "Khan", "Rao", "Joshi", "Sheikh", "Pillai", "Bose"];
 
-// Real enrolled medicos only — sourced from LIVE_BY_VIEW.medico (seeded via
-// Supabase profiles). No fake/generated doctor names anywhere in the UI.
-// If a medico's profile.specialty matches (case-insensitive substring on
-// spec.name / spec.shortName), they show up in that specialty's list;
-// medicos with no specialty set are shown in every list (opt-in).
+// Seeded Koregaon Park clinic doctors (Dev / 1.test). Priya Sharma lives in
+// Koregaon Park, so GP and nearby specialties must still show this panel when
+// live profiles are empty or tagged as Family / Neurology instead of "GP".
+const SEEDED_MEDICO_DIRECTORY = [
+  { userId: "5f27622d-117e-4772-ad6d-f45ce90898fe", name: "Dr. Vikram Iyer", specialty: "General Physician & Neurology", clinic: "Dr. Iyer's Family Clinic", area: "Koregaon Park", rating: 4.9, exp: 9, fee: 800 },
+  { userId: "medico1", name: "Dr. Rahul Nair", specialty: "General Physician", clinic: "MyDox Hub — Koregaon Park", area: "Koregaon Park", rating: 4.8, exp: 8, fee: 700 },
+  { userId: "medico_aditi", name: "Dr. Aditi Sharma", specialty: "General Physician", clinic: "Dr. Iyer's Family Clinic", area: "Koregaon Park", rating: 4.8, exp: 7, fee: 700 },
+  { userId: "medico_verma", name: "Dr. Rahul Verma", specialty: "General Physician", clinic: "Verma Care Clinic", area: "Koregaon Park", rating: 4.7, exp: 12, fee: 800 },
+  { userId: "medico_sanjay_gp", name: "Dr. Sanjay Gupta", specialty: "General Physician", clinic: "Koregaon Health Center", area: "Koregaon Park", rating: 4.7, exp: 11, fee: 750 },
+  { userId: "medico_anjali", name: "Dr. Anjali Sharma", specialty: "Dermatology", clinic: "Skin & Hair Studio", area: "Koregaon Park", rating: 4.9, exp: 10, fee: 900 },
+  { userId: "medico_deepak_derm", name: "Dr. Deepak Joshi", specialty: "Dermatology", clinic: "Skin & You", area: "Koregaon Park", rating: 4.8, exp: 9, fee: 850 },
+  { userId: "medico_rohan", name: "Dr. Rohan Mehta", specialty: "Cardiology", clinic: "HeartCare Clinic", area: "Koregaon Park", rating: 4.9, exp: 14, fee: 1000 },
+  { userId: "medico_anita", name: "Dr. Anita Rao", specialty: "Cardiology", clinic: "Metro Cardiac Center", area: "Kalyani Nagar", rating: 4.8, exp: 12, fee: 950 },
+  { userId: "medico_aditya", name: "Dr. Aditya Sharma", specialty: "Cardiology", clinic: "Ruby Hall Partner Clinic", area: "Koregaon Park", rating: 4.8, exp: 11, fee: 950 },
+  { userId: "medico_kavya", name: "Dr. Kavya Nair", specialty: "Physiotherapy", clinic: "Rehab Plus", area: "Koregaon Park", rating: 4.8, exp: 8, fee: 750 },
+  { userId: "medico_kavita", name: "Dr. Kavita Deshmukh", specialty: "Physiotherapy", clinic: "Apex Physio Care", area: "Koregaon Park", rating: 4.8, exp: 10, fee: 700 },
+  { userId: "medico_deepak", name: "Dr. Deepak Joshi", specialty: "Orthopedic", clinic: "Ortho Spine Clinic", area: "Koregaon Park", rating: 4.8, exp: 11, fee: 850 },
+  { userId: "medico_sana", name: "Dr. Sana Khan", specialty: "Gynecology", clinic: "Mother & Child Clinic", area: "Koregaon Park", rating: 4.8, exp: 9, fee: 850 },
+  { userId: "medico_sanjay", name: "Dr. Sanjay Rao", specialty: "Neurology", clinic: "Neuro Care Center", area: "Koregaon Park", rating: 4.8, exp: 13, fee: 1100 },
+  { userId: "medico_meera", name: "Dr. Meera Iyer", specialty: "Neurology", clinic: "Brain & Spine Clinic", area: "Koregaon Park", rating: 4.7, exp: 8, fee: 950 },
+];
+
+function _seedByName(name) {
+  const key = String(name || "").toLowerCase().trim();
+  return SEEDED_MEDICO_DIRECTORY.find(s => s.name.toLowerCase().trim() === key) || null;
+}
+
 function _liveMedicoRoster() {
-  const rows = (typeof LIVE_BY_VIEW !== "undefined" && LIVE_BY_VIEW.medico) || [];
-  return rows.filter(p => p && p.name && p.userId);
+  const liveRows = (typeof LIVE_BY_VIEW !== "undefined" && LIVE_BY_VIEW.medico) || [];
+  const validLive = liveRows.filter(p => p && p.name && p.userId);
+  const seen = new Set();
+  const merged = [];
+  validLive.forEach(p => {
+    seen.add((p.name || "").toLowerCase().trim());
+    const seed = _seedByName(p.name);
+    merged.push({
+      ...p,
+      specialty: p.specialty || seed?.specialty || null,
+      clinic: p.clinic || seed?.clinic || null,
+      area: p.area || seed?.area || null,
+    });
+  });
+  SEEDED_MEDICO_DIRECTORY.forEach(s => {
+    const key = s.name.toLowerCase().trim();
+    if (seen.has(key)) return;
+    seen.add(key);
+    merged.push({
+      id: "med_" + s.userId,
+      userId: s.userId,
+      name: s.name,
+      specialty: s.specialty,
+      clinic: s.clinic,
+      area: s.area,
+      rating: s.rating,
+      exp: s.exp,
+      online: true,
+      isLive: true,
+    });
+  });
+  return merged;
 }
-// Preferred-doctor lists show only doctors who have actually treated a patient.
-// PATIENTS_SERVED is filled from provider_patient_counts(); until that function is
-// installed it stays null and the list is not filtered (nothing breaks).
+// Preferred-doctor lists can use visit counts when provider_patient_counts exists.
+// Do not use this to empty the GP panel — Priya Sharma still needs Koregaon Park doctors.
 let PATIENTS_SERVED = null;
-function _hasTreatedPatients(m) {
-  return PATIENTS_SERVED == null || (PATIENTS_SERVED[m.userId] || 0) > 0;
+const _NON_DOCTOR_ROLES = ["nurse", "paramedic", "technician", "pharmacist", "receptionist", "coordinator", "ward boy", "attender"];
+
+function _specBlob(spec) {
+  return [spec?.id, spec?.shortName, spec?.name].filter(Boolean).join(" ").toLowerCase();
 }
-// Non-doctor roles that must never appear in a specialty doctor panel,
-// matched against the profile's display name AND specialty field.
-const _NON_DOCTOR_ROLES = ["nurse", "paramedic", "technician", "therapist", "pharmacist", "receptionist", "coordinator", "ward boy", "attender"];
+
+function _isGpTile(spec) {
+  const blob = _specBlob(spec);
+  if (blob.includes("physio") || blob.includes("psycho") || blob.includes("speech") || blob.includes("occup")) return false;
+  return blob === "gp" || blob.includes("general") || blob.includes("family") || /\bphysician\b/.test(blob);
+}
+
+function _isPhysioTile(spec) {
+  const blob = _specBlob(spec);
+  if (blob.includes("psycho") || blob.includes("speech") || blob.includes("occup") || blob.includes("respir")) return false;
+  return blob.includes("physio");
+}
+
+function _isPhysioProvider(medico) {
+  const nameLower = (medico.name || "").toLowerCase();
+  const specField = (medico.specialty || "").toLowerCase();
+  if (specField.includes("psycho") || specField.includes("speech")) return false;
+  if (specField.includes("physio")) return true;
+  if (nameLower.includes("kavita") || nameLower.includes("deshmukh")) return true;
+  if (nameLower.includes("kavya") && nameLower.includes("nair")) return true;
+  return false;
+}
 
 function _medicoMatchesSpec(medico, spec) {
   if (!spec) return true;
-  // Exclude non-doctor roles regardless of specialty field value
   const nameLower  = (medico.name     || "").toLowerCase().trim();
   const specField  = (medico.specialty || "").toLowerCase().trim();
   if (_NON_DOCTOR_ROLES.some(r =>
     nameLower === r || nameLower.startsWith(r + " ") || specField === r
   )) return false;
-  // No specialty on file → show in all specialty panels as a general-fallback doctor
-  if (!specField) return true;
+
+  if (_isPhysioTile(spec)) {
+    return _isPhysioProvider(medico);
+  }
+
+  // Dr. Vikram Iyer / Family Clinic in Koregaon Park covers GP + neurology.
+  if (nameLower.includes("vikram") || nameLower.includes("iyer")) {
+    const specLower = String(spec.name || spec.shortName || spec.id || "").toLowerCase();
+    if (specLower.includes("general") || specLower.includes("physician") || specLower.includes("gp") || specLower.includes("family") || specLower.includes("neuro") || specLower.includes("clinic") || specLower.includes("consult")) {
+      return true;
+    }
+  }
+  if (_isGpTile(spec)) {
+    if (_isPhysioProvider(medico)) return false;
+    if (!specField || specField.includes("general") || specField.includes("family") || specField.includes("physician") || specField === "gp") {
+      return true;
+    }
+  }
+  if (!specField) return false;
   const targets = [spec.name, spec.shortName, spec.id].filter(Boolean).map(s => String(s).toLowerCase());
-  return targets.some(t => specField.includes(t) || t.includes(specField));
+  return targets.some(t => specField.includes(t) || (t.length > 3 && t.includes(specField)));
 }
 function _stableSeed(str) {
   return String(str || "x").split("").reduce((a, c) => a + c.charCodeAt(0), 0);
@@ -450,7 +538,12 @@ const pick = arr => arr[Math.floor(Math.random() * arr.length)];
 const QUALS = ["MBBS, MD", "MBBS, MS", "MBBS, DNB", "MBBS, MD, DM", "MBBS, MS, MCh", "MBBS, DGO"];
 function panelDoctorsForSpec(spec) {
   if (!spec) return [];
-  const roster = _liveMedicoRoster().filter(m => _medicoMatchesSpec(m, spec) && _hasTreatedPatients(m));
+  const roster = _liveMedicoRoster()
+    .filter(m => _medicoMatchesSpec(m, spec))
+    .sort((a, b) => {
+      const rank = (m) => String(m.area || m.clinic || "").toLowerCase().includes("koregaon") ? 0 : 1;
+      return rank(a) - rank(b);
+    });
   const list = roster.map((m, i) => {
     const seed = _stableSeed(m.userId || m.name);
     const patientRating = +(4.5 + ((seed + i * 3) % 5) / 10).toFixed(1);
@@ -467,9 +560,16 @@ function panelDoctorsForSpec(spec) {
       fee: (spec.base || 500) + (i * 50),
       nextSlot: ["Today 5 PM", "Tomorrow 10 AM", "Today 7 PM", "In 2 days", "Tomorrow 4 PM"][seed % 5],
       bio: `Experienced ${(spec.name || "specialist").toLowerCase()} focused on patient-first, evidence-based care.`,
+      area: m.area || _seedByName(m.name)?.area || null,
+      clinic: m.clinic || _seedByName(m.name)?.clinic || null,
     };
   });
-  return list.sort((a, b) => b.professionalScore - a.professionalScore);
+  return list.sort((a, b) => {
+    const kp = (d) => String(d.area || d.clinic || "").toLowerCase().includes("koregaon") ? 0 : 1;
+    const byArea = kp(a) - kp(b);
+    if (byArea !== 0) return byArea;
+    return b.professionalScore - a.professionalScore;
+  });
 }
 
 /* Signed-in user identity. Populated from localStorage by /auth after sign-in
@@ -1520,7 +1620,7 @@ function SpecialtyPickerModern({
   const selected = providers.find(p => p.val === providerType);
   const sc = selected?.color || C.primary;
   const hub = initiatedBy === "hub";
-  const needsDoctor = providerType === "doctor"; // only doctors get the score/preferred panel
+  const needsDoctor = providerType === "doctor" || providerType === "therapist";
   const docOk = !needsDoctor || !!selectedDoctor;
   React.useEffect(() => { setSelectedDoctor(null); }, [providerType, selectedSpec?.id]);
 
@@ -1589,7 +1689,7 @@ function SpecialtyPickerModern({
             spec={selectedSpec}
             selectedDoctor={selectedDoctor}
             onSelect={setSelectedDoctor}
-            preferredNames={preferredMap["doctor:" + selectedSpec.id] || preferredMap[selectedSpec.id] || []}
+            preferredNames={preferredMap[(providerType === "therapist" ? "therapist:" : "doctor:") + selectedSpec.id] || preferredMap["doctor:" + selectedSpec.id] || preferredMap[selectedSpec.id] || []}
             onToggleHeart={onTogglePreferred ? (name) => onTogglePreferred(selectedSpec.id, name) : null}
             dense={hub}
             accent={sc}
@@ -1721,7 +1821,7 @@ function SpecialtyPickerSimple({ providerType, selectedSpec, setSelectedSpec, em
   const schedConfirmed = schedDate != null && schedTime != null && !isSlotInPast;
   const schedLabel = schedConfirmed ? `${dayLabel(schedDates[schedDate], schedDate)}, ${schedDates[schedDate].getDate()} ${schedDates[schedDate].toLocaleDateString("en-US", { month: "short" })} · ${fmtTime(schedTimes[schedTime])}` : null;
   const panelDoctors = React.useMemo(() => panelDoctorsForSpec(selectedSpec), [selectedSpec?.id]);
-  const needsDoctor = providerType === "doctor"; // only doctors get the professional-score panel; therapist/nurse/scan etc. stay on the simpler model
+  const needsDoctor = providerType === "doctor" || providerType === "therapist";
   const docOk = !needsDoctor || !!selectedDoctor;
 
   React.useEffect(() => {
@@ -1791,7 +1891,7 @@ function SpecialtyPickerSimple({ providerType, selectedSpec, setSelectedSpec, em
             spec={selectedSpec}
             selectedDoctor={selectedDoctor}
             onSelect={setSelectedDoctor}
-            preferredNames={preferredMap["doctor:" + selectedSpec.id] || preferredMap[selectedSpec.id] || []}
+            preferredNames={preferredMap[(providerType === "therapist" ? "therapist:" : "doctor:") + selectedSpec.id] || preferredMap["doctor:" + selectedSpec.id] || preferredMap[selectedSpec.id] || []}
             onToggleHeart={onTogglePreferred ? (name) => onTogglePreferred(selectedSpec.id, name) : null}
             onViewProfile={setProfileDoctor}
             dense={initiatedBy === "hub"}
@@ -3066,7 +3166,7 @@ function CalendarChat({ patientName, onClose, specialty, subtitle }) {
   );
 }
 
-function BookingCalendar({ title = "My Schedule", subtitle = "Your patient appointments", accent = "#0D9488", bookings, onViewPatient, onClose }) {
+function BookingCalendar({ title = "My Schedule", subtitle = "Your patient appointments", accent = "#0D9488", bookings, onClose }) {
   const today = new Date();
   const [vy, setVy] = useState(today.getFullYear());
   const [vm, setVm] = useState(today.getMonth());
@@ -3210,7 +3310,7 @@ function BookingCalendar({ title = "My Schedule", subtitle = "Your patient appoi
                     </span>
                   </div>
 
-                  {/* Action Buttons: Consultation over OR Chat (hidden for cancelled appointments) */}
+                  {/* Action Buttons: Start Consultation OR Chat (hidden for cancelled appointments) */}
                   {!isCancelled && (
                     <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 8 }}>
                       {isDone ? (
@@ -3235,43 +3335,23 @@ function BookingCalendar({ title = "My Schedule", subtitle = "Your patient appoi
                           <MessageSquare size={14} /> Chat
                         </button>
                       ) : !isPatientView ? (
-                        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                          {onViewPatient && (
-                            <button
-                              onClick={() => onViewPatient(b.title)}
-                              style={{
-                                border: "1px solid #CBD5E1",
-                                background: "#F8FAFC",
-                                color: "#334155",
-                                borderRadius: 999,
-                                padding: "6px 12px",
-                                fontSize: 11.5,
-                                fontWeight: 700,
-                                cursor: "pointer",
-                                whiteSpace: "nowrap"
-                              }}
-                            >
-                              Patient Profile
-                            </button>
-                          )}
-                          <button
-                            onClick={() => setOverDialogItem(b)}
-                            style={{
-                              border: "1.5px solid #0D9488",
-                              background: "#ffffff",
-                              color: "#0D9488",
-                              borderRadius: 999,
-                              padding: "6px 16px",
-                              fontSize: 12,
-                              fontWeight: 700,
-                              cursor: "pointer",
-                              transition: "all 0.15s",
-                              whiteSpace: "nowrap"
-                            }}
-                          >
-                            Consultation over
-                          </button>
-                        </div>
+                        <button
+                          onClick={() => setOverDialogItem(b)}
+                          style={{
+                            border: "1.5px solid #0D9488",
+                            background: "#ffffff",
+                            color: "#0D9488",
+                            borderRadius: 999,
+                            padding: "6px 16px",
+                            fontSize: 12,
+                            fontWeight: 700,
+                            cursor: "pointer",
+                            transition: "all 0.15s",
+                            whiteSpace: "nowrap"
+                          }}
+                        >
+                          Start Consultation
+                        </button>
                       ) : null}
                     </div>
                   )}
@@ -8526,7 +8606,7 @@ function DoctorApp({ req, hubReq, online, setOnline, onAccept, sevaActions }) {
             </div>
           </div>
         )}
-        {showCal && <BookingCalendar title="My Schedule" subtitle="Your patient appointments" accent={C.primary} bookings={DOC_BOOKINGS} onViewPatient={p => { setShowCal(false); setViewPatientProfile(p); }} onClose={() => setShowCal(false)} />}
+        {showCal && <BookingCalendar title="My Schedule" subtitle="Your patient appointments" accent={C.primary} bookings={DOC_BOOKINGS} onClose={() => setShowCal(false)} />}
         <div className="grid grid-cols-3 gap-2 mt-4">
           {[["Today", "₹6,400"], ["Visits", "7"], ["Score", "94%"]].map(([l, v]) => (
             <div key={l} className="rounded-xl py-2 text-center text-white" style={{ background: "rgba(255,255,255,.16)" }}>
@@ -15400,9 +15480,13 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
       }
     } else {
       prior = PRIOR_MEDICOS[cat];
+      // Rahul Nair is a Koregaon Park GP, not a physiotherapist.
+      if (cat === "therapist" && prior && /rahul\s+nair/i.test(prior.name || "")) {
+        prior = PRIOR_MEDICOS.therapist;
+      }
     }
     // Merge DB-backed "preferred" into local preferred list so it survives reloads.
-    const localFavs = preferred[favKey] || [];
+    const localFavs = (preferred[favKey] || []).filter((nm) => cat !== "therapist" || !/rahul\s+nair/i.test(String(nm)));
     const dbPref = cat === "doctor" ? (myMedicos.get(spec.id || spec.name || "", "preferred") || myMedicos.get(spec.name || "", "preferred")) : null;
     const favs = dbPref && dbPref.medico_name && !localFavs.includes(dbPref.medico_name)
       ? [dbPref.medico_name, ...localFavs] : localFavs;
@@ -15599,18 +15683,6 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
   if (screen === "home") return (
     <Screen>
       <PatientHeader name={patientName} home={dashboardTab === "home" && !bookingOpen} onProfile={() => changeDashboardTab("profile")} area={area} areas={AREAS} onAreaChange={setArea} onAction={handleDashboardAction} unread={notifs.filter(n => n.unread).length} />
-
-      {/* Live request banner — return to tracking without cancelling */}
-      {req && ["broadcasting", "assigned", "converging", "at_hub"].includes(req.status) && (
-        <button onClick={() => setScreen("track")} style={{ flexShrink: 0, margin: "8px 14px 0", display: "flex", alignItems: "center", gap: 10, background: req.emergency ? C.emergSoft : C.primarySoft, border: `1px solid ${(req.emergency ? C.emerg : C.primary)}33`, borderRadius: 14, padding: "10px 12px", cursor: "pointer", textAlign: "left", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
-          <span style={{ width: 30, height: 30, borderRadius: "50%", background: req.emergency ? C.emerg : C.primary, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Navigation size={14} color="#fff" /></span>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <p style={{ margin: 0, fontWeight: 800, color: C.ink, fontSize: 12.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{req.status === "broadcasting" ? "Finding a medico…" : req.status === "at_hub" ? "Both at the hub" : assigned ? `${assigned.name} en route` : "Medico assigned"}</p>
-            <p style={{ margin: "1px 0 0", fontSize: 10.5, color: req.emergency ? C.emerg : C.primaryDeep, fontWeight: 700 }}>Active request · tap to track</p>
-          </div>
-          <ChevronRight size={16} style={{ color: req.emergency ? C.emerg : C.primary, flexShrink: 0 }} />
-        </button>
-      )}
 
       {/* Client requirement: remind patients to add emergency contacts & medical info */}
       {dashboardTab === "home" && !bookingOpen && <EmergencyProfileNudge onOpen={() => setShowEmgProfile(true)} refreshKey={emgProfileVersion} />}
@@ -15825,23 +15897,6 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
             <div ref={pickerRef} style={{ background: C.surface, borderRadius: "22px 22px 0 0", marginTop: 8, position: "relative", zIndex: 2, paddingTop: 2, scrollMarginTop: 6 }}>
               {/* Compact 2-row booking controls — Hub-style */}
               <div style={{ padding: "10px 14px 4px", display: "flex", flexDirection: "column", gap: 7 }}>
-                {/* Row 1: Visit mode pills — high-contrast inactive, readable on any surface */}
-                <div className="visit-mode-row" style={{ display: "flex", gap: 6, background: "#0B1220", border: "1.5px solid #1e293b", borderRadius: 16, padding: "8px 10px", boxShadow: "inset 0 1px 0 rgba(255,255,255,.04)" }}>
-                  {(activeTab === "nurse" ? VISIT_MODES.filter(m => m.id === "home")
-                    : ["care", "technician", "test", "scan"].includes(activeTab) ? VISIT_MODES.filter(m => m.id !== "online")
-                      : VISIT_MODES).map(m => {
-                        const a = visitMode === m.id;
-                        return (
-                          <button key={m.id} className="visit-mode-pill" onClick={() => { setVisitMode(m.id); if (m.id !== "home") setHomePrice(1500); }}
-                            style={{ flex: 1, borderRadius: 99, padding: "8px 6px", border: `1.5px solid ${a ? "rgba(255,255,255,.45)" : "#334155"}`, background: a ? `linear-gradient(135deg,${m.color},${m.color}DD)` : "#334155", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 5, transition: "all .15s", boxShadow: a ? `0 0 0 1px ${m.color}44, 0 6px 18px -4px ${m.color}BB` : "0 1px 2px rgba(0,0,0,.25)", fontFamily: "'Space Grotesk','Plus Jakarta Sans',sans-serif" }}>
-                            <span className="visit-mode-pill-icon" style={{ width: 22, height: 22, borderRadius: "50%", background: a ? "rgba(255,255,255,.25)" : "#0B1220", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, border: `1.5px solid ${a ? "rgba(255,255,255,.5)" : m.color}` }}>
-                              <m.Icon size={12} style={{ color: a ? "white" : m.color }} />
-                            </span>
-                            <span className="visit-mode-pill-label" style={{ fontWeight: 900, color: "#ffffff", fontSize: 12, whiteSpace: "nowrap" }}>{m.label}</span>
-                          </button>
-                        );
-                      })}
-                </div>
                 {/* Row 2: Book for later / Urgent pills — bigger & bolder */}
                 {!(visitMode === "home" && activeTab === "doctor") && <div style={{ display: "flex", gap: 6 }}>
                   {[{ val: false, icon: "📅", t: "Book for later", d: "Pick date & time", bg: "#2563EB" }, { val: true, icon: "⚡", t: "Urgent", d: "≤ 2 hrs · +20%", bg: "#EA580C" }].map(opt => {
@@ -16830,7 +16885,7 @@ function AmbulanceApp({ ambulanceJob, ambulanceActions, scanDispatch }) {
 /* Seeded "previously attended" provider per medico category (patient & hub share the concept) */
 const PRIOR_MEDICOS = {
   doctor: { name: "Dr. Anjali Sharma", sub: "General Physician", rating: 4.8, visits: 3, color: "#2563EB" },
-  therapist: { name: "Rahul Nair", sub: "Physiotherapist", rating: 4.7, visits: 2, color: "#0EA5E9" },
+  therapist: { name: "Dr. Kavita Deshmukh", sub: "Physiotherapist · Koregaon Park", rating: 4.8, visits: 2, color: "#0C9668" },
   diet: { name: "Sneha Kapoor", sub: "Dietitian", rating: 4.9, visits: 1, color: "#16A34A" },
   technician: { name: "Imran Shaikh", sub: "Lab Technician", rating: 4.6, visits: 2, color: "#F59E0B" },
   nurse: { name: "Mary Thomas", sub: "Home Nurse", rating: 4.8, visits: 4, color: "#DB2777" },

@@ -611,7 +611,7 @@ function TherapistHome() {
           : "Set up your therapy profile"
       }
       right={
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2">
           {profile ? (
             <OnlineToggle
               online={profile.isOnline}
@@ -649,7 +649,7 @@ function TherapistHome() {
       ) : (
         <>
           {data?.therapist ? (
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+            <div className="grid grid-cols-2 gap-2">
               <Stat label="To confirm" value={data.totals.toConfirm} />
               <Stat label="Today" value={data.totals.today} />
               <Stat label="Upcoming" value={data.totals.upcoming} />
@@ -744,7 +744,7 @@ function TherapistHome() {
             </div>
           )}
 
-          <UnifiedProviderOffers roleLabel="physiotherapy" />
+          {tab !== "profile" ? <UnifiedProviderOffers roleLabel="physiotherapy" /> : null}
 
           <Tabs<Tab>
             value={tab}

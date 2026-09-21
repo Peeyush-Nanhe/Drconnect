@@ -497,7 +497,7 @@ function TechnicianHome() {
           : "Set up which tests you can run"
       }
       right={
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2">
           {profile ? (
             <OnlineToggle
               online={profile.isOnline}
@@ -544,7 +544,7 @@ function TechnicianHome() {
       ) : (
         <>
           {profile ? (
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+            <div className="grid grid-cols-2 gap-2">
               <Stat label="To confirm" value={data!.totals.toConfirm} />
               <Stat label="Today" value={data!.totals.today} />
               <Stat label="Upcoming" value={data!.totals.upcoming} />

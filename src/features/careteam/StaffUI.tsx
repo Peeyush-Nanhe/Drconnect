@@ -31,24 +31,23 @@ export function StaffShell({
         className="sticky top-0 z-20 px-4 pb-6 pt-4 text-white shadow-lg"
         style={{ background: 'linear-gradient(135deg, #059669 0%, #10B981 100%)' }}
       >
-        <div className="w-full">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3 min-w-0">
-              <button
-                onClick={() => window.history.back()}
-                className="rounded-full bg-white/20 p-1 hover:bg-white/30"
-              >
-                <ChevronLeft size={20} />
-              </button>
-              <div className="min-w-0">
-                <h1 className="truncate text-base font-black sm:text-lg">{title}</h1>
-                {subtitle ? <p className="truncate text-[11px] font-bold opacity-80">{subtitle}</p> : null}
-              </div>
+        <div className="w-full space-y-3">
+          <div className="flex items-start gap-3">
+            <button
+              type="button"
+              onClick={() => window.history.back()}
+              className="mt-0.5 shrink-0 rounded-full bg-white/20 p-1 hover:bg-white/30"
+            >
+              <ChevronLeft size={20} />
+            </button>
+            <div className="min-w-0 flex-1">
+              <h1 className="truncate text-base font-black">{title}</h1>
+              {subtitle ? <p className="truncate text-[11px] font-bold opacity-80">{subtitle}</p> : null}
             </div>
-            <div className="flex shrink-0 items-center gap-2">{right}</div>
           </div>
+          {right ? <div className="flex flex-wrap items-center gap-2">{right}</div> : null}
 
-          {stats && <div className="mt-5 grid grid-cols-3 gap-3">{stats}</div>}
+          {stats && <div className="mt-2 grid grid-cols-2 gap-3">{stats}</div>}
         </div>
       </header>
       <main className="w-full space-y-4 px-3 py-4">{children}</main>
@@ -95,10 +94,12 @@ export function OnlineToggle({
 }
 
 export function Stat({ label, value, tone = "teal" }: { label: string; value: string | number; tone?: "teal" | "slate" }) {
+  const valueClass = tone === "slate" ? "text-slate-800" : "text-teal-800";
+  const labelClass = tone === "slate" ? "text-slate-500" : "text-teal-700/80";
   return (
-    <div className="rounded-2xl bg-white/10 p-3 text-center backdrop-blur-sm border border-white/10 shadow-sm">
-      <div className="text-lg font-black leading-none text-white">{value}</div>
-      <div className="mt-1 text-[10px] font-bold uppercase tracking-wider text-white/70">{label}</div>
+    <div className="rounded-2xl border border-slate-200 bg-white p-3 text-center shadow-sm">
+      <div className={`text-lg font-black leading-none tabular-nums ${valueClass}`}>{value}</div>
+      <div className={`mt-1 text-[10px] font-bold uppercase tracking-wider ${labelClass}`}>{label}</div>
     </div>
   );
 }
