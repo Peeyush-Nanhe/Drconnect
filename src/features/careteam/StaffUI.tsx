@@ -32,20 +32,22 @@ export function StaffShell({
         style={{ background: 'linear-gradient(135deg, #059669 0%, #10B981 100%)' }}
       >
         <div className="w-full space-y-3">
-          <div className="flex items-start gap-3">
-            <button
-              type="button"
-              onClick={() => window.history.back()}
-              className="mt-0.5 shrink-0 rounded-full bg-white/20 p-1 hover:bg-white/30"
-            >
-              <ChevronLeft size={20} />
-            </button>
-            <div className="min-w-0 flex-1">
-              <h1 className="truncate text-base font-black">{title}</h1>
-              {subtitle ? <p className="truncate text-[11px] font-bold opacity-80">{subtitle}</p> : null}
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex min-w-0 items-start gap-3">
+              <button
+                type="button"
+                onClick={() => window.history.back()}
+                className="mt-0.5 shrink-0 rounded-full bg-white/20 p-1 hover:bg-white/30"
+              >
+                <ChevronLeft size={20} />
+              </button>
+              <div className="min-w-0">
+                <h1 className="truncate text-base font-black">{title}</h1>
+                {subtitle ? <p className="truncate text-[11px] font-bold opacity-80">{subtitle}</p> : null}
+              </div>
             </div>
+            {right ? <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">{right}</div> : null}
           </div>
-          {right ? <div className="flex flex-wrap items-center gap-2">{right}</div> : null}
 
           {stats && <div className="mt-2 grid grid-cols-2 gap-3">{stats}</div>}
         </div>

@@ -29,8 +29,7 @@ import { recordHomeVisitConsent } from "@/lib/consents.functions";
 import { EmergencyResponderPanel, EmergencyPatient } from "@/features/mydox/emergency/DispatchScreens";
 import { EmergencyProfileForm, EmergencyProfileNudge } from "@/features/mydox/emergency/EmergencyProfile";
 import { useCrewStats } from "@/features/mydox/emergency/useCrewStats";
-import { technicianTestType, fetchNursingDayRate } from "@/features/mydox/care-staff-booking";
-import { StaffBookingSheet, TechnicianCareCard } from "@/features/mydox/StaffBookingSheet";
+import { StaffBookingSheet } from "@/features/mydox/StaffBookingSheet";
 import {
   parseChatAttachment,
   formatMessageSnippet,
@@ -8906,6 +8905,7 @@ function AdminApp({ req, hubReq }) {
             <span className="flex items-center gap-1.5 rounded-full px-3 py-1.5 font-bold" style={{ background: "rgba(255,255,255,.14)", fontSize: 11 }}>
               <span className="w-2 h-2 rounded-full" style={{ background: C.primary, animation: "pulse 1.6s infinite" }} /> Live
             </span>
+            <ModuleProfilePill />
           </div>
         </div>
         <div className="flex gap-2 mt-3">
@@ -10530,34 +10530,6 @@ function CareerOverlay({ onClose }) {
   );
 }
 
-
-function NursingCareCard({ onBook }) {
-  const [days, setDays] = React.useState(7);
-  // The day rate is nursing_settings.day_rate — the same number the server charges.
-  const [rate, setRate] = React.useState(null);
-  React.useEffect(() => { let off = false; fetchNursingDayRate().then(r => { if (!off) setRate(r); }); return () => { off = true; }; }, []);
-  return (
-    <div style={{ padding: "8px 14px 0" }}>
-      <div style={{ background: "white", border: "2px solid #DB2777", borderRadius: 16, padding: "12px 13px" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-          <div style={{ width: 30, height: 30, borderRadius: 9, background: "#FCE7F3", display: "flex", alignItems: "center", justifyContent: "center" }}><Heart size={15} style={{ color: "#DB2777" }} /></div>
-          <div style={{ flex: 1 }}>
-            <p style={{ fontWeight: 800, color: C.ink, fontSize: 13.5, margin: 0 }}>Home Nursing Care</p>
-            <p style={{ color: C.faint, fontSize: 10.5, margin: 0 }}>Verified freelance nurses {"\u00B7"} first to accept gets assigned</p>
-          </div>
-          <span style={{ background: "#FCE7F3", color: "#DB2777", borderRadius: 99, padding: "3px 8px", fontSize: 9.5, fontWeight: 800 }}>{rate != null ? `\u20B9${rate}/day` : "\u2026"}</span>
-        </div>
-        <div style={{ display: "flex", gap: 5, alignItems: "center", marginBottom: 8 }}>
-          <span style={{ fontSize: 10.5, color: C.sub, fontWeight: 700, flexShrink: 0 }}>Duration:</span>
-          {[1, 3, 7, 15, 30].map(d => (
-            <button key={d} onClick={() => setDays(d)} style={{ flex: 1, padding: "6px 0", borderRadius: 99, border: `1.5px solid ${days === d ? "#DB2777" : C.line}`, background: days === d ? "#DB2777" : "white", color: days === d ? "white" : C.sub, fontSize: 10.5, fontWeight: 800, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>{d}d</button>
-          ))}
-        </div>
-        <button onClick={() => onBook && onBook(days)} style={{ width: "100%", background: "#DB2777", borderRadius: 11, padding: "10px 12px", fontSize: 13, fontWeight: 800, color: "#fff", border: "none", cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>Book {days}-day nursing{rate != null ? <> {"\u00B7"} {inr(rate * days)}</> : null}</button>
-      </div>
-    </div>
-  );
-}
 
 function ElectivePoolCard() {
   return (
@@ -15554,17 +15526,12 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
 
   // Picker "Book" handler. New enquiry for a medico category → offer favourites/previous provider first.
   const PREF_CATS = ["doctor", "therapist", "technician", "care", "nurse", "diet"];
-  // Nurse and technician bookings open the booking sheet (same flow as home
-  // physiotherapy) and write to the tables their portals read —
-  // nursing_engagements / technician_tests — never the doctor dispatcher.
-  const [staffSheet, setStaffSheet] = useState(null); // { kind: "nurse" | "technician", days?, testType? }
-  const openNurseBooking = (days) => setStaffSheet({ kind: "nurse", days: days || 7 });
-  const openTechnicianBooking = (spec) => setStaffSheet({ kind: "technician", testType: technicianTestType(spec) });
-
+  // Nurse and technician bookings never reach here — both tabs render an
+  // inline <StaffBookingSheet> (same specialty+provider+date-time flow as
+  // physio) instead of this generic picker, and write to the tables their
+  // portals read — nursing_engagements / technician_tests.
   const handleBook = (spec, fromOverlay) => {
     if (!spec) return;
-    if (activeTab === "nurse" || spec.type === "nurse") { if (fromOverlay) setServiceView(null); openNurseBooking(spec.days); return; }
-    if (activeTab === "technician" || activeTab === "test" || spec.type === "technician") { if (fromOverlay) setServiceView(null); openTechnicianBooking(spec); return; }
     if ((visitMode === "home" || spec.visitMode === "home") && (spec.type || activeTab) === "doctor") { openDoctorHomeVisit(spec); return; }
     if (activeTab === "scan") { startScanDispatch(spec); if (fromOverlay) setServiceView(null); return; }
     if (spec.doctor) { proceedNormal(spec, fromOverlay); return; } // already chose a named doctor — no need to ask again
@@ -15830,7 +15797,23 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
                   );
                 })}
               </div>
-              {visitMode === "home" && serviceView === "doctor" ? <HomeVisitEntry onOpen={onHomeVisit} /> : (
+              {visitMode === "home" && serviceView === "doctor" ? <HomeVisitEntry onOpen={onHomeVisit} />
+                /* Nurse and technician bookings from a home tile use the same inline
+                   specialty+provider+date-time flow as physio — never the legacy
+                   generic picker, which has no real per-nurse/technician slot data. */
+                : (serviceView === "nurse" || serviceView === "technician" || serviceView === "test") ? (
+                  <StaffBookingSheet
+                    kind={serviceView === "nurse" ? "nurse" : "technician"}
+                    variant="inline"
+                    area={area}
+                    onBooked={(b) => {
+                      setServiceView(null);
+                      setSelectedSpec(null);
+                      setConfirmedBooking({ id: b.id, refType: b.refType, pending: b.pending, role: b.role, name: b.name, label: b.label, doctor: b.doctor || null });
+                    }}
+                  />
+                )
+                : (
               <SpecialtyPickerModern
                 providerType={serviceView}
                 setProviderType={(t) => { setServiceView(t); setActiveTab(t); setSelectedSpec(null); }}
@@ -16028,12 +16011,18 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
               </div>
 
 
-              {/* UNIFIED BOOKING INTERFACE — large-target, elderly-friendly version */}
-              {activeTab === "nurse" && (
-                <NursingCareCard onBook={(days) => openNurseBooking(days)} />
-              )}
-              {(activeTab === "technician" || activeTab === "test") && (
-                <TechnicianCareCard onBook={(testType) => setStaffSheet({ kind: "technician", testType })} />
+              {/* UNIFIED BOOKING INTERFACE — same inline specialty+provider+date-time
+                  flow as physio, not a separate full-screen sheet. */}
+              {(activeTab === "nurse" || activeTab === "technician" || activeTab === "test") && (
+                <StaffBookingSheet
+                  kind={activeTab === "nurse" ? "nurse" : "technician"}
+                  variant="inline"
+                  area={area}
+                  onBooked={(b) => {
+                    setSelectedSpec(null);
+                    setConfirmedBooking({ id: b.id, refType: b.refType, pending: b.pending, role: b.role, name: b.name, label: b.label, doctor: b.doctor || null });
+                  }}
+                />
               )}
               <div style={{ padding: "10px 14px 0" }}>
                 {!(visitMode === "home" && activeTab === "doctor") && !["nurse", "technician", "test"].includes(activeTab) && (
@@ -16236,20 +16225,6 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
         setBookingOpen(true); setTimeout(() => { try { pickerRef.current && pickerRef.current.scrollIntoView({ behavior: "smooth", block: "start" }); } catch (e) { } }, 80);
       }} />}
       {showBreatheFree && <BreatheFreeFlow onClose={() => setShowBreatheFree(false)} onComplete={({ openChat }) => { setShowBreatheFree(false); setAllergyDone(true); if (openChat) setChatDoctor(BF_DOCTOR); }} />}
-      {staffSheet && (
-        <StaffBookingSheet
-          kind={staffSheet.kind}
-          area={area}
-          initialDays={staffSheet.days}
-          initialTestType={staffSheet.testType}
-          onClose={() => setStaffSheet(null)}
-          onBooked={(b) => {
-            setStaffSheet(null);
-            setSelectedSpec(null);
-            setConfirmedBooking({ id: b.id, refType: b.refType, pending: b.pending, role: b.role, name: b.name, label: b.label, doctor: b.doctor || null });
-          }}
-        />
-      )}
       {confirmedBooking && (
         <div onClick={() => {
           const id = confirmedBooking.id || confirmedBooking.bookingId;
