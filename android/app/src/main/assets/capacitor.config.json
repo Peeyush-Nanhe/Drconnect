@@ -1,0 +1,10 @@
+{
+	"appId": "com.mydox.app",
+	"appName": "MyDox",
+	"webDir": ".output/public",
+	"server": {
+		"androidScheme": "https",
+		"url": "http://127.0.0.1:8081",
+		"cleartext": true
+	}
+}

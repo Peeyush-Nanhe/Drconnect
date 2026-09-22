@@ -1,0 +1,21 @@
+{
+  "archive": "stitch_healthcare_super_app_platform.zip",
+  "images": [
+    {
+      "name": "krishna",
+      "filename": "krishna.jpg",
+      "source": "https://lh3.googleusercontent.com/aida-public/AB6AXuBHwvL_TNlYrH8CALBwNn0kb6PFUex5KxM8PV4GT9ASdAEXRyKrM7EK-VCf615c-iq0sWLYBzVmNrMdLlfzeYU-hN-k71g1HPeW1br5iSiJ1tSI8wBrb4qCXCaNdcTuFXM0EKRUYkyJlAfhRZDMFAma0N5LkE3v5ZpIpBzZ26F9A18lIoC0FmxtLBaRZCtIHUJIfQ8r2v3gOCUFA-WsbBO3DL_0fv8jniNy6w248g2fNwj6rlKSZMqE"
+    },
+    {
+      "name": "vishal",
+      "filename": "vishal.jpg",
+      "source": "https://lh3.googleusercontent.com/aida-public/AB6AXuBFwuVfp0tLIXV-EzZ3F8226D5qRYzS_wr_-eHxmalC4MS3B2xkVh7d6vgqyxISg2H5ly151WNVhvh70z0ZW19zba5WGmARpDGFYQe_pDJXl15I-u6YfQYPMoXUQXb-zCH2MDG9l3uCb5axwzelO8zOnQK440YeIe57Kw-rm-3q6p8xqNtadoxWBczvZu-4aDgRqIDen7kW0gJ5_kjywx0crzuwKAdcEJtfGxSrAmk9CGyOIy0QrKVm"
+    },
+    {
+      "name": "charlotte",
+      "filename": "charlotte.jpg",
+      "source": "https://lh3.googleusercontent.com/aida-public/AB6AXuCL6aVI1rcNC0wEG_xRM7oUoNXa7jESyutNN4Ra4yWi4jq4LO08hE9_yZrs8J2sUUijGC7MbArd1TCRv8cWnQneuv-ujSnZxGwQPUpMYr8py16pjcItKqlvpKmiUEP8Kuk_vK1g3viU9Q-F2opYmrVUQ78wZUP1dxZxtCbbth-ENeSdFC12EHxnXjiHuKur_8WqZfMkjOYJs_TUBToZbmDs6hJEqbmy5EtY9uVFxIWrFrCPWQHrJYnL"
+    }
+  ],
+  "font": "https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"
+}

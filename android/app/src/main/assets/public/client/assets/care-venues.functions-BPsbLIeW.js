@@ -1,0 +1,1 @@
+import{i as e,r as t,t as n}from"./auth-middleware-B9-wWV-Q.js";var r={hospital:`Hospital`,hub:`Tie-up hub`,diagnostic:`Scan centre`,labs:`Pathology lab`,pharmacy:`Pharmacy`,physio_centre:`Physio centre`,clinic:`Clinic`},i=e=>r[e]??e,a=t({method:`GET`}).middleware([n]).handler(e(`5370fda5862ac119a3b62f6f7623095aef0e501e7066aa180e62ec73691cc7e3`));export{i as n,a as t};

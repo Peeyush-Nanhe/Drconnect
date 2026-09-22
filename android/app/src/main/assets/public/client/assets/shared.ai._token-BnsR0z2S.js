@@ -1,0 +1,1 @@
+import{t as e}from"./jsx-runtime-NZYk81nU.js";var t=e(),n=()=>(0,t.jsxs)(`div`,{style:{padding:40,fontFamily:`system-ui`},children:[(0,t.jsx)(`h1`,{style:{fontSize:20,fontWeight:800},children:`Link not found`}),(0,t.jsx)(`p`,{style:{color:`#64748b`,marginTop:8},children:`This shared summary is no longer available.`})]});export{n as notFoundComponent};
