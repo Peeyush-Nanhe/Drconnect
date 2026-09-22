@@ -26,41 +26,90 @@ export function StaffShell({
       className="min-h-[100dvh] bg-slate-200/60 text-slate-900"
       style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif" }}
     >
-     <div className="mx-auto min-h-[100dvh] w-full max-w-[430px] bg-[#E7F0EC] shadow-xl">
-      <header
-        className="sticky top-0 z-20 px-4 pb-6 pt-4 text-white shadow-lg"
-        style={{ background: 'linear-gradient(135deg, #059669 0%, #10B981 100%)' }}
-      >
-        <div className="w-full">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3 min-w-0">
-              <button
-                onClick={() => window.history.back()}
-                className="rounded-full bg-white/20 p-1 hover:bg-white/30"
-              >
-                <ChevronLeft size={20} />
-              </button>
-              <div className="min-w-0">
-                <h1 className="truncate text-base font-black sm:text-lg">{title}</h1>
-                {subtitle ? <p className="truncate text-[11px] font-bold opacity-80">{subtitle}</p> : null}
+      <div className="mx-auto min-h-[100dvh] w-full max-w-[430px] bg-[#E7F0EC] shadow-xl">
+        <header
+          className="sticky top-0 z-20 px-4 pb-6 pt-4 text-white shadow-lg"
+          style={{ background: "linear-gradient(135deg, #059669 0%, #10B981 100%)" }}
+        >
+          <div className="w-full">
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex items-start gap-2 min-w-0 flex-1">
+                <button
+                  onClick={() => window.history.back()}
+                  className="mt-1 rounded-full bg-white/20 p-1 hover:bg-white/30 shrink-0"
+                >
+                  <ChevronLeft size={18} />
+                </button>
+                <div className="min-w-0">
+                  <h1 className="truncate text-base font-black sm:text-lg leading-tight">{title}</h1>
+                  {subtitle ? (
+                    <p className="line-clamp-2 text-[11px] font-bold opacity-80 leading-tight">
+                      {subtitle}
+                    </p>
+                  ) : null}
+                </div>
               </div>
+              <div className="flex shrink-0 items-center gap-1.5 pt-0.5">{right}</div>
             </div>
-            <div className="flex shrink-0 items-center gap-2">{right}</div>
-          </div>
 
-          {stats && <div className="mt-5 grid grid-cols-3 gap-3">{stats}</div>}
+            {stats && <div className="mt-5 grid grid-cols-3 gap-3">{stats}</div>}
+          </div>
+        </header>
+        <main className="w-full space-y-4 px-3 py-4">{children}</main>
+        <footer className="flex w-full items-center justify-between px-4 pb-8 pt-2 text-[11px] text-slate-500">
+          <a href="/?view=patient" className="font-semibold text-teal-700 hover:underline">
+            ← MyDox patient home
+          </a>
+          <Link
+            to="/auth"
+            search={{ admin: undefined, next: undefined }}
+            className="font-semibold text-slate-500 hover:text-slate-800"
+          >
+            Switch account / Sign in
+          </Link>
+        </footer>
+      </div>
+    </div>
+  );
+}
+
+export function FullScreenOverlay({
+  isOpen,
+  onClose,
+  title,
+  children,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  title: string;
+  children: ReactNode;
+}) {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-[100] flex justify-center bg-slate-900/50 backdrop-blur-sm">
+      <div className="flex h-full w-full max-w-[430px] flex-col bg-[#F8FAFC]">
+        <header className="flex shrink-0 items-center justify-between border-b bg-white px-4 py-3 shadow-sm">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={onClose}
+              className="rounded-full bg-slate-100 p-2 text-slate-600 hover:bg-slate-200"
+            >
+              <ChevronLeft size={20} />
+            </button>
+            <h2 className="text-base font-black text-slate-900">{title}</h2>
+          </div>
+          <button
+            onClick={onClose}
+            className="rounded-full bg-slate-900 px-3 py-1.5 text-xs font-bold text-white shadow-sm"
+          >
+            Done
+          </button>
+        </header>
+        <div className="flex-1 overflow-y-auto px-4 py-6">
+          <div className="mx-auto w-full max-w-2xl space-y-6 pb-12">{children}</div>
         </div>
-      </header>
-      <main className="w-full space-y-4 px-3 py-4">{children}</main>
-      <footer className="flex w-full items-center justify-between px-4 pb-8 pt-2 text-[11px] text-slate-500">
-        <a href="/?view=patient" className="font-semibold text-teal-700 hover:underline">
-          ← MyDox patient home
-        </a>
-        <Link to="/auth" search={{ admin: undefined, next: undefined }} className="font-semibold text-slate-500 hover:text-slate-800">
-          Switch account / Sign in
-        </Link>
-      </footer>
-     </div>
+      </div>
     </div>
   );
 }

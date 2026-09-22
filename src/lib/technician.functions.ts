@@ -67,7 +67,7 @@ export type TechnicianJob = {
 export type TechnicianBoard = {
   profile: TechnicianProfile | null;
   hubs: { id: string; name: string; area: string | null }[];
-  totals: { today: number; upcoming: number; completed30d: number; earnings30d: number; openMatches: number; toConfirm: number };
+  totals: { today: number; upcoming: number; completed30d: number; earningsToday: number; earnings30d: number; openMatches: number; toConfirm: number; rating: number | null };
   today: TechnicianJob[];
   upcoming: TechnicianJob[];
   history: TechnicianJob[];
@@ -167,7 +167,7 @@ export const getTechnicianBoard = createServerFn({ method: "GET" })
       return {
         profile: null,
         hubs,
-        totals: { today: 0, upcoming: 0, completed30d: 0, earnings30d: 0, openMatches: 0, toConfirm: 0 },
+        totals: { today: 0, upcoming: 0, completed30d: 0, earningsToday: 0, earnings30d: 0, openMatches: 0, toConfirm: 0, rating: null },
         today: [],
         upcoming: [],
         history: [],
@@ -199,16 +199,16 @@ export const getTechnicianBoard = createServerFn({ method: "GET" })
 
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = startOfDay.getTime() + 24 * 3600_000;
+    const endOfDay = new Date(startOfDay.getTime() + 24 * 3600_000);
     const closed = new Set(["completed", "cancelled", "no_show"]);
 
     const today = jobs.filter((j) => {
       const t = j.scheduledAt ? new Date(j.scheduledAt).getTime() : null;
-      return !closed.has(j.status) && t != null && t >= startOfDay.getTime() && t < endOfDay;
+      return !closed.has(j.status) && t != null && t >= startOfDay.getTime() && t < endOfDay.getTime();
     });
     const upcoming = jobs.filter((j) => {
       const t = j.scheduledAt ? new Date(j.scheduledAt).getTime() : null;
-      return !closed.has(j.status) && (t == null || t >= endOfDay);
+      return !closed.has(j.status) && (t == null || t >= endOfDay.getTime());
     });
     const history = jobs.filter((j) => {
       const t = j.scheduledAt ? new Date(j.scheduledAt).getTime() : null;
@@ -216,8 +216,20 @@ export const getTechnicianBoard = createServerFn({ method: "GET" })
     });
 
     const since30 = Date.now() - 30 * 24 * 3600_000;
-    const completed30 = jobs.filter(
-      (j) => j.status === "completed" && (!j.completedAt || new Date(j.completedAt).getTime() >= since30),
+    const completedHistory = jobs.filter((j) => j.status === "completed");
+
+    const completed30 = completedHistory.filter(
+      (j) => !j.completedAt || new Date(j.completedAt).getTime() >= since30,
+    );
+
+    const earningsToday = Math.round(
+      completedHistory
+        .filter((j) => {
+          if (!j.completedAt) return false;
+          const t = new Date(j.completedAt).getTime();
+          return t >= startOfDay.getTime() && t < endOfDay.getTime();
+        })
+        .reduce((s, j) => s + (j.fee ?? 0), 0)
     );
 
     const openTests: TechnicianJob[] = ((open.data ?? []) as any[])
@@ -235,9 +247,11 @@ export const getTechnicianBoard = createServerFn({ method: "GET" })
         today: today.length,
         upcoming: upcoming.length,
         completed30d: completed30.length,
+        earningsToday,
         earnings30d: Math.round(completed30.reduce((s, j) => s + (j.fee ?? 0), 0)),
         openMatches: openTests.length,
         toConfirm,
+        rating: 4.8, // Placeholder for now as rating table for tech might not be there yet, but standardizing
       },
       today,
       upcoming,

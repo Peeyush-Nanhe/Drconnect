@@ -63,7 +63,7 @@ export type NurseJob = {
 
 export type NurseBoard = {
   profile: NurseProfile | null;
-  totals: { today: number; upcoming: number; completed: number; earnings30d: number; openMatches: number };
+  totals: { today: number; upcoming: number; completed: number; earningsToday: number; earnings30d: number; openMatches: number; rating: number | null };
   today: NurseJob[];
   upcoming: NurseJob[];
   history: NurseJob[];
@@ -202,16 +202,16 @@ export const getNurseBoard = createServerFn({ method: "GET" })
 
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = startOfDay.getTime() + 24 * 3600_000;
+    const endOfDay = new Date(startOfDay.getTime() + 24 * 3600_000);
     const closed = new Set(["completed", "cancelled", "rejected", "withdrawn"]);
 
     const today = mine.filter((j) => {
       const t = j.startsAt ? new Date(j.startsAt).getTime() : null;
-      return !closed.has(j.status) && t != null && t >= startOfDay.getTime() && t < endOfDay;
+      return !closed.has(j.status) && t != null && t >= startOfDay.getTime() && t < endOfDay.getTime();
     });
     const upcoming = mine.filter((j) => {
       const t = j.startsAt ? new Date(j.startsAt).getTime() : null;
-      return !closed.has(j.status) && (t == null || t >= endOfDay);
+      return !closed.has(j.status) && (t == null || t >= endOfDay.getTime());
     });
     const history = mine.filter((j) => {
       const t = j.startsAt ? new Date(j.startsAt).getTime() : null;
@@ -219,11 +219,37 @@ export const getNurseBoard = createServerFn({ method: "GET" })
     });
 
     const since = Date.now() - 30 * 24 * 3600_000;
+    const completedHistory = mine.filter((j) => j.status === "completed" && j.startsAt);
+
     const earnings30d = Math.round(
-      mine
-        .filter((j) => j.status === "completed" && j.startsAt && new Date(j.startsAt).getTime() >= since)
+      completedHistory
+        .filter((j) => new Date(j.startsAt!).getTime() >= since)
         .reduce((sum, j) => sum + (j.compensation ?? 0), 0),
     );
+
+    const earningsToday = Math.round(
+      completedHistory
+        .filter((j) => {
+          const t = new Date(j.startsAt!).getTime();
+          return t >= startOfDay.getTime() && t < endOfDay.getTime();
+        })
+        .reduce((sum, j) => sum + (j.compensation ?? 0), 0)
+    );
+
+    // Fetch real rating from nursing_engagements if possible.
+    // staffing_assignments doesn't have ratings directly, but some projects link them.
+    // For now, we'll check if nursing_engagements has rating_family for this provider.
+    let rating: number | null = null;
+    const { data: ratingData } = await sb
+      .from("nursing_engagements")
+      .select("rating_family")
+      .eq("preferred_nurse_id", context.userId)
+      .not("rating_family", "is", null);
+
+    if (ratingData && ratingData.length > 0) {
+      const sum = ratingData.reduce((s: number, r: any) => s + r.rating_family, 0);
+      rating = Math.round((sum / ratingData.length) * 10) / 10;
+    }
 
     const appliedJobIds = new Set(myAssignments.map((a: any) => a.job_id));
     const openJobs = (openRows.data ?? [])
@@ -241,8 +267,10 @@ export const getNurseBoard = createServerFn({ method: "GET" })
         today: today.length,
         upcoming: upcoming.length,
         completed: mine.filter((j) => j.status === "completed").length,
+        earningsToday,
         earnings30d,
         openMatches: openJobs.length,
+        rating,
       },
       today,
       upcoming,

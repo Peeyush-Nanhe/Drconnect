@@ -29,6 +29,7 @@ import {
   Chips,
   Empty,
   Field,
+  FullScreenOverlay,
   OnlineToggle,
   Section,
   StaffShell,
@@ -308,6 +309,7 @@ function NurseHome() {
 
   const [tab, setTab] = useState<Tab>("today");
   const [notice, setNotice] = useState("");
+  const [showProfile, setShowProfile] = useState(false);
 
   const board = useQuery({ queryKey: ["nurse-board"], queryFn: () => fetchBoard({}), refetchInterval: 30_000 });
   const venues = useQuery({ queryKey: ["care-venues"], queryFn: () => fetchVenues({}), staleTime: 5 * 60_000 });
@@ -486,37 +488,39 @@ function NurseHome() {
           : "Set up your nursing profile"
       }
       right={
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-1.5">
           {profile ? (
             <OnlineToggle
               online={profile.isOnline}
               busy={online.isPending}
               onChange={(v) => online.mutate(v)}
-              onlineLabel="Online for duties"
+              onlineLabel="Online"
             />
           ) : null}
           <button
             type="button"
-            onClick={() => setTab("profile")}
-            className="min-h-[36px] rounded-full border border-slate-200 px-3 text-xs font-bold text-slate-700 hover:bg-white"
+            onClick={() => setShowProfile(true)}
+            className="flex size-9 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white shadow-sm"
+            title="Profile & settings"
           >
-            Profile & settings
+            <User size={18} />
           </button>
           <button
             type="button"
             onClick={signOut}
-            className="min-h-[36px] rounded-full bg-slate-900 px-3 text-xs font-bold text-white"
+            className="flex size-9 items-center justify-center rounded-full bg-slate-900 text-white shadow-sm"
+            title="Log out"
           >
-            Log out
+            <LogOut size={18} />
           </button>
         </div>
       }
       stats={
         profile ? (
           <>
-            <Stat label="Today" value={`₹${data!.totals.earnings30d > 0 ? (Number(data!.totals.earnings30d) / 10).toFixed(0) : "6,400"}`} />
-            <Stat label="Visits" value={data!.totals.completed || 7} />
-            <Stat label="Score" value={`${profile.verified ? "94%" : "New"}`} />
+            <Stat label="Today" value={`₹${data!.totals.earningsToday}`} />
+            <Stat label="Visits" value={data!.totals.completed} />
+            <Stat label="Score" value={data!.totals.rating ? `${data!.totals.rating}` : (profile.verified ? "94%" : "New")} />
           </>
         ) : null
       }
@@ -612,7 +616,6 @@ function NurseHome() {
               { value: "open", label: "Open jobs", count: data?.openJobs.length },
               { value: "upcoming", label: "Upcoming", count: data?.upcoming.length },
               { value: "history", label: "History", count: data?.history.length },
-              { value: "profile", label: "My profile" },
             ]}
           />
 
@@ -703,13 +706,18 @@ function NurseHome() {
             </Section>
           ) : null}
 
-          {tab === "profile" ? (
+          <FullScreenOverlay
+            isOpen={showProfile}
+            onClose={() => setShowProfile(false)}
+            title="Profile & Settings"
+          >
             <form
               className="space-y-4"
               onSubmit={(e) => {
                 e.preventDefault();
                 setNotice("");
                 save.mutate(form);
+                setShowProfile(false);
               }}
             >
               <Card>
@@ -901,13 +909,8 @@ function NurseHome() {
               >
                 {save.isPending ? "Saving…" : profile ? "Save profile" : "Create my nurse profile"}
               </button>
-              {form.shiftPrefs.length ? (
-                <p className="text-center text-[11px] text-slate-500">
-                  Available: {form.shiftPrefs.map((s) => SHIFT_LABEL[s] ?? s).join(", ")}
-                </p>
-              ) : null}
             </form>
-          ) : null}
+          </FullScreenOverlay>
         </>
       )}
 
