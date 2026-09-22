@@ -19,6 +19,7 @@ interface SlotPickerCalendarProps {
   faint?: string;
   sub?: string;
   availableSlots?: AvailableSlot[];
+  bookedSlots?: AvailableSlot[];
 }
 
 interface SlotPickerCalendarStandaloneProps {
@@ -34,7 +35,7 @@ interface SlotPickerCalendarStandaloneProps {
  * Shared slot-picker calendar.
  * - Day chips (next N days, "Today" / "Tomorrow" labels)
  * - Times bucketed into Morning / Afternoon / Evening
- * - Deterministic unavailable slots (greyed-out + line-through, not clickable)
+ * - Past and already-booked slots (greyed-out + line-through, not clickable)
  *
  * Two flavours:
  *  1) Controlled by external state (schedDates + schedTimes + indices) — used
@@ -58,11 +59,25 @@ export const fmtSlotTime = (t: SlotTime) => {
 const dayLabel = (d: Date, i: number) =>
   i === 0 ? "Today" : i === 1 ? "Tomorrow" : d.toLocaleDateString("en-US", { weekday: "short" });
 
+function slotMatches(slots: AvailableSlot[] | undefined, dateIdx: number, t: SlotTime) {
+  return !!slots?.some((s) => s.dateIdx === dateIdx && s.h === t.h && s.m === t.m);
+}
+
+export function isSlotBooked(
+  t: SlotTime,
+  schedDate: number | null,
+  bookedSlots?: AvailableSlot[]
+): boolean {
+  if (schedDate == null) return false;
+  return slotMatches(bookedSlots, schedDate, t);
+}
+
 export function isSlotAvailable(
   t: SlotTime,
   schedDate: number | null,
   schedDates: Date[],
-  availableSlots?: AvailableSlot[]
+  availableSlots?: AvailableSlot[],
+  bookedSlots?: AvailableSlot[]
 ): boolean {
   if (schedDate == null || !schedDates[schedDate]) return false;
   const selectedDate = schedDates[schedDate];
@@ -74,7 +89,12 @@ export function isSlotAvailable(
     return false;
   }
 
-  // 2. If provider published availableSlots exist and has slots for this date
+  // 2. Occupied appointments stay grey even when published hours are missing
+  if (slotMatches(bookedSlots, schedDate, t)) {
+    return false;
+  }
+
+  // 3. If provider published availableSlots exist and has slots for this date
   if (availableSlots && availableSlots.length > 0) {
     const hasSlotsForDate = availableSlots.some((s) => s.dateIdx === schedDate);
     if (hasSlotsForDate) {
@@ -117,18 +137,19 @@ export function SlotPickerCalendar({
   faint = "#94A3B8",
   sub = "#475569",
   availableSlots, // published slots in { h, m, dateIdx } format
+  bookedSlots,
 }: SlotPickerCalendarProps) {
   const small = size === "sm";
 
-  // Clear selected time if it represents a slot that has passed
+  // Clear selected time if it represents a slot that has passed or is booked
   React.useEffect(() => {
     if (schedDate != null && schedTime != null) {
       const t = schedTimes[schedTime];
-      if (t && !isSlotAvailable(t, schedDate, schedDates, availableSlots)) {
+      if (t && !isSlotAvailable(t, schedDate, schedDates, availableSlots, bookedSlots)) {
         setSchedTime(null);
       }
     }
-  }, [schedDate, schedTime, schedDates, schedTimes, availableSlots, setSchedTime]);
+  }, [schedDate, schedTime, schedDates, schedTimes, availableSlots, bookedSlots, setSchedTime]);
 
   return (
     <div>
@@ -176,7 +197,7 @@ export function SlotPickerCalendar({
             if (!inBucket.length) return null;
 
             const anyAvail = inBucket.some(({ t }) =>
-              isSlotAvailable(t, schedDate, schedDates, availableSlots)
+              isSlotAvailable(t, schedDate, schedDates, availableSlots, bookedSlots)
             );
 
             return (
@@ -193,7 +214,7 @@ export function SlotPickerCalendar({
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: `repeat(${small ? 4 : 3},1fr)`, gap: 6 }}>
                   {inBucket.map(({ t, i }) => {
-                    const isAvail = isSlotAvailable(t, schedDate, schedDates, availableSlots);
+                    const isAvail = isSlotAvailable(t, schedDate, schedDates, availableSlots, bookedSlots);
                     const unavail = !isAvail;
                     const a = schedTime === i;
                     const isPast = (() => {
@@ -202,6 +223,7 @@ export function SlotPickerCalendar({
                       d.setHours(t.h, t.m, 0, 0);
                       return d.getTime() <= Date.now();
                     })();
+                    const isBooked = isSlotBooked(t, schedDate, bookedSlots);
 
                     return (
                       <button
@@ -211,7 +233,7 @@ export function SlotPickerCalendar({
                         onClick={() => {
                           if (!unavail) setSchedTime(i);
                         }}
-                        title={unavail ? (isPast ? "Past slot" : "Slot unavailable") : "Select slot"}
+                        title={unavail ? (isPast ? "Past slot" : isBooked ? "Already booked" : "Slot unavailable") : "Select slot"}
                         aria-disabled={unavail}
                         style={{
                           padding: small ? "8px 2px" : "10px 3px",

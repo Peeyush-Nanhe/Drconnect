@@ -96,7 +96,7 @@ export type CareRequest = {
 };
 
 const CARE_REQUEST_SAFE_COLUMNS =
-  "id, patient_id, specialty, emergency, lat, lng, fare, accepted_by, accepted_at, status, my_doctor_id, preferred_id, notification_stage, stage_started_at, paid_at, amount, otp, otp_verified_at, arrival_deadline, completed_at, created_at, updated_at";
+  "id, patient_id, specialty, emergency, lat, lng, fare, accepted_by, accepted_at, status, my_doctor_id, preferred_id, notification_stage, stage_started_at, paid_at, amount, otp, otp_verified_at, arrival_deadline, completed_at, scheduled_at, created_at, updated_at";
 
 
 function normalizeCareRequest(row: CareRequest): CareRequest {
