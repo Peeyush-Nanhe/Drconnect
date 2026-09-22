@@ -20,6 +20,12 @@ interface SlotPickerCalendarProps {
   sub?: string;
   availableSlots?: AvailableSlot[];
   bookedSlots?: AvailableSlot[];
+  /**
+   * When true, only the slots in availableSlots can be picked — an empty list
+   * means nothing is free. Use it whenever the slots come from a provider's
+   * real published hours; without it an empty list means "no constraint".
+   */
+  strict?: boolean;
 }
 
 interface SlotPickerCalendarStandaloneProps {
@@ -29,6 +35,16 @@ interface SlotPickerCalendarStandaloneProps {
   value?: string;
   onChange?: (iso: string) => void;
   size?: CalendarSize;
+  /**
+   * Real free start times (ISO strings), e.g. from get_provider_slots. When
+   * given, the calendar shows exactly these and nothing else. When omitted,
+   * every future time on the grid is offered (for "any available" requests).
+   */
+  availableIso?: string[] | null;
+  /** First and last start hour of the grid when availableIso is not given. */
+  startHour?: number;
+  endHour?: number;
+  stepMin?: number;
 }
 
 /**
@@ -77,7 +93,8 @@ export function isSlotAvailable(
   schedDate: number | null,
   schedDates: Date[],
   availableSlots?: AvailableSlot[],
-  bookedSlots?: AvailableSlot[]
+  bookedSlots?: AvailableSlot[],
+  strict = false
 ): boolean {
   if (schedDate == null || !schedDates[schedDate]) return false;
   const selectedDate = schedDates[schedDate];
@@ -94,7 +111,12 @@ export function isSlotAvailable(
     return false;
   }
 
-  // 3. If provider published availableSlots exist and has slots for this date
+  // 3. Real provider slots: only those exact start times are bookable.
+  if (strict) {
+    return !!availableSlots?.some((s) => s.dateIdx === schedDate && s.h === t.h && s.m === t.m);
+  }
+
+  // 4. If provider published availableSlots exist and has slots for this date
   if (availableSlots && availableSlots.length > 0) {
     const hasSlotsForDate = availableSlots.some((s) => s.dateIdx === schedDate);
     if (hasSlotsForDate) {
@@ -138,6 +160,7 @@ export function SlotPickerCalendar({
   sub = "#475569",
   availableSlots, // published slots in { h, m, dateIdx } format
   bookedSlots,
+  strict = false,
 }: SlotPickerCalendarProps) {
   const small = size === "sm";
 
@@ -145,11 +168,11 @@ export function SlotPickerCalendar({
   React.useEffect(() => {
     if (schedDate != null && schedTime != null) {
       const t = schedTimes[schedTime];
-      if (t && !isSlotAvailable(t, schedDate, schedDates, availableSlots, bookedSlots)) {
+      if (t && !isSlotAvailable(t, schedDate, schedDates, availableSlots, bookedSlots, strict)) {
         setSchedTime(null);
       }
     }
-  }, [schedDate, schedTime, schedDates, schedTimes, availableSlots, bookedSlots, setSchedTime]);
+  }, [schedDate, schedTime, schedDates, schedTimes, availableSlots, bookedSlots, strict, setSchedTime]);
 
   return (
     <div>
@@ -159,6 +182,7 @@ export function SlotPickerCalendar({
       <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 4, marginBottom: 10, scrollbarWidth: "none" }}>
         {schedDates.map((d, i) => {
           const a = schedDate === i;
+          const dayHasSlots = !strict || !!availableSlots?.some((s) => s.dateIdx === i);
           return (
             <button
               key={i}
@@ -175,8 +199,10 @@ export function SlotPickerCalendar({
                 flexDirection: "column",
                 alignItems: "center",
                 gap: 1,
+                opacity: dayHasSlots ? 1 : 0.4,
                 fontFamily: "'Plus Jakarta Sans',sans-serif",
               }}
+              title={dayHasSlots ? undefined : "No free slots this day"}
             >
               <span style={{ fontSize: small ? 8.5 : 10, fontWeight: 700, color: a ? accent : faint }}>{dayLabel(d, i)}</span>
               <span style={{ fontSize: small ? 15 : 17, fontWeight: 800, color: ink, lineHeight: 1 }}>{d.getDate()}</span>
@@ -197,7 +223,7 @@ export function SlotPickerCalendar({
             if (!inBucket.length) return null;
 
             const anyAvail = inBucket.some(({ t }) =>
-              isSlotAvailable(t, schedDate, schedDates, availableSlots, bookedSlots)
+              isSlotAvailable(t, schedDate, schedDates, availableSlots, bookedSlots, strict)
             );
 
             return (
@@ -214,7 +240,7 @@ export function SlotPickerCalendar({
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: `repeat(${small ? 4 : 3},1fr)`, gap: 6 }}>
                   {inBucket.map(({ t, i }) => {
-                    const isAvail = isSlotAvailable(t, schedDate, schedDates, availableSlots, bookedSlots);
+                    const isAvail = isSlotAvailable(t, schedDate, schedDates, availableSlots, bookedSlots, strict);
                     const unavail = !isAvail;
                     const a = schedTime === i;
                     const isPast = (() => {
@@ -275,6 +301,10 @@ export function SlotPickerCalendarStandalone({
   value,          // ISO string
   onChange,       // (iso: string) => void
   size = "md",
+  availableIso = null,
+  startHour = 9,
+  endHour = 21,
+  stepMin = 30,
 }: SlotPickerCalendarStandaloneProps) {
   const schedDates = React.useMemo(() => {
     const out = [];
@@ -288,16 +318,38 @@ export function SlotPickerCalendarStandalone({
     return out;
   }, [days]);
 
-  const schedTimes = React.useMemo(() => {
-    const out = [];
-    for (let h = 9; h <= 21; h++) {
-      for (const m of [0, 30]) {
-        if (h === 21 && m > 0) continue;
-        out.push({ h, m });
-      }
+  const strict = Array.isArray(availableIso);
+
+  // Real slots, placed on the day they fall on (local time).
+  const availableSlots = React.useMemo<AvailableSlot[]>(() => {
+    if (!strict) return [];
+    const out: AvailableSlot[] = [];
+    for (const iso of availableIso as string[]) {
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) continue;
+      const day0 = new Date(d);
+      day0.setHours(0, 0, 0, 0);
+      const dateIdx = schedDates.findIndex((x) => x.getTime() === day0.getTime());
+      if (dateIdx >= 0) out.push({ dateIdx, h: d.getHours(), m: d.getMinutes() });
     }
     return out;
-  }, []);
+  }, [strict, availableIso, schedDates]);
+
+  // With real slots the grid is exactly their start times, so a 45-minute
+  // provider's 9:00 / 9:45 / 10:30 slots are shown rather than lost off a
+  // fixed 30-minute grid.
+  const schedTimes = React.useMemo(() => {
+    if (strict) {
+      const seen = new Map<string, SlotTime>();
+      for (const s of availableSlots) seen.set(`${s.h}:${s.m}`, { h: s.h, m: s.m });
+      return [...seen.values()].sort((a, b) => a.h * 60 + a.m - (b.h * 60 + b.m));
+    }
+    const out: SlotTime[] = [];
+    for (let mins = startHour * 60; mins <= endHour * 60; mins += stepMin) {
+      out.push({ h: Math.floor(mins / 60), m: mins % 60 });
+    }
+    return out;
+  }, [strict, availableSlots, startHour, endHour, stepMin]);
 
   // Rehydrate indices from value on mount / when value changes externally.
   const [schedDate, setSchedDate] = React.useState<number | null>(null);
@@ -315,6 +367,17 @@ export function SlotPickerCalendarStandalone({
     setSchedTime(ti >= 0 ? ti : null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // When the provider's free slots change (a different provider, or a slot was
+  // just taken), a previously picked index no longer means the same time.
+  const slotsKey = strict ? (availableIso as string[]).join(",") : "";
+  const firstRender = React.useRef(true);
+  React.useEffect(() => {
+    if (firstRender.current) { firstRender.current = false; return; }
+    setSchedTime(null);
+    if (onChange) onChange("");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slotsKey]);
 
   const handleTime = (i: number | null) => {
     setSchedTime(i);
@@ -341,6 +404,8 @@ export function SlotPickerCalendarStandalone({
       accent={accent}
       seed={seed}
       size={size}
+      availableSlots={availableSlots}
+      strict={strict}
     />
   );
 }
