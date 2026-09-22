@@ -15372,17 +15372,67 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
           {
             const modeSuffix = isVideo ? " • Video" : " • MyDox Hub";
             const serviceTitle = spec.name ? (spec.name.includes("•") || spec.name.includes("·") ? spec.name : `${spec.name}${modeSuffix}`) : `Consultation${modeSuffix}`;
-            const { data: bId, error } = await supabase.rpc("atomic_book_appointment", {
-              p_provider_id: spec.doctor.userId,
-              p_patient_id: user.id,
-              p_start_time: start.toISOString(),
-              p_end_time: end.toISOString(),
-              p_service: serviceTitle,
-              p_fee: spec.base || 500
-            });
+            let providerId = spec.doctor.userId;
+            const isInitiallyUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(providerId);
+
+            if (!isInitiallyUuid && spec.doctor?.name) {
+              const cleanName = spec.doctor.name.replace(/^Dr\.\s+/i, "");
+              const { data: profs } = await supabase
+                .from("profiles")
+                .select("id")
+                .ilike("full_name", `%${cleanName}%`)
+                .maybeSingle();
+              if (profs?.id) {
+                providerId = profs.id;
+              }
+            }
+
+            let bId, error = null;
+            const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(providerId);
+            
+            if (isUuid) {
+              const isPhysio = spec.type === "therapist" || activeTab === "therapist" || spec.doctor?.specialty === "Physiotherapy" || spec.specialty === "Physiotherapy";
+              
+              if (isPhysio) {
+                const { data: pt } = await supabase.from("physio_therapists").select("id").eq("user_id", providerId).maybeSingle();
+                if (!pt) throw new Error("Therapist profile not found in backend");
+                
+                const { data: physioRow, error: physioErr } = await supabase.from("physio_visits").insert({
+                  patient_id: user.id,
+                  patient_name: user.user_metadata?.full_name || "Patient",
+                  therapist_id: pt.id,
+                  scheduled_at: start.toISOString(),
+                  duration_min: 30,
+                  status: "assigned",
+                  therapy_type: "general",
+                  area: "Pune",
+                  city: "Pune",
+                  fee: spec.base || 500,
+                  session_number: 1,
+                  urgency: "planned"
+                }).select("id").maybeSingle();
+                
+                if (physioErr) throw physioErr;
+                bId = physioRow.id;
+              } else {
+                const res = await supabase.rpc("atomic_book_appointment", {
+                  p_provider_id: providerId,
+                  p_patient_id: user.id,
+                  p_start_time: start.toISOString(),
+                  p_end_time: end.toISOString(),
+                  p_service: serviceTitle,
+                  p_fee: spec.base || 500
+                });
+                bId = res.data;
+                error = res.error;
+              }
+            } else {
+              bId = "demo_booking_" + Date.now();
+            }
+
             if (error) throw error;
             data = bId;
-            if (isVideo) {
+            if (isVideo && isUuid && spec.type !== "therapist" && activeTab !== "therapist") {
               await supabase.from("doctor_appointments").update({ mode: "video" }).eq("id", bId);
             }
           }

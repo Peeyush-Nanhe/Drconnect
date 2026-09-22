@@ -72,8 +72,10 @@ const STAGES = ["confirmed", "en_route", "in_progress", "completed", "no_show", 
 export const getTherapistBoard = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }): Promise<TherapistBoard> => {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const sb = (supabaseAdmin || context.supabase) as any;
+    // Use context.supabase (user-scoped, RLS-aware client) — verified to work correctly
+    // for physio therapist queries. supabaseAdmin proxy is always truthy even when it
+    // fails silently, so we use the user client directly.
+    const sb = context.supabase as any;
 
     const { data: therapist, error: tErr } = await sb
       .from("physio_therapists")
