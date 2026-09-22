@@ -19,7 +19,7 @@ import { transcribeAudio } from "@/lib/transcribe.functions";
 import { saveAiHistory, listAiHistory, getAiHistoryItem, toggleShareAiHistory, deleteAiHistory } from "@/lib/ai-history.functions";
 import { createCareRequest, cancelCareRequest, acceptCareRequest, completeCareRequest, failCareRequest, useLiveCareRequests, useRecentChatCounterparts, useMyMedicos, logRequestEvent, setRequestStage, useRequestAuditLog, useAdminAuditFeed, payAndGenerateOtp, verifyOtpAndStart, confirmOtpExchanged, TEST_DEFAULT_OTP, rateCareRequest, createCareProgramBooking, createCommunityRequest, useServiceReferrals, createServiceReferral, updateServiceReferralStatus, useRecentPatientsForDoctor, useSession, useLiveDoctorAppointments, useRealtimeChat, verifyAndCompleteConsultation, getSpecialtyBaseFare } from "@/features/mydox/backend";
 import { SURGERY_ROLE_LABELS } from "@/features/mydox/surgery";
-import { SlotPickerCalendar } from "@/features/mydox/SlotPickerCalendar";
+import { SlotPickerCalendar, isSlotAvailable } from "@/features/mydox/SlotPickerCalendar";
 import CancellationDialog from "@/features/mydox/CancellationDialog";
 import HomeVisitConsentGate from "@/features/mydox/HomeVisitConsentGate";
 import { HOME_VISIT_CONSENT } from "@/features/mydox/consent-texts";
@@ -1493,7 +1493,74 @@ function SpecialtyPicker({ dispType, setDispType, dispSpec, setDispSpec, dispEme
   );
 }
 
+const PROVIDER_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+function mapStartToPickerSlot(startTime, schedDates) {
+  const dt = new Date(startTime);
+  if (Number.isNaN(dt.getTime())) return null;
+  const dateIdx = schedDates.findIndex((sd) => sd.toDateString() === dt.toDateString());
+  if (dateIdx < 0) return null;
+  return { dateIdx, h: dt.getHours(), m: dt.getMinutes(), start_time: startTime };
+}
+
+async function resolveProviderUserId(doctor) {
+  if (!doctor) return null;
+  if (doctor.userId && PROVIDER_UUID_RE.test(doctor.userId)) return doctor.userId;
+  const rawName = String(doctor.name || "").replace(/^Dr\.\s+/i, "").trim();
+  if (!rawName) return null;
+  const { data: profs } = await supabase.from("profiles").select("id").ilike("full_name", `%${rawName}%`).maybeSingle();
+  return profs?.id || null;
+}
+
+async function loadBookedAndAvailableSlots(providerId, schedDates) {
+  const bookedMap = new Map();
+  let availableSlots = null;
+  const addBooked = (startTime) => {
+    const slot = mapStartToPickerSlot(startTime, schedDates);
+    if (!slot) return;
+    bookedMap.set(`${slot.dateIdx}-${slot.h}-${slot.m}`, slot);
+  };
+
+  if (providerId && schedDates?.length) {
+    const startDay = schedDates[0];
+    const endDay = schedDates[schedDates.length - 1];
+    const { data, error } = await supabase.rpc("get_provider_slots", {
+      p_provider_id: providerId,
+      p_start_date: startDay.toISOString().split("T")[0],
+      p_end_date: endDay.toISOString().split("T")[0],
+      p_duration_minutes: 30,
+    });
+    if (!error && Array.isArray(data) && data.length) {
+      const mappedAvail = [];
+      for (const row of data) {
+        const slot = mapStartToPickerSlot(row.start_time, schedDates);
+        if (!slot) continue;
+        if (row.is_available && new Date(row.start_time).getTime() > Date.now()) mappedAvail.push(slot);
+        else if (!row.is_available) addBooked(row.start_time);
+      }
+      availableSlots = mappedAvail;
+    }
+
+    const { data: apps } = await supabase
+      .from("doctor_appointments")
+      .select("start_time")
+      .eq("provider_id", providerId)
+      .not("status", "in", "(cancelled,completed)");
+    (apps || []).forEach((row) => addBooked(row.start_time));
+
+    const { data: therapist } = await supabase.from("physio_therapists").select("id").eq("user_id", providerId).maybeSingle();
+    if (therapist?.id) {
+      const { data: visits } = await supabase
+        .from("physio_visits")
+        .select("scheduled_at")
+        .eq("therapist_id", therapist.id)
+        .not("status", "in", "(cancelled,completed,no_show)");
+      (visits || []).forEach((row) => addBooked(row.scheduled_at));
+    }
+  }
+
+  return { availableSlots, bookedSlots: [...bookedMap.values()] };
+}
 
 /* ========================================
    UNIFIED BOOKING INTERFACE - THE SOUL OF MYDOX
@@ -1537,6 +1604,7 @@ function SpecialtyPickerModern({
   const [schedTime, setSchedTime] = React.useState(null); // index into schedTimes
   const [selectedDoctor, setSelectedDoctor] = React.useState(null); // chosen panel doctor
   const [availableSlots, setAvailableSlots] = React.useState(null);
+  const [bookedSlots, setBookedSlots] = React.useState([]);
 
   const schedDates = React.useMemo(() => {
     const out = [];
@@ -1559,51 +1627,32 @@ function SpecialtyPickerModern({
   }, []); // 9:00 AM → 9:30 PM, every 30 minutes
 
   React.useEffect(() => {
-    if (!selectedDoctor?.userId) {
+    let alive = true;
+    if (!selectedDoctor) {
       setAvailableSlots(null);
+      setBookedSlots([]);
       return;
     }
     const fetchSlots = async () => {
-      const startD = new Date();
-      const endD = new Date(Date.now() + 14 * 86400000);
-      const { data, error } = await supabase.rpc('get_provider_slots', {
-        p_provider_id: selectedDoctor.userId,
-        p_start_date: startD.toISOString().split('T')[0],
-        p_end_date: endD.toISOString().split('T')[0],
-        p_duration_minutes: 30
+      const providerId = await resolveProviderUserId(selectedDoctor);
+      const { availableSlots: nextAvail, bookedSlots: nextBooked } = await loadBookedAndAvailableSlots(providerId, schedDates);
+      if (!alive) return;
+      setAvailableSlots(nextAvail);
+      setBookedSlots(nextBooked);
+      const mapped = nextAvail || [];
+      const firstAvail = Array.from({ length: 14 }, (_, i) => i).find((dIdx) => mapped.some((s) => s.dateIdx === dIdx));
+      setSchedDate((prev) => {
+        if (prev === null) return firstAvail !== undefined ? firstAvail : 0;
+        if (mapped.length && !mapped.some((s) => s.dateIdx === prev) && firstAvail !== undefined) return firstAvail;
+        return prev;
       });
-      if (!error && data) {
-        const mapped = data.filter(d => d.is_available).map(d => {
-          const dt = new Date(d.start_time);
-          const dateIdx = schedDates.findIndex(sd => sd.toDateString() === dt.toDateString());
-          return { dateIdx, h: dt.getHours(), m: dt.getMinutes(), start_time: d.start_time };
-        }).filter(s => s.dateIdx >= 0 && new Date(s.start_time).getTime() > Date.now());
-        setAvailableSlots(mapped);
-
-        const firstAvail = Array.from({ length: 14 }, (_, i) => i).find(dIdx => mapped.some(s => s.dateIdx === dIdx));
-        setSchedDate(prev => {
-          if (prev === null) return firstAvail !== undefined ? firstAvail : 0;
-          if (!mapped.some(s => s.dateIdx === prev) && firstAvail !== undefined) return firstAvail;
-          return prev;
-        });
-      } else {
-        setAvailableSlots(null);
-      }
     };
     fetchSlots();
+    return () => { alive = false; };
   }, [selectedDoctor, schedDates]);
   const dayLabel = (d, i) => i === 0 ? "Today" : i === 1 ? "Tomorrow" : d.toLocaleDateString("en-US", { weekday: "short" });
   const fmtTime = t => { const ap = t.h < 12 ? "AM" : "PM"; const hh = t.h % 12 === 0 ? 12 : t.h % 12; return `${hh}:${t.m === 0 ? "00" : "30"} ${ap}`; };
-  const isSlotInPast = React.useMemo(() => {
-    if (schedDate == null || schedTime == null) return false;
-    const _sd = schedDates[schedDate];
-    const _st = schedTimes[schedTime];
-    if (!_sd || !_st) return false;
-    const d = new Date(_sd);
-    d.setHours(_st.h, _st.m, 0, 0);
-    return d.getTime() <= Date.now();
-  }, [schedDate, schedTime, schedDates, schedTimes]);
-  const schedConfirmed = schedDate != null && schedTime != null && !isSlotInPast;
+  const schedConfirmed = schedDate != null && schedTime != null && isSlotAvailable(schedTimes[schedTime], schedDate, schedDates, availableSlots, bookedSlots);
   const schedLabel = schedConfirmed ? `${dayLabel(schedDates[schedDate], schedDate)}, ${schedDates[schedDate].getDate()} ${schedDates[schedDate].toLocaleDateString("en-US", { month: "short" })} · ${fmtTime(schedTimes[schedTime])}` : null;
 
   const providers = [
@@ -1709,6 +1758,7 @@ function SpecialtyPickerModern({
               accent={sc}
               seed={`modern|${providerType}|${selectedSpec?.id}|${selectedDoctor?.name || "any"}`}
               availableSlots={availableSlots}
+              bookedSlots={bookedSlots}
               size="sm"
               line={C.line}
               ink={C.ink}
@@ -1750,6 +1800,7 @@ function SpecialtyPickerSimple({ providerType, selectedSpec, setSelectedSpec, em
   const [schedTime, setSchedTime] = React.useState(null);
   const [selectedDoctor, setSelectedDoctor] = React.useState(null);
   const [availableSlots, setAvailableSlots] = React.useState(null);
+  const [bookedSlots, setBookedSlots] = React.useState([]);
 
   const schedDates = React.useMemo(() => {
     const out = [];
@@ -1772,53 +1823,33 @@ function SpecialtyPickerSimple({ providerType, selectedSpec, setSelectedSpec, em
   }, []); // 9:00 AM → 9:30 PM, every 30 minutes
 
   React.useEffect(() => {
-    if (!selectedDoctor?.userId) {
+    let alive = true;
+    if (!selectedDoctor) {
       setAvailableSlots(null);
+      setBookedSlots([]);
       return;
     }
     const fetchSlots = async () => {
-      const startD = new Date();
-      const endD = new Date(Date.now() + 7 * 86400000); // SpecialtyPickerSimple uses 7 days
-      const { data, error } = await supabase.rpc('get_provider_slots', {
-        p_provider_id: selectedDoctor.userId,
-        p_start_date: startD.toISOString().split('T')[0],
-        p_end_date: endD.toISOString().split('T')[0],
-        p_duration_minutes: 30
+      const providerId = await resolveProviderUserId(selectedDoctor);
+      const { availableSlots: nextAvail, bookedSlots: nextBooked } = await loadBookedAndAvailableSlots(providerId, schedDates);
+      if (!alive) return;
+      setAvailableSlots(nextAvail);
+      setBookedSlots(nextBooked);
+      const mapped = nextAvail || [];
+      const firstAvail = [0, 1, 2, 3, 4, 5, 6].find((dIdx) => mapped.some((s) => s.dateIdx === dIdx));
+      setSchedDate((prev) => {
+        if (prev === null) return firstAvail !== undefined ? firstAvail : 0;
+        if (mapped.length && !mapped.some((s) => s.dateIdx === prev) && firstAvail !== undefined) return firstAvail;
+        return prev;
       });
-      if (!error && data) {
-        const mapped = data.filter(d => d.is_available).map(d => {
-          const dt = new Date(d.start_time);
-          const dateIdx = schedDates.findIndex(sd => sd.toDateString() === dt.toDateString());
-          return { dateIdx, h: dt.getHours(), m: dt.getMinutes(), start_time: d.start_time };
-        }).filter(s => s.dateIdx >= 0 && new Date(s.start_time).getTime() > Date.now());
-        setAvailableSlots(mapped);
-
-        // Auto-select first date that has available slots if none selected or if current selection has no slots
-        const firstAvail = [0, 1, 2, 3, 4, 5, 6].find(dIdx => mapped.some(s => s.dateIdx === dIdx));
-        setSchedDate(prev => {
-          if (prev === null) return firstAvail !== undefined ? firstAvail : 0;
-          if (!mapped.some(s => s.dateIdx === prev) && firstAvail !== undefined) return firstAvail;
-          return prev;
-        });
-      } else {
-        setAvailableSlots(null);
-      }
     };
     fetchSlots();
+    return () => { alive = false; };
   }, [selectedDoctor, schedDates]);
   const [profileDoctor, setProfileDoctor] = React.useState(null);
   const fmtTime = t => { const ap = t.h < 12 ? "AM" : "PM"; const hh = t.h % 12 === 0 ? 12 : t.h % 12; return `${hh}:${t.m === 0 ? "00" : String(t.m)} ${ap}`; };
   const dayLabel = (d, i) => i === 0 ? "Today" : i === 1 ? "Tomorrow" : d.toLocaleDateString("en-US", { weekday: "short" });
-  const isSlotInPast = React.useMemo(() => {
-    if (schedDate == null || schedTime == null) return false;
-    const _sd = schedDates[schedDate];
-    const _st = schedTimes[schedTime];
-    if (!_sd || !_st) return false;
-    const d = new Date(_sd);
-    d.setHours(_st.h, _st.m, 0, 0);
-    return d.getTime() <= Date.now();
-  }, [schedDate, schedTime, schedDates, schedTimes]);
-  const schedConfirmed = schedDate != null && schedTime != null && !isSlotInPast;
+  const schedConfirmed = schedDate != null && schedTime != null && isSlotAvailable(schedTimes[schedTime], schedDate, schedDates, availableSlots, bookedSlots);
   const schedLabel = schedConfirmed ? `${dayLabel(schedDates[schedDate], schedDate)}, ${schedDates[schedDate].getDate()} ${schedDates[schedDate].toLocaleDateString("en-US", { month: "short" })} · ${fmtTime(schedTimes[schedTime])}` : null;
   const panelDoctors = React.useMemo(() => panelDoctorsForSpec(selectedSpec), [selectedSpec?.id]);
   const needsDoctor = providerType === "doctor" || providerType === "therapist";
@@ -1912,6 +1943,7 @@ function SpecialtyPickerSimple({ providerType, selectedSpec, setSelectedSpec, em
               accent={sc}
               seed={`simple|${providerType}|${selectedSpec?.id}|${selectedDoctor?.name || "any"}`}
               availableSlots={availableSlots}
+              bookedSlots={bookedSlots}
               size="md"
               line={C.line}
               ink={C.ink}

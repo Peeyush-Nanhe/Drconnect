@@ -290,6 +290,23 @@ function SessionOverDialog({
   );
 }
 
+function PatientName({ patientId }: { patientId: string }) {
+  const [name, setName] = useState<string | null>(null);
+  useEffect(() => {
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(patientId);
+    if (!isUuid) {
+      // Mock data or non-UUID, don't hit the DB to avoid Postgres UUID cast errors
+      if (patientId.includes("kavita")) setName("Kavita (Demo)");
+      else if (patientId.includes("priya")) setName("Priya (Demo)");
+      return;
+    }
+    supabase.from("profiles").select("full_name").eq("id", patientId).maybeSingle().then(({ data }) => {
+      if (data?.full_name) setName(data.full_name);
+    });
+  }, [patientId]);
+  return <>{name ? name : "Patient"}</>;
+}
+
 function VisitCard({
   v,
   note,
@@ -709,7 +726,11 @@ function TherapistHome() {
                           <h3 className="text-base font-extrabold text-slate-900">
                             New {req.specialty || "Physiotherapy"} Request
                           </h3>
-                          <p className="text-xs text-slate-600">
+                          <p className="text-sm font-semibold text-slate-800 mt-0.5">
+                            Patient: <PatientName patientId={req.patient_id} />
+                            {req.scheduled_at ? ` · ${new Date(req.scheduled_at).toLocaleString()}` : ""}
+                          </p>
+                          <p className="text-xs text-slate-600 mt-1">
                             {req.notes?.replace(/^Hub:\s*/, "") || "Nearby Pune Area"} · First to accept wins
                           </p>
                         </div>
