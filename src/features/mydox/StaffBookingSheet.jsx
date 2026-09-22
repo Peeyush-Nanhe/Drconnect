@@ -5,6 +5,8 @@ import {
   bookHomeNursing,
   bookTechnicianTest,
   currentPosition,
+  fetchLastBookedNurseId,
+  fetchLastBookedTechnicianId,
   fetchNurseBookedDates,
   fetchNurseRoster,
   fetchNursingDayRate,
@@ -84,9 +86,10 @@ function ProviderRow({ selected, accent, title, subtitle, badge, avatar, onClick
   );
 }
 
-export function StaffBookingSheet({ kind, area: initialArea, initialDays = 7, initialTestType = null, onClose, onBooked }) {
+export function StaffBookingSheet({ kind, area: initialArea, initialDays = 7, initialTestType = null, onClose, onBooked, variant = "sheet" }) {
   const isNurse = kind === "nurse";
   const accent = isNurse ? "#DB2777" : "#8B5CF6";
+  const inline = variant === "inline";
 
   const [area, setArea] = React.useState(initialArea || "");
   const [address, setAddress] = React.useState("");
@@ -147,6 +150,36 @@ export function StaffBookingSheet({ kind, area: initialArea, initialDays = 7, in
 
   const provider = roster.find((p) => (isNurse ? p.userId : p.technicianId) === providerKey) || null;
 
+  // Whoever the patient last booked (if they're still active/verified) is
+  // offered again first, the same way physio surfaces a "Suggested Doctor".
+  const [suggestedId, setSuggestedId] = React.useState(null);
+  React.useEffect(() => {
+    let off = false;
+    (isNurse ? fetchLastBookedNurseId() : fetchLastBookedTechnicianId())
+      .then((id) => { if (!off) setSuggestedId(id); })
+      .catch(() => {});
+    return () => { off = true; };
+  }, [isNurse]);
+  const autoSelectedRef = React.useRef(false);
+  React.useEffect(() => {
+    if (autoSelectedRef.current || !suggestedId || rosterLoading || !roster.length) return;
+    const key = isNurse ? "userId" : "technicianId";
+    if (roster.some((p) => p[key] === suggestedId)) {
+      setProviderKey(suggestedId);
+      autoSelectedRef.current = true;
+    }
+  }, [suggestedId, roster, rosterLoading, isNurse]);
+  const orderedRoster = React.useMemo(() => {
+    if (!suggestedId) return roster;
+    const key = isNurse ? "userId" : "technicianId";
+    const idx = roster.findIndex((p) => p[key] === suggestedId);
+    if (idx <= 0) return roster;
+    const copy = roster.slice();
+    const [suggested] = copy.splice(idx, 1);
+    copy.unshift(suggested);
+    return copy;
+  }, [roster, suggestedId, isNurse]);
+
   // ─── slots ───
   const [nurseBooked, setNurseBooked] = React.useState([]);
   const [techSlots, setTechSlots] = React.useState(null); // null = not loaded / not needed
@@ -173,7 +206,12 @@ export function StaffBookingSheet({ kind, area: initialArea, initialDays = 7, in
     return null; // any available technician: any future time on the grid
   }, [isNurse, days, provider, nurseBooked, techSlots]);
 
-  const price = isNurse ? (dayRate != null ? dayRate * days : null) : test?.fee ?? null;
+  // Same +20% surcharge doctor/physio urgent bookings apply — the server
+  // (create_nursing_engagement / create_technician_request /
+  // atomic_book_technician_test) enforces the real charge; this is only the
+  // preview so the price shown here matches what gets booked.
+  const basePrice = isNurse ? (dayRate != null ? dayRate * days : null) : test?.fee ?? null;
+  const price = urgent && basePrice != null ? Math.round(basePrice * 1.2) : basePrice;
   const noSlots = !slotsLoading && Array.isArray(availableIso) && availableIso.length === 0;
   const ready = !!startIso && !!area.trim() && (isNurse || !!testType) && !submitting;
 
@@ -185,7 +223,7 @@ export function StaffBookingSheet({ kind, area: initialArea, initialDays = 7, in
       if (isNurse) {
         const here = await currentPosition();
         const eng = await bookHomeNursing({
-          days, kind: "General Duty Nurse", startIso, area: area.trim(), address,
+          days, kind: "General Duty Nurse", startIso, area: area.trim(), address, urgent,
           nurseUserId: provider?.userId ?? null, lat: here?.lat ?? null, lng: here?.lng ?? null,
         });
         onBooked?.({
@@ -228,20 +266,44 @@ export function StaffBookingSheet({ kind, area: initialArea, initialDays = 7, in
       ? `${provider.name.split(" ")[0]}'s free ${test?.durationMin || 60}-min slots`
       : "Preferred time · a technician confirms it";
 
-  return (
-    <div style={{ position: "absolute", inset: 0, zIndex: 110, background: "#fff", display: "flex", flexDirection: "column", fontFamily: FONT }}>
-      <div style={{ padding: "12px 14px", borderBottom: `1px solid ${LINE}`, display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
-        <button type="button" onClick={onClose} aria-label="Back" style={{ width: 34, height: 34, borderRadius: "50%", background: CANVAS, border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <ChevronLeft size={18} color={INK} />
-        </button>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <p style={{ margin: 0, fontWeight: 800, color: INK, fontSize: 16 }}>{isNurse ? "Book home nursing" : "Book a technician"}</p>
-          <p style={{ margin: 0, fontSize: 11, color: FAINT }}>{isNurse ? "A verified nurse comes to your home" : "A verified technician visits your home"}</p>
+  const card = (
+    <div style={inline
+      ? { background: "#fff", border: `2px solid ${accent}`, borderRadius: 16, display: "flex", flexDirection: "column", fontFamily: FONT }
+      : { position: "absolute", inset: 0, zIndex: 110, background: "#fff", display: "flex", flexDirection: "column", fontFamily: FONT }}
+    >
+      {inline ? (
+        <div style={{ padding: "12px 13px 0" }}>
+          <p style={{ margin: 0, fontWeight: 800, color: INK, fontSize: 13.5 }}>{isNurse ? "Home Nursing Care" : "Technician at home"}</p>
+          <p style={{ margin: "1px 0 0", fontSize: 10.5, color: FAINT }}>{isNurse ? "Verified freelance nurses · first to accept gets assigned" : "Verified technicians · pick a test, then a time"}</p>
         </div>
-      </div>
+      ) : (
+        <div style={{ padding: "12px 14px", borderBottom: `1px solid ${LINE}`, display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+          <button type="button" onClick={onClose} aria-label="Back" style={{ width: 34, height: 34, borderRadius: "50%", background: CANVAS, border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <ChevronLeft size={18} color={INK} />
+          </button>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ margin: 0, fontWeight: 800, color: INK, fontSize: 16 }}>{isNurse ? "Book home nursing" : "Book a technician"}</p>
+            <p style={{ margin: 0, fontSize: 11, color: FAINT }}>{isNurse ? "A verified nurse comes to your home" : "A verified technician visits your home"}</p>
+          </div>
+        </div>
+      )}
 
-      <div style={{ flex: 1, overflowY: "auto", padding: "14px 14px 24px", display: "flex", flexDirection: "column", gap: 18 }}>
+      <div style={inline
+        ? { padding: "10px 13px 13px", display: "flex", flexDirection: "column", gap: 14 }
+        : { flex: 1, overflowY: "auto", padding: "14px 14px 24px", display: "flex", flexDirection: "column", gap: 18 }}
+      >
         {loadError ? <Note tone="error">{loadError}</Note> : null}
+
+        {/* 0 · urgency — same "Book for later / Urgent +20%" toggle doctor/physio use */}
+        <div style={{ position: "relative", display: "flex", background: CANVAS, borderRadius: 12, padding: 4, overflow: "hidden" }}>
+          <div style={{ position: "absolute", top: 4, bottom: 4, left: urgent ? "50%" : "4px", width: "calc(50% - 4px)", borderRadius: 9, background: urgent ? "linear-gradient(135deg,#F97316,#EA580C)" : "linear-gradient(135deg,#2563EB,#3B82F6)", transition: "left .3s cubic-bezier(.4,1.35,.5,1), background .25s" }} />
+          {[{ v: false, icon: "📅", t: "Book for later", d: "Pick date & time" }, { v: true, icon: "⚡", t: "Urgent", d: "Priority · +20%" }].map((opt) => (
+            <button key={String(opt.v)} type="button" onClick={() => setUrgent(opt.v)} style={{ flex: 1, position: "relative", zIndex: 1, border: "none", background: "transparent", padding: "7px 6px", cursor: "pointer", fontFamily: FONT }}>
+              <p style={{ margin: 0, fontSize: 12, fontWeight: 800, color: urgent === opt.v ? "#fff" : SUB }}>{opt.icon} {opt.t}</p>
+              <p style={{ margin: "1px 0 0", fontSize: 9, fontWeight: 600, color: urgent === opt.v ? "rgba(255,255,255,.9)" : FAINT }}>{opt.d}</p>
+            </button>
+          ))}
+        </div>
 
         {/* 1 · what */}
         {isNurse ? (
@@ -292,7 +354,7 @@ export function StaffBookingSheet({ kind, area: initialArea, initialDays = 7, in
             {!rosterLoading && !roster.length ? (
               <Note tone="warn">No verified {isNurse ? "nurse" : "technician for this test"} is registered yet. Your request will wait for the first one who joins.</Note>
             ) : null}
-            {roster.map((p) => {
+            {orderedRoster.map((p) => {
               const key = isNurse ? p.userId : p.technicianId;
               const sub = isNurse
                 ? [p.specialty, p.yearsExperience ? `${p.yearsExperience} yrs` : null, p.areas.slice(0, 3).join(", ")].filter(Boolean).join(" · ")
@@ -305,7 +367,7 @@ export function StaffBookingSheet({ kind, area: initialArea, initialDays = 7, in
                   avatar={initials(p.name)}
                   title={p.name}
                   subtitle={sub}
-                  badge={p.coversArea ? "Covers your area" : null}
+                  badge={key === suggestedId ? "Booked before" : (p.coversArea ? "Covers your area" : null)}
                   onClick={() => setProviderKey(key)}
                 />
               );
@@ -360,77 +422,55 @@ export function StaffBookingSheet({ kind, area: initialArea, initialDays = 7, in
             style={{ width: "100%", boxSizing: "border-box", borderRadius: 11, border: `1.5px solid ${LINE}`, padding: "10px 12px", fontSize: 13, fontFamily: FONT, color: INK, resize: "vertical" }}
           />
           {!isNurse ? (
-            <>
-              <textarea
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                maxLength={1000}
-                rows={2}
-                placeholder="Notes for the technician (optional) — doctor's instructions, fasting, mobility…"
-                style={{ width: "100%", boxSizing: "border-box", borderRadius: 11, border: `1.5px solid ${LINE}`, padding: "10px 12px", fontSize: 13, fontFamily: FONT, color: INK, resize: "vertical" }}
-              />
-              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: SUB, fontWeight: 700 }}>
-                <input type="checkbox" checked={urgent} onChange={(e) => setUrgent(e.target.checked)} /> Urgent — same-day priority
-              </label>
-            </>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              maxLength={1000}
+              rows={2}
+              placeholder="Notes for the technician (optional) — doctor's instructions, fasting, mobility…"
+              style={{ width: "100%", boxSizing: "border-box", borderRadius: 11, border: `1.5px solid ${LINE}`, padding: "10px 12px", fontSize: 13, fontFamily: FONT, color: INK, resize: "vertical" }}
+            />
           ) : null}
         </div>
 
         {error ? <Note tone="error">{error}</Note> : null}
       </div>
 
-      <div style={{ borderTop: `1px solid ${LINE}`, padding: "12px 14px 14px", display: "flex", alignItems: "center", gap: 12, flexShrink: 0, background: "#fff" }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <p style={{ margin: 0, fontSize: 11, color: FAINT, fontWeight: 700 }}>{isNurse ? `${days} day${days === 1 ? "" : "s"}` : test?.label || "Test"}</p>
-          <p style={{ margin: 0, fontSize: 17, fontWeight: 900, color: INK }}>{price != null ? inr(price) : "—"}</p>
-        </div>
+      <div style={inline
+        ? { padding: "0 13px 13px", flexShrink: 0 }
+        : { borderTop: `1px solid ${LINE}`, padding: "12px 14px 14px", display: "flex", alignItems: "center", gap: 12, flexShrink: 0, background: "#fff" }}
+      >
+        {!inline ? (
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ margin: 0, fontSize: 11, color: FAINT, fontWeight: 700 }}>{isNurse ? `${days} day${days === 1 ? "" : "s"}` : test?.label || "Test"}</p>
+            <p style={{ margin: 0, fontSize: 17, fontWeight: 900, color: INK }}>{price != null ? inr(price) : "—"}{urgent && price != null ? <span style={{ fontSize: 11, fontWeight: 800, color: "#EA580C" }}> +20%</span> : null}</p>
+          </div>
+        ) : null}
         <button
           type="button"
           disabled={!ready}
           onClick={submit}
-          style={{ flexShrink: 0, borderRadius: 13, padding: "13px 20px", border: "none", background: ready ? accent : "#E5E7EB", color: ready ? "#fff" : FAINT, fontWeight: 800, fontSize: 14, cursor: ready ? "pointer" : "not-allowed", fontFamily: FONT, display: "flex", alignItems: "center", gap: 7 }}
+          style={inline
+            ? { width: "100%", background: ready ? accent : "#E5E7EB", borderRadius: 11, padding: "10px 12px", fontSize: 13, fontWeight: 800, color: ready ? "#fff" : FAINT, border: "none", cursor: ready ? "pointer" : "not-allowed", fontFamily: FONT, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }
+            : { flexShrink: 0, borderRadius: 13, padding: "13px 20px", border: "none", background: ready ? accent : "#E5E7EB", color: ready ? "#fff" : FAINT, fontWeight: 800, fontSize: 14, cursor: ready ? "pointer" : "not-allowed", fontFamily: FONT, display: "flex", alignItems: "center", gap: 7 }}
         >
           {submitting ? <Loader2 size={16} className="animate-spin" /> : null}
-          {submitting ? "Booking…" : !startIso ? "Pick a time" : provider && !isNurse ? "Book this slot" : "Send request"}
+          {submitting
+            ? "Booking…"
+            : !startIso
+              ? "Pick a time"
+              : provider && !isNurse
+                ? "Book this slot"
+                : inline
+                  ? `Send request${price != null ? ` · ${inr(price)}` : ""}`
+                  : "Send request"}
         </button>
       </div>
     </div>
   );
+
+  return inline ? <div style={{ padding: "8px 14px 0" }}>{card}</div> : card;
 }
 
 export default StaffBookingSheet;
 
-/**
- * The technician tab's entry card: the test list comes from
- * technician_test_catalog, so a new test or a price change is a database edit.
- */
-export function TechnicianCareCard({ onBook }) {
-  const [tests, setTests] = React.useState(null);
-  const [error, setError] = React.useState("");
-  React.useEffect(() => {
-    let off = false;
-    fetchTechnicianCatalog()
-      .then((list) => { if (!off) setTests(list); })
-      .catch((e) => { if (!off) { setTests([]); setError(e?.message || "Could not load tests."); } });
-    return () => { off = true; };
-  }, []);
-  const accent = "#8B5CF6";
-  return (
-    <div style={{ padding: "8px 14px 0", fontFamily: FONT }}>
-      <div style={{ background: "#fff", border: `2px solid ${accent}`, borderRadius: 16, padding: "12px 13px" }}>
-        <p style={{ margin: 0, fontWeight: 800, color: INK, fontSize: 13.5 }}>Technician at home</p>
-        <p style={{ margin: "1px 0 9px", color: FAINT, fontSize: 10.5 }}>Verified technicians · pick a test, then a time</p>
-        {tests === null ? <Note>Loading tests…</Note> : null}
-        {error ? <Note tone="error">{error}</Note> : null}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 7 }}>
-          {(tests || []).map((t) => (
-            <button key={t.testType} type="button" onClick={() => onBook && onBook(t.testType)} style={{ textAlign: "left", padding: "9px 10px", borderRadius: 12, border: `1.5px solid ${LINE}`, background: "#fff", cursor: "pointer", fontFamily: FONT }}>
-              <span style={{ display: "block", fontSize: 12.5, fontWeight: 800, color: INK }}>{t.label}</span>
-              <span style={{ display: "block", fontSize: 10.5, color: FAINT, marginTop: 1 }}>{inr(t.fee)} · {t.durationMin} min</span>
-            </button>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}

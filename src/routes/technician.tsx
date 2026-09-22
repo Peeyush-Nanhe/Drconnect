@@ -497,13 +497,13 @@ function TechnicianHome() {
           : "Set up which tests you can run"
       }
       right={
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
           {profile ? (
             <OnlineToggle
               online={profile.isOnline}
               busy={online.isPending}
               onChange={(v) => online.mutate(v)}
-              onlineLabel="Taking test visits"
+              onlineLabel="Online"
             />
           ) : null}
           <button
@@ -511,7 +511,7 @@ function TechnicianHome() {
             onClick={() => setTab("profile")}
             className="min-h-[36px] rounded-full border border-slate-200 px-3 text-xs font-bold text-slate-700 hover:bg-white"
           >
-            Profile & settings
+            Profile
           </button>
           <button
             type="button"
@@ -525,9 +525,9 @@ function TechnicianHome() {
       stats={
         profile ? (
           <>
-            <Stat label="Today" value={`₹${data!.totals.earnings30d > 0 ? (Number(data!.totals.earnings30d) / 8).toFixed(0) : "4,200"}`} />
-            <Stat label="Visits" value={data!.totals.completed30d || 5} />
-            <Stat label="Score" value="96%" />
+            <Stat label="Today" value={data!.totals.today} />
+            <Stat label="Completed (30d)" value={data!.totals.completed30d} />
+            <Stat label="Earnings (30d)" value={`₹${data!.totals.earnings30d}`} />
           </>
         ) : null
       }

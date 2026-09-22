@@ -166,6 +166,8 @@ export interface NursingBookingInput {
   nurseUserId?: string | null;
   lat?: number | null;
   lng?: number | null;
+  /** +20% on the day rate, same surcharge doctor/physio urgent bookings apply. */
+  urgent?: boolean;
 }
 
 export interface NursingBooking {
@@ -189,11 +191,31 @@ export async function bookHomeNursing(input: NursingBookingInput): Promise<Nursi
     p_lat: input.lat ?? null,
     p_lng: input.lng ?? null,
     p_nurse_id: input.nurseUserId ?? null,
+    p_urgent: !!input.urgent,
   });
   if (error) throw new Error(readable(error, "Could not book home nursing."));
   const row = Array.isArray(data) ? data[0] : data;
   if (!row?.id) throw new Error("Could not book home nursing.");
   return row as NursingBooking;
+}
+
+/** The nurse from the patient's most recent engagement, if any — used to
+ *  suggest "book them again" instead of starting from a blank roster. */
+export async function fetchLastBookedNurseId(): Promise<string | null> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
+  const { data, error } = await db
+    .from("nursing_engagements")
+    .select("primary_nurse_id, preferred_nurse_id, created_at")
+    .eq("patient_id", user.id)
+    .order("created_at", { ascending: false })
+    .limit(5);
+  if (error || !data) return null;
+  for (const row of data as any[]) {
+    const id = row.primary_nurse_id || row.preferred_nurse_id;
+    if (id) return id;
+  }
+  return null;
 }
 
 /* ═════════════════════════════════ technicians ════════════════════════════ */
@@ -339,4 +361,22 @@ export async function bookTechnicianTest(input: TechnicianBookingInput): Promise
   if (error) throw new Error(readable(error, "Could not book a technician."));
   const row = Array.isArray(data) ? data[0] : data;
   return row?.id as string;
+}
+
+/** The technician from the patient's most recent test, if any — used to
+ *  suggest "book them again" instead of starting from a blank roster. */
+export async function fetchLastBookedTechnicianId(): Promise<string | null> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
+  const { data, error } = await db
+    .from("technician_tests")
+    .select("technician_id, created_at")
+    .eq("patient_id", user.id)
+    .order("created_at", { ascending: false })
+    .limit(5);
+  if (error || !data) return null;
+  for (const row of data as any[]) {
+    if (row.technician_id) return row.technician_id as string;
+  }
+  return null;
 }

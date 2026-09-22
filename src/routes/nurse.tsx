@@ -486,13 +486,13 @@ function NurseHome() {
           : "Set up your nursing profile"
       }
       right={
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
           {profile ? (
             <OnlineToggle
               online={profile.isOnline}
               busy={online.isPending}
               onChange={(v) => online.mutate(v)}
-              onlineLabel="Online for duties"
+              onlineLabel="Online"
             />
           ) : null}
           <button
@@ -500,7 +500,7 @@ function NurseHome() {
             onClick={() => setTab("profile")}
             className="min-h-[36px] rounded-full border border-slate-200 px-3 text-xs font-bold text-slate-700 hover:bg-white"
           >
-            Profile & settings
+            Profile
           </button>
           <button
             type="button"
@@ -514,9 +514,9 @@ function NurseHome() {
       stats={
         profile ? (
           <>
-            <Stat label="Today" value={`₹${data!.totals.earnings30d > 0 ? (Number(data!.totals.earnings30d) / 10).toFixed(0) : "6,400"}`} />
-            <Stat label="Visits" value={data!.totals.completed || 7} />
-            <Stat label="Score" value={`${profile.verified ? "94%" : "New"}`} />
+            <Stat label="Today" value={data!.totals.today} />
+            <Stat label="Completed (30d)" value={data!.totals.completed} />
+            <Stat label="Earned (30d)" value={`₹${data!.totals.earnings30d}`} />
           </>
         ) : null
       }
