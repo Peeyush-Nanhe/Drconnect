@@ -5,6 +5,18 @@ import type { Option } from "@/lib/care-staff-catalog";
 
 /** Shared building blocks for the nurse / physio / technician home screens. */
 
+/** Same brand palette as the patient app (MyDoxFull.jsx's `C`), so every portal reads as one product. */
+export const STAFF_COLOR = {
+  primary: "#0C9668",
+  primaryDeep: "#0A7A54",
+  primarySoft: "#E4F6EE",
+  ink: "#0B201C",
+  sub: "#5C6F69",
+  faint: "#8FA39D",
+  canvas: "#EBF1EE",
+  line: "#E2ECE7",
+};
+
 export function StaffShell({
   title,
   subtitle,
@@ -26,10 +38,10 @@ export function StaffShell({
       className="min-h-[100dvh] bg-slate-200/60 text-slate-900"
       style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif" }}
     >
-     <div className="mx-auto min-h-[100dvh] w-full max-w-[430px] bg-[#E7F0EC] shadow-xl">
+     <div className="mx-auto min-h-[100dvh] w-full max-w-[430px] bg-[#EBF1EE] shadow-xl">
       <header
         className="sticky top-0 z-20 px-4 pb-6 pt-4 text-white shadow-lg"
-        style={{ background: 'linear-gradient(135deg, #059669 0%, #10B981 100%)' }}
+        style={{ background: 'linear-gradient(135deg, #0C9668 0%, #0FB58A 100%)' }}
       >
         <div className="w-full space-y-3">
           <div className="flex items-start justify-between gap-2">
@@ -54,7 +66,7 @@ export function StaffShell({
       </header>
       <main className="w-full space-y-4 px-3 py-4">{children}</main>
       <footer className="flex w-full items-center justify-between px-4 pb-8 pt-2 text-[11px] text-slate-500">
-        <a href="/?view=patient" className="font-semibold text-teal-700 hover:underline">
+        <a href="/?view=patient" className="font-semibold text-[#0A7A54] hover:underline">
           ← MyDox patient home
         </a>
         <Link to="/auth" search={{ admin: undefined, next: undefined }} className="font-semibold text-slate-500 hover:text-slate-800">
@@ -86,7 +98,7 @@ export function OnlineToggle({
       aria-pressed={online}
       onClick={() => onChange(!online)}
       className={`flex min-h-[40px] items-center gap-2 rounded-full px-3 py-2 text-[11px] font-bold transition disabled:opacity-60 ${
-        online ? "bg-teal-600 text-white" : "bg-slate-200 text-slate-700"
+        online ? "bg-[#0C9668] text-white" : "bg-slate-200 text-slate-700"
       }`}
     >
       <span className={`h-2.5 w-2.5 rounded-full ${online ? "bg-white" : "bg-slate-500"}`} />
@@ -96,8 +108,8 @@ export function OnlineToggle({
 }
 
 export function Stat({ label, value, tone = "teal" }: { label: string; value: string | number; tone?: "teal" | "slate" }) {
-  const valueClass = tone === "slate" ? "text-slate-800" : "text-teal-800";
-  const labelClass = tone === "slate" ? "text-slate-500" : "text-teal-700/80";
+  const valueClass = tone === "slate" ? "text-slate-800" : "text-[#0A7A54]";
+  const labelClass = tone === "slate" ? "text-slate-500" : "text-[#0A7A54]/80";
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-3 text-center shadow-sm">
       <div className={`text-lg font-black leading-none tabular-nums ${valueClass}`}>{value}</div>
@@ -108,7 +120,7 @@ export function Stat({ label, value, tone = "teal" }: { label: string; value: st
 
 export function Card({ children, accent }: { children: ReactNode; accent?: boolean }) {
   return (
-    <article className={`rounded-2xl border bg-white p-4 ${accent ? "border-teal-300" : "border-slate-200"}`}>
+    <article className={`rounded-2xl border bg-white p-4 ${accent ? "border-[#0C9668]/50" : "border-slate-200"}`}>
       {children}
     </article>
   );
@@ -187,7 +199,7 @@ export function Chips({
                     aria-pressed={on}
                     onClick={() => onToggle(o.value)}
                     className={`min-h-[36px] rounded-full border px-3 py-1.5 text-[11px] font-semibold transition ${
-                      on ? "border-teal-600 bg-teal-600 text-white" : "border-slate-200 bg-white text-slate-700"
+                      on ? "border-[#0C9668] bg-[#0C9668] text-white" : "border-slate-200 bg-white text-slate-700"
                     }`}
                   >
                     {o.label}
@@ -211,7 +223,7 @@ export function Field({ label, children }: { label: string; children: ReactNode 
 }
 
 export const inputClass =
-  "w-full min-h-[44px] rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-teal-500";
+  "w-full min-h-[44px] rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#0C9668]";
 
 export function Switch({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label: string }) {
   return (
@@ -220,11 +232,11 @@ export function Switch({ on, onChange, label }: { on: boolean; onChange: (v: boo
       aria-pressed={on}
       onClick={() => onChange(!on)}
       className={`flex min-h-[44px] w-full items-center justify-between gap-3 rounded-xl border px-3 py-2 text-left text-xs font-semibold ${
-        on ? "border-teal-500 bg-teal-50 text-teal-800" : "border-slate-200 bg-white text-slate-600"
+        on ? "border-[#0C9668] bg-[#E4F6EE] text-[#0A7A54]" : "border-slate-200 bg-white text-slate-600"
       }`}
     >
       {label}
-      <span className={`h-5 w-9 shrink-0 rounded-full p-0.5 transition ${on ? "bg-teal-600" : "bg-slate-300"}`}>
+      <span className={`h-5 w-9 shrink-0 rounded-full p-0.5 transition ${on ? "bg-[#0C9668]" : "bg-slate-300"}`}>
         <span className={`block h-4 w-4 rounded-full bg-white transition ${on ? "translate-x-4" : ""}`} />
       </span>
     </button>

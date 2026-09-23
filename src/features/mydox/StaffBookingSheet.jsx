@@ -233,9 +233,11 @@ export function StaffBookingSheet({ kind, area: initialArea, initialDays = 7, in
           startIso,
         });
       } else {
+        const here = await currentPosition();
         const id = await bookTechnicianTest({
           testType, startIso, area: area.trim(), address, notes, urgent,
           technicianId: provider?.technicianId ?? null,
+          lat: here?.lat ?? null, lng: here?.lng ?? null,
         });
         onBooked?.({
           id, refType: "technician_test", role: "technician",
