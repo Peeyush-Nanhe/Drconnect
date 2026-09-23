@@ -332,6 +332,8 @@ export interface TechnicianBookingInput {
   urgent?: boolean;
   /** Books this technician's slot directly; omit for "any available". */
   technicianId?: string | null;
+  lat?: number | null;
+  lng?: number | null;
 }
 
 /** Returns the technician_tests id. */
@@ -344,6 +346,8 @@ export async function bookTechnicianTest(input: TechnicianBookingInput): Promise
     p_notes: input.notes?.trim() || null,
     p_urgency: input.urgent ? "urgent" : "normal",
     p_home_visit: true,
+    p_lat: input.lat ?? null,
+    p_lng: input.lng ?? null,
   };
   if (input.technicianId) {
     const { data, error } = await db.rpc("atomic_book_technician_test", {

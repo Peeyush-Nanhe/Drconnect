@@ -30,7 +30,6 @@ import {
   fmtWhen,
   inputClass,
 } from "@/features/careteam/StaffUI";
-import { TechnicianRequestsPanel } from "@/features/mydox/technician/TechnicianRequestsPanel";
 import { verifyAndCompleteConsultation } from "@/features/mydox/backend";
 
 export const Route = createFileRoute("/technician")({
@@ -56,6 +55,37 @@ export const Route = createFileRoute("/technician")({
 });
 
 type Tab = "today" | "open" | "upcoming" | "history" | "profile";
+
+// set_technician_test_stage only accepts these five target stages; "requested" /
+// "pending" (unclaimed) and "assigned" (claimed, awaiting confirmation) come
+// from claim_technician_test / atomic_book_technician_test instead.
+const NEXT: Record<string, { stage: string; label: string; soft?: boolean }[]> = {
+  assigned: [
+    { stage: "accepted", label: "Confirm this test" },
+    { stage: "cancelled", label: "Can't take it", soft: true },
+  ],
+  accepted: [
+    { stage: "en_route", label: "I'm on the way" },
+    { stage: "cancelled", label: "Cancel", soft: true },
+  ],
+  en_route: [
+    { stage: "in_progress", label: "Start test" },
+    { stage: "no_show", label: "Patient not available", soft: true },
+  ],
+  in_progress: [{ stage: "completed", label: "Complete test" }],
+};
+
+const STATUS_LABEL: Record<string, string> = {
+  requested: "Awaiting assignment",
+  pending: "Awaiting assignment",
+  assigned: "Needs your confirmation",
+  accepted: "Confirmed",
+  en_route: "On the way",
+  in_progress: "In progress",
+  completed: "Test complete",
+  cancelled: "Cancelled",
+  no_show: "Patient absent",
+};
 
 const CLOSED = ["completed", "cancelled", "no_show"];
 
@@ -205,7 +235,7 @@ function TestCard({
           ) : null}
         </div>
         <div className="shrink-0 text-right">
-          <div className="rounded-full bg-teal-50 px-3 py-1 text-[11px] font-bold text-teal-700">₹{job.fee ?? 0}</div>
+          <div className="rounded-full bg-[#EAF2F6] px-3 py-1 text-[11px] font-bold text-[#10576E]">₹{job.fee ?? 0}</div>
           <div className="mt-1 text-[10px] font-semibold text-slate-500">{STATUS_LABEL[job.status] ?? job.status}</div>
         </div>
       </div>
@@ -223,8 +253,27 @@ function TestCard({
           Carry the machine from {job.pickupHub ?? "your tie-up hub"} — this venue has no equipment on site.
         </p>
       ) : job.venueKind === "hub" ? (
-        <p className="mt-2 rounded-xl bg-teal-50 px-3 py-2 text-[11px] font-semibold text-teal-800">
+        <p className="mt-2 rounded-xl bg-[#EAF2F6] px-3 py-2 text-[11px] font-semibold text-[#10576E]">
           Machine is already at the hub — no pickup needed.
+        </p>
+      ) : null}
+
+      {job.homeVisit && (job.lat != null && job.lng != null) ? (
+        <div className="mt-2 rounded-xl bg-slate-50 px-3 py-2">
+          {job.address ? <p className="text-[11px] text-slate-600">{job.address}</p> : null}
+          <a
+            href={`https://www.google.com/maps/dir/?api=1&destination=${job.lat},${job.lng}&travelmode=driving`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[11px] font-bold text-[#10576E] hover:underline"
+          >
+            Open directions to the patient
+          </a>
+        </div>
+      ) : job.homeVisit && ["assigned", "accepted", "en_route"].includes(job.status) ? (
+        <p className="mt-2 text-[11px] text-slate-500">
+          Exact location wasn't shared for this booking — use {job.area}
+          {job.city ? `, ${job.city}` : ""} and call the patient to confirm the address.
         </p>
       ) : null}
 
@@ -247,7 +296,7 @@ function TestCard({
             type="button"
             disabled={busy}
             onClick={() => onClaim(job.id)}
-            className="min-h-[40px] rounded-full bg-teal-600 px-4 py-1.5 text-xs font-bold text-white disabled:opacity-60"
+            className="min-h-[40px] rounded-full bg-[#177B94] px-4 py-1.5 text-xs font-bold text-white disabled:opacity-60"
           >
             Take this test
           </button>
@@ -260,7 +309,7 @@ function TestCard({
                 disabled={busy}
                 onClick={() => onStage(job.id, a.stage)}
                 className={`min-h-[40px] rounded-full px-4 py-1.5 text-xs font-bold disabled:opacity-60 ${
-                  a.soft ? "bg-slate-100 text-slate-600" : "bg-teal-600 text-white"
+                  a.soft ? "bg-slate-100 text-slate-600" : "bg-[#177B94] text-white"
                 }`}
               >
                 {a.label}
@@ -453,7 +502,8 @@ function TechnicianHome() {
       if (cr && matchesDoctorSpecialty("Diagnostic", cr.specialty)) {
         const { data: pData } = await supabase.from("profiles").select("full_name").eq("id", cr.patient_id).maybeSingle();
         // Create a real technician test entry so it appears in the technician's list.
-        const { error: insertError } = await sb.from("technician_tests").insert({
+        // The generated Database type predates this table (see care-staff-booking.ts).
+        const { error: insertError } = await (supabase as any).from("technician_tests").insert({
           patient_id: cr.patient_id,
           patient_name: pData?.full_name || "Emergency Patient",
           technician_id: profile?.id,
@@ -491,6 +541,7 @@ function TechnicianHome() {
   return (
     <StaffShell
       title="Technician test home"
+      showBack={false}
       subtitle={
         profile
           ? `${profile.fullName} · ${profile.testTypes.length} tests · ${profile.city}`
@@ -554,15 +605,15 @@ function TechnicianHome() {
           ) : null}
 
           {notice ? (
-            <div className="rounded-xl bg-white px-4 py-2 text-xs font-semibold text-teal-700">{notice}</div>
+            <div className="rounded-xl bg-white px-4 py-2 text-xs font-semibold text-[#10576E]">{notice}</div>
           ) : null}
 
           {activeLiveCareRequest && (
-            <div className="rounded-2xl border-2 border-teal-500 bg-gradient-to-r from-teal-50 to-emerald-50 p-4 shadow-lg">
+            <div className="rounded-2xl border-2 border-[#177B94] bg-gradient-to-r from-[#EAF2F6] to-[#EAF2F6] p-4 shadow-lg">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
-                  <span className="flex size-3 rounded-full bg-teal-500 animate-ping" />
-                  <span className="text-xs font-black uppercase tracking-wider text-teal-800">
+                  <span className="flex size-3 rounded-full bg-[#177B94] animate-ping" />
+                  <span className="text-xs font-black uppercase tracking-wider text-[#10576E]">
                     ⚡ Live Incoming Broadcast · {activeLiveCareRequest.specialty || "Diagnostic"}
                   </span>
                 </div>
@@ -583,7 +634,7 @@ function TechnicianHome() {
                   </p>
                 </div>
                 <div className="text-right">
-                  <span className="text-sm font-black text-teal-800">
+                  <span className="text-sm font-black text-[#10576E]">
                     ₹{activeLiveCareRequest.fare || 700}
                   </span>
                 </div>
@@ -601,7 +652,7 @@ function TechnicianHome() {
                   type="button"
                   disabled={acceptingId === activeLiveCareRequest.id}
                   onClick={() => handleAcceptCareRequest(activeLiveCareRequest.id)}
-                  className="flex-1 rounded-xl bg-teal-600 px-4 py-2 text-xs font-extrabold text-white shadow-md hover:bg-teal-700 disabled:opacity-50"
+                  className="flex-1 rounded-xl bg-[#177B94] px-4 py-2 text-xs font-extrabold text-white shadow-md hover:bg-[#10576E] disabled:opacity-50"
                 >
                   {acceptingId === activeLiveCareRequest.id ? "Accepting..." : "Accept Request · Start Visit"}
                 </button>
@@ -610,7 +661,6 @@ function TechnicianHome() {
           )}
 
           <div className="space-y-4">
-            {uid && <TechnicianRequestsPanel userId={uid} />}
             <UnifiedProviderOffers roleLabel="test" />
           </div>
 
@@ -630,10 +680,7 @@ function TechnicianHome() {
           {tab === "today" ? (
             <Section title="Today's test visits" count={data?.today.length}>
               {!data?.today.length ? (
-                <div className="space-y-4">
-                  {uid && <TechnicianRequestsPanel userId={uid} />}
-                  <Empty>No tests booked for today.</Empty>
-                </div>
+                <Empty>No tests booked for today.</Empty>
               ) : (
                 <div className="space-y-3">
                   {data.today.map((j) => (
@@ -921,7 +968,7 @@ function TechnicianHome() {
               <button
                 type="submit"
                 disabled={save.isPending}
-                className="min-h-[48px] w-full rounded-full bg-teal-600 px-6 text-sm font-bold text-white disabled:opacity-60"
+                className="min-h-[48px] w-full rounded-full bg-[#177B94] px-6 text-sm font-bold text-white disabled:opacity-60"
               >
                 {save.isPending ? "Saving…" : profile ? "Save profile" : "Create my technician profile"}
               </button>

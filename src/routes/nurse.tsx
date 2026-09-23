@@ -216,7 +216,7 @@ function JobCard({
         </div>
         <div className="shrink-0 text-right">
           {job.compensation ? (
-            <div className="rounded-full bg-teal-50 px-3 py-1 text-[11px] font-bold text-teal-700">
+            <div className="rounded-full bg-[#EAF2F6] px-3 py-1 text-[11px] font-bold text-[#10576E]">
               ₹{job.compensation}
               {job.compensationUnit ? `/${job.compensationUnit}` : ""}
             </div>
@@ -243,7 +243,7 @@ function JobCard({
             type="button"
             disabled={busy}
             onClick={() => onApply(job.id)}
-            className="min-h-[40px] rounded-full bg-teal-600 px-4 py-1.5 text-xs font-bold text-white disabled:opacity-60"
+            className="min-h-[40px] rounded-full bg-[#177B94] px-4 py-1.5 text-xs font-bold text-white disabled:opacity-60"
           >
             Apply for this duty
           </button>
@@ -255,7 +255,7 @@ function JobCard({
                 type="button"
                 disabled={busy}
                 onClick={() => onStage(job.assignmentId!, "checked_in")}
-                className="min-h-[40px] rounded-full bg-teal-600 px-4 py-1.5 text-xs font-bold text-white disabled:opacity-60"
+                className="min-h-[40px] rounded-full bg-[#177B94] px-4 py-1.5 text-xs font-bold text-white disabled:opacity-60"
               >
                 Check in
               </button>
@@ -265,7 +265,7 @@ function JobCard({
                 type="button"
                 disabled={busy}
                 onClick={() => onStage(job.assignmentId!, "completed")}
-                className="min-h-[40px] rounded-full bg-teal-600 px-4 py-1.5 text-xs font-bold text-white disabled:opacity-60"
+                className="min-h-[40px] rounded-full bg-[#177B94] px-4 py-1.5 text-xs font-bold text-white disabled:opacity-60"
               >
                 Duty done
               </button>
@@ -480,6 +480,7 @@ function NurseHome() {
   return (
     <StaffShell
       title="Nurse duty home"
+      showBack={false}
       subtitle={
         profile
           ? `${profile.fullName} · ${profile.city}${profile.verified ? " · verified" : " · verification pending"}`
@@ -543,15 +544,15 @@ function NurseHome() {
           ) : null}
 
           {notice ? (
-            <div className="rounded-xl bg-white px-4 py-2 text-xs font-semibold text-teal-700">{notice}</div>
+            <div className="rounded-xl bg-white px-4 py-2 text-xs font-semibold text-[#10576E]">{notice}</div>
           ) : null}
 
           {activeLiveCareRequest && (
-            <div className="rounded-2xl border-2 border-teal-500 bg-gradient-to-r from-teal-50 to-emerald-50 p-4 shadow-lg">
+            <div className="rounded-2xl border-2 border-[#177B94] bg-gradient-to-r from-[#EAF2F6] to-[#EAF2F6] p-4 shadow-lg">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
-                  <span className="flex size-3 rounded-full bg-teal-500 animate-ping" />
-                  <span className="text-xs font-black uppercase tracking-wider text-teal-800">
+                  <span className="flex size-3 rounded-full bg-[#177B94] animate-ping" />
+                  <span className="text-xs font-black uppercase tracking-wider text-[#10576E]">
                     ⚡ Live Incoming Broadcast · {activeLiveCareRequest.specialty || "Nursing"}
                   </span>
                 </div>
@@ -572,7 +573,7 @@ function NurseHome() {
                   </p>
                 </div>
                 <div className="text-right">
-                  <span className="text-sm font-black text-teal-800">
+                  <span className="text-sm font-black text-[#10576E]">
                     ₹{activeLiveCareRequest.fare || 700}
                   </span>
                 </div>
@@ -590,7 +591,7 @@ function NurseHome() {
                   type="button"
                   disabled={acceptingId === activeLiveCareRequest.id}
                   onClick={() => handleAcceptCareRequest(activeLiveCareRequest.id)}
-                  className="flex-1 rounded-xl bg-teal-600 px-4 py-2 text-xs font-extrabold text-white shadow-md hover:bg-teal-700 disabled:opacity-50"
+                  className="flex-1 rounded-xl bg-[#177B94] px-4 py-2 text-xs font-extrabold text-white shadow-md hover:bg-[#10576E] disabled:opacity-50"
                 >
                   {acceptingId === activeLiveCareRequest.id ? "Accepting..." : "Accept Request · Start Visit"}
                 </button>
@@ -897,7 +898,7 @@ function NurseHome() {
               <button
                 type="submit"
                 disabled={save.isPending}
-                className="min-h-[48px] w-full rounded-full bg-teal-600 px-6 text-sm font-bold text-white disabled:opacity-60"
+                className="min-h-[48px] w-full rounded-full bg-[#177B94] px-6 text-sm font-bold text-white disabled:opacity-60"
               >
                 {save.isPending ? "Saving…" : profile ? "Save profile" : "Create my nurse profile"}
               </button>

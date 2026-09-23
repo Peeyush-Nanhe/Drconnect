@@ -27,6 +27,7 @@ import { TwoWayChatModal } from "@/features/mydox/TwoWayChatModal";
 import { usePostConsultationInbox } from "@/features/mydox/post-consultation-chat/usePostConsultationChat";
 import { recordHomeVisitConsent } from "@/lib/consents.functions";
 import { EmergencyResponderPanel, EmergencyPatient } from "@/features/mydox/emergency/DispatchScreens";
+import { fetchMyHospital, fetchHospitalDashboardStats } from "@/features/mydox/emergency/service";
 import { EmergencyProfileForm, EmergencyProfileNudge } from "@/features/mydox/emergency/EmergencyProfile";
 import { useCrewStats } from "@/features/mydox/emergency/useCrewStats";
 import { StaffBookingSheet } from "@/features/mydox/StaffBookingSheet";
@@ -4602,6 +4603,25 @@ function HubCalendarCard({ bookings, accent = "#7C3AED", onOpenFull }) {
 }
 
 function HubPortalApp({ req, hubReq, hubActions, scanDispatch, scanDispatchActions, sevaActions }) {
+  const { session } = useSession();
+  const hubUserId = session?.user?.id ?? null;
+  // Real numbers from emergency_cases for whichever hospital this login owns —
+  // the rest of this screen's rooms/queue/bookings stay illustrative (no real
+  // walk-in booking system exists yet), but the header no longer lies.
+  const [hospitalStats, setHospitalStats] = useState(null); // {visitsToday, openNow, avgDoctorResponseMin} | null while unknown
+  useEffect(() => {
+    let cancelled = false;
+    if (!hubUserId) return;
+    (async () => {
+      try {
+        const hosp = await fetchMyHospital(hubUserId);
+        if (cancelled || !hosp) return;
+        const stats = await fetchHospitalDashboardStats(hosp.id);
+        if (!cancelled) setHospitalStats(stats);
+      } catch (_err) { /* header falls back to "—" below */ }
+    })();
+    return () => { cancelled = true; };
+  }, [hubUserId]);
   const [hubChat, setHubChat] = React.useState(null);
   const [showSurgery, setShowSurgery] = React.useState(false); // surgery team booking overlay
   const [showSurgeryList, setShowSurgeryList] = React.useState(false); // my surgery bookings tracker
@@ -4745,9 +4765,9 @@ function HubPortalApp({ req, hubReq, hubActions, scanDispatch, scanDispatchActio
         {/* Live stats strip */}
         <div className="grid grid-cols-3 gap-2">
           {[
-            ["Visits", "34"],
-            ["Today's revenue", "₹28,400"],
-            ["Avg doctor arrival", "7 min"],
+            ["Visits today", hospitalStats ? String(hospitalStats.visitsToday) : "—"],
+            ["Open now", hospitalStats ? String(hospitalStats.openNow) : "—"],
+            ["Avg doctor response", hospitalStats?.avgDoctorResponseMin != null ? `${hospitalStats.avgDoctorResponseMin} min` : "—"],
           ].map(([l, v]) => (
             <div key={l} className="rounded-xl py-2 text-center text-white" style={{ background: "rgba(255,255,255,.18)" }}>
               <p className="font-extrabold" style={{ fontSize: 13 }}>{v}</p>

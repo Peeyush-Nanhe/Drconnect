@@ -3,7 +3,9 @@ plugins {
 }
 include ':app'
 rootProject.name = 'MyDox'
+
+// Manually define the project and its directory to ensure it's found despite path spaces
 include ':capacitor-cordova-android-plugins'
-project(':capacitor-cordova-android-plugins').projectDir = new File('./capacitor-cordova-android-plugins/')
+project(':capacitor-cordova-android-plugins').projectDir = new File(rootDir, 'capacitor-cordova-android-plugins')
 
 apply from: 'capacitor.settings.gradle'

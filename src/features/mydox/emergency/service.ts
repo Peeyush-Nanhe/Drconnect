@@ -309,6 +309,52 @@ export async function fetchMyHospital(userId: string): Promise<{
   return data ?? null;
 }
 
+/**
+ * Real numbers for the hospital dashboard header. There is no fee/revenue
+ * concept on emergency_cases, so this reports what the table actually has:
+ * cases this hospital took today, how many are still open, and how fast a
+ * doctor accepted once the case reached this hospital today.
+ */
+export async function fetchHospitalDashboardStats(hospitalId: string): Promise<{
+  visitsToday: number;
+  openNow: number;
+  avgDoctorResponseMin: number | null;
+}> {
+  const startOfDay = new Date();
+  startOfDay.setHours(0, 0, 0, 0);
+  const sinceIso = startOfDay.toISOString();
+
+  const [{ data: acceptedToday, error: e1 }, { count: openCount, error: e2 }] = await Promise.all([
+    db
+      .from("emergency_cases")
+      .select("id, created_at, doctor_accepted_at")
+      .eq("hospital_id", hospitalId)
+      .gte("hospital_accepted_at", sinceIso),
+    db
+      .from("emergency_cases")
+      .select("id", { count: "exact", head: true })
+      .eq("hospital_id", hospitalId)
+      .not("status", "in", "(cancelled,closed)"),
+  ]);
+  if (e1) throw emergencyError(e1, "Could not load hospital stats.");
+  if (e2) throw emergencyError(e2, "Could not load hospital stats.");
+
+  const rows = (acceptedToday ?? []) as { created_at: string; doctor_accepted_at: string | null }[];
+  const withDoctor = rows.filter((r) => r.doctor_accepted_at);
+  const avgMs = withDoctor.length
+    ? withDoctor.reduce(
+        (sum, r) => sum + (new Date(r.doctor_accepted_at as string).getTime() - new Date(r.created_at).getTime()),
+        0,
+      ) / withDoctor.length
+    : null;
+
+  return {
+    visitsToday: rows.length,
+    openNow: openCount ?? 0,
+    avgDoctorResponseMin: avgMs != null ? Math.round(avgMs / 60000) : null,
+  };
+}
+
 /** Flips this hospital in or out of emergency mode. Off means it is not paged. */
 export async function setHospitalEmergencyMode(hospitalId: string, on: boolean): Promise<void> {
   const { error } = await db

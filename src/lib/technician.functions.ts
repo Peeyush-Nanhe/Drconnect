@@ -62,6 +62,10 @@ export type TechnicianJob = {
   machinePickupNeeded: boolean;
   pickupHub: string | null;
   venueKind: "home" | "hub" | "clinic";
+  /** Only populated for jobs assigned to this technician — never on the open queue. */
+  address: string | null;
+  lat: number | null;
+  lng: number | null;
 };
 
 export type TechnicianBoard = {
@@ -76,6 +80,10 @@ export type TechnicianBoard = {
 
 const TEST_COLUMNS =
   "id, patient_name, patient_phone, test_type, test_label, technician_id, area, city, home_visit, scheduled_at, urgency, status, checked_in_at, completed_at, findings, fee, payment_status, referring_doctor_name, notes, created_at";
+
+// The exact pin is only ever shown for a job this technician already holds —
+// never on the open (unclaimed) queue browsed by every nearby technician.
+const MY_TEST_COLUMNS = `${TEST_COLUMNS}, address, lat, lng`;
 
 function mapProfile(r: any): TechnicianProfile {
   return {
@@ -142,6 +150,9 @@ function mapTest(r: any, profile: TechnicianProfile | null, hubAreas: Set<string
     machinePickupNeeded: needsMachine,
     pickupHub: needsMachine ? (profile?.preferredHubs?.[0] ?? null) : null,
     venueKind,
+    address: r.address ?? null,
+    lat: r.lat === null || r.lat === undefined ? null : Number(r.lat),
+    lng: r.lng === null || r.lng === undefined ? null : Number(r.lng),
   };
 }
 
@@ -179,7 +190,7 @@ export const getTechnicianBoard = createServerFn({ method: "GET" })
     const [mine, open] = await Promise.all([
       sb
         .from("technician_tests")
-        .select(TEST_COLUMNS)
+        .select(MY_TEST_COLUMNS)
         .eq("technician_id", profile.id)
         .gte("created_at", since)
         .order("scheduled_at", { ascending: true, nullsFirst: false })
