@@ -15149,6 +15149,7 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
         .from("profiles").select("full_name, specialty").eq("id", row.accepted_by).maybeSingle();
       if (cancelled) return;
       const svc = { ...(directReq.spec || {}), type: directReq.spec?.type || "doctor", name: directReq.spec?.name || row.specialty || "General Physician" };
+      setDirectReq(cur => cur ? { ...cur, reqStatus: "accepted" } : cur);
       actions?.adoptAcceptedCareRequest?.({
         row,
         providerName: prof?.full_name || directReq.provider?.name || "Medico on the way",
@@ -16161,7 +16162,7 @@ function PatientApp({ req, actions, scanDispatch, scanDispatchActions, ambulance
         <DirectRequestOverlay
           provider={directReq.provider} cat={directReq.cat} spec={directReq.spec} who="you"
           dbId={directReq.dbId}
-          reqStatus={req?.status}
+          reqStatus={directReq.reqStatus || req?.status}
           emergency={!!directReq.emergency}
           fallbackLabel={directReq.emergency ? (directReq.isMy ? (directReq.preferredName ? `Not accepting — try Preferred (${directReq.preferredName}) →` : "Not accepting — broadcast to any available →") : "Not accepting — broadcast to any available →") : undefined}
           onConfirmed={() => { const dr = directReq; setDirectReq(null); setConfirmedBooking({ name: dr.provider.name + " · " + (dr.spec?.name || "Visit"), label: "Repeat visit · same provider" }); }}
@@ -17101,6 +17102,7 @@ function DirectRequestOverlay({ provider, cat, spec, who, emergency, fallbackLab
   const [left, setLeft] = useState(isDoctorEmergency ? 60 : 600); // emergency doctor = 1-minute window, else 10 minutes
   const fallbackCalledRef = useRef(false);
   useEffect(() => { if (phase !== "contacting") return; if (emergency) return; const t = setTimeout(() => setPhase("accepted"), 3200); return () => clearTimeout(t); }, [phase, emergency]);
+  useEffect(() => { if (reqStatus === "accepted" && phase !== "accepted") setPhase("accepted"); }, [reqStatus, phase]);
   useEffect(() => { fallbackCalledRef.current = false; }, [provider?.name, spec?.name, emergency]);
   useEffect(() => { if (phase !== "contacting") return; const iv = setInterval(() => setLeft(s => Math.max(0, s - 1)), 1000); return () => clearInterval(iv); }, [phase]);
   useEffect(() => { if (phase !== "contacting" || left > 0 || fallbackCalledRef.current) return; fallbackCalledRef.current = true; onFallback && onFallback(); }, [phase, left, onFallback]);
@@ -17125,7 +17127,7 @@ function DirectRequestOverlay({ provider, cat, spec, who, emergency, fallbackLab
           <>
             <div style={{ width: 64, height: 64, borderRadius: "50%", background: "linear-gradient(135deg,#0C9668,#059669)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}><Check size={34} color="#fff" strokeWidth={3} /></div>
             <p style={{ margin: 0, fontWeight: 900, color: C.ink, fontSize: 19 }}>{provider?.name} accepted</p>
-            <p style={{ margin: "6px 0 0", color: C.sub, fontSize: 12.5 }}>Your favourite took the job — confirmed.</p>
+            <p style={{ margin: "6px 0 0", color: C.sub, fontSize: 12.5 }}>{emergency ? "Emergency request accepted — confirmed." : "Your favourite took the job — confirmed."}</p>
             <button onClick={onConfirmed} style={{ marginTop: 18, width: "100%", background: "linear-gradient(135deg,#0C9668,#059669)", color: "#fff", border: "none", borderRadius: 14, padding: "13px", fontWeight: 800, fontSize: 14.5, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Done</button>
           </>
         )}
