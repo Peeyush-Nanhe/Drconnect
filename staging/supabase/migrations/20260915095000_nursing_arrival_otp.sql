@@ -11,7 +11,9 @@
 -- other way, and 'completed' requires an arrival on record.
 --
 -- The address is released to the assigned nurse from two hours before the shift
--- and not before, so an offer does not leak where somebody lives.
+-- and not before, so an offer does not leak where somebody lives. There is no
+-- shift_start/shift_end on nursing_visits — the shift time lives on the
+-- engagement as slot_time, shared by every day in the package.
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS public.nursing_arrival_secrets (
@@ -164,10 +166,13 @@ BEGIN
 END $$;
 
 -- Directions. Released to the assigned nurse from two hours before the shift.
+-- The shift clock comes from the engagement's slot_time (shared by every day
+-- in the package) combined with this visit's own date; when no slot_time was
+-- set at booking, the address is released without a time gate.
 CREATE OR REPLACE FUNCTION public.nursing_visit_directions(p_visit_id uuid)
 RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public AS $$
 DECLARE v_uid uuid := auth.uid(); v_visit public.nursing_visits;
-        v_eng public.nursing_engagements;
+        v_eng public.nursing_engagements; v_shift_start timestamptz;
 BEGIN
   SELECT * INTO v_visit FROM public.nursing_visits WHERE id = p_visit_id;
   IF NOT FOUND THEN
@@ -180,16 +185,22 @@ BEGIN
      AND NOT public.has_role(v_uid,'admin') THEN
     RAISE EXCEPTION 'NURSING_FORBIDDEN: Not your visit.';
   END IF;
+
+  IF v_eng.slot_time IS NOT NULL THEN
+    v_shift_start := (v_visit.visit_date + v_eng.slot_time) AT TIME ZONE 'Asia/Kolkata';
+  END IF;
+
   IF v_visit.assigned_nurse_id = v_uid
-     AND now() < v_visit.shift_start - interval '2 hours' THEN
+     AND v_shift_start IS NOT NULL
+     AND now() < v_shift_start - interval '2 hours' THEN
     RAISE EXCEPTION 'NURSING_TOO_EARLY: The address opens two hours before the shift.';
   END IF;
 
   RETURN jsonb_build_object(
     'visit_id',    v_visit.id,
     'visit_date',  v_visit.visit_date,
-    'shift_start', v_visit.shift_start,
-    'shift_end',   v_visit.shift_end,
+    'shift_start', v_shift_start,
+    'shift_end',   NULL,
     'address',     v_eng.address_snapshot,
     'lat',         v_eng.lat,
     'lng',         v_eng.lng,
