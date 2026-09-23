@@ -541,6 +541,7 @@ function TechnicianHome() {
   return (
     <StaffShell
       title="Technician test home"
+      showBack={false}
       subtitle={
         profile
           ? `${profile.fullName} · ${profile.testTypes.length} tests · ${profile.city}`

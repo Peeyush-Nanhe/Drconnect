@@ -480,6 +480,7 @@ function NurseHome() {
   return (
     <StaffShell
       title="Nurse duty home"
+      showBack={false}
       subtitle={
         profile
           ? `${profile.fullName} · ${profile.city}${profile.verified ? " · verified" : " · verification pending"}`
