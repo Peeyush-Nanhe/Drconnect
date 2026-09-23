@@ -30,7 +30,6 @@ import {
   fmtWhen,
   inputClass,
 } from "@/features/careteam/StaffUI";
-import { TechnicianRequestsPanel } from "@/features/mydox/technician/TechnicianRequestsPanel";
 import { verifyAndCompleteConsultation } from "@/features/mydox/backend";
 
 export const Route = createFileRoute("/technician")({
@@ -56,6 +55,37 @@ export const Route = createFileRoute("/technician")({
 });
 
 type Tab = "today" | "open" | "upcoming" | "history" | "profile";
+
+// set_technician_test_stage only accepts these five target stages; "requested" /
+// "pending" (unclaimed) and "assigned" (claimed, awaiting confirmation) come
+// from claim_technician_test / atomic_book_technician_test instead.
+const NEXT: Record<string, { stage: string; label: string; soft?: boolean }[]> = {
+  assigned: [
+    { stage: "accepted", label: "Confirm this test" },
+    { stage: "cancelled", label: "Can't take it", soft: true },
+  ],
+  accepted: [
+    { stage: "en_route", label: "I'm on the way" },
+    { stage: "cancelled", label: "Cancel", soft: true },
+  ],
+  en_route: [
+    { stage: "in_progress", label: "Start test" },
+    { stage: "no_show", label: "Patient not available", soft: true },
+  ],
+  in_progress: [{ stage: "completed", label: "Complete test" }],
+};
+
+const STATUS_LABEL: Record<string, string> = {
+  requested: "Awaiting assignment",
+  pending: "Awaiting assignment",
+  assigned: "Needs your confirmation",
+  accepted: "Confirmed",
+  en_route: "On the way",
+  in_progress: "In progress",
+  completed: "Test complete",
+  cancelled: "Cancelled",
+  no_show: "Patient absent",
+};
 
 const CLOSED = ["completed", "cancelled", "no_show"];
 
@@ -453,7 +483,8 @@ function TechnicianHome() {
       if (cr && matchesDoctorSpecialty("Diagnostic", cr.specialty)) {
         const { data: pData } = await supabase.from("profiles").select("full_name").eq("id", cr.patient_id).maybeSingle();
         // Create a real technician test entry so it appears in the technician's list.
-        const { error: insertError } = await sb.from("technician_tests").insert({
+        // The generated Database type predates this table (see care-staff-booking.ts).
+        const { error: insertError } = await (supabase as any).from("technician_tests").insert({
           patient_id: cr.patient_id,
           patient_name: pData?.full_name || "Emergency Patient",
           technician_id: profile?.id,
@@ -610,7 +641,6 @@ function TechnicianHome() {
           )}
 
           <div className="space-y-4">
-            {uid && <TechnicianRequestsPanel userId={uid} />}
             <UnifiedProviderOffers roleLabel="test" />
           </div>
 
@@ -630,10 +660,7 @@ function TechnicianHome() {
           {tab === "today" ? (
             <Section title="Today's test visits" count={data?.today.length}>
               {!data?.today.length ? (
-                <div className="space-y-4">
-                  {uid && <TechnicianRequestsPanel userId={uid} />}
-                  <Empty>No tests booked for today.</Empty>
-                </div>
+                <Empty>No tests booked for today.</Empty>
               ) : (
                 <div className="space-y-3">
                   {data.today.map((j) => (
