@@ -235,7 +235,7 @@ function TestCard({
           ) : null}
         </div>
         <div className="shrink-0 text-right">
-          <div className="rounded-full bg-[#E4F6EE] px-3 py-1 text-[11px] font-bold text-[#0A7A54]">₹{job.fee ?? 0}</div>
+          <div className="rounded-full bg-[#EAF2F6] px-3 py-1 text-[11px] font-bold text-[#10576E]">₹{job.fee ?? 0}</div>
           <div className="mt-1 text-[10px] font-semibold text-slate-500">{STATUS_LABEL[job.status] ?? job.status}</div>
         </div>
       </div>
@@ -253,7 +253,7 @@ function TestCard({
           Carry the machine from {job.pickupHub ?? "your tie-up hub"} — this venue has no equipment on site.
         </p>
       ) : job.venueKind === "hub" ? (
-        <p className="mt-2 rounded-xl bg-[#E4F6EE] px-3 py-2 text-[11px] font-semibold text-[#0A7A54]">
+        <p className="mt-2 rounded-xl bg-[#EAF2F6] px-3 py-2 text-[11px] font-semibold text-[#10576E]">
           Machine is already at the hub — no pickup needed.
         </p>
       ) : null}
@@ -265,7 +265,7 @@ function TestCard({
             href={`https://www.google.com/maps/dir/?api=1&destination=${job.lat},${job.lng}&travelmode=driving`}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-[11px] font-bold text-[#0A7A54] hover:underline"
+            className="text-[11px] font-bold text-[#10576E] hover:underline"
           >
             Open directions to the patient
           </a>
@@ -296,7 +296,7 @@ function TestCard({
             type="button"
             disabled={busy}
             onClick={() => onClaim(job.id)}
-            className="min-h-[40px] rounded-full bg-[#0C9668] px-4 py-1.5 text-xs font-bold text-white disabled:opacity-60"
+            className="min-h-[40px] rounded-full bg-[#177B94] px-4 py-1.5 text-xs font-bold text-white disabled:opacity-60"
           >
             Take this test
           </button>
@@ -309,7 +309,7 @@ function TestCard({
                 disabled={busy}
                 onClick={() => onStage(job.id, a.stage)}
                 className={`min-h-[40px] rounded-full px-4 py-1.5 text-xs font-bold disabled:opacity-60 ${
-                  a.soft ? "bg-slate-100 text-slate-600" : "bg-[#0C9668] text-white"
+                  a.soft ? "bg-slate-100 text-slate-600" : "bg-[#177B94] text-white"
                 }`}
               >
                 {a.label}
@@ -604,15 +604,15 @@ function TechnicianHome() {
           ) : null}
 
           {notice ? (
-            <div className="rounded-xl bg-white px-4 py-2 text-xs font-semibold text-[#0A7A54]">{notice}</div>
+            <div className="rounded-xl bg-white px-4 py-2 text-xs font-semibold text-[#10576E]">{notice}</div>
           ) : null}
 
           {activeLiveCareRequest && (
-            <div className="rounded-2xl border-2 border-[#0C9668] bg-gradient-to-r from-[#E4F6EE] to-[#E4F6EE] p-4 shadow-lg">
+            <div className="rounded-2xl border-2 border-[#177B94] bg-gradient-to-r from-[#EAF2F6] to-[#EAF2F6] p-4 shadow-lg">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
-                  <span className="flex size-3 rounded-full bg-[#0C9668] animate-ping" />
-                  <span className="text-xs font-black uppercase tracking-wider text-[#0A7A54]">
+                  <span className="flex size-3 rounded-full bg-[#177B94] animate-ping" />
+                  <span className="text-xs font-black uppercase tracking-wider text-[#10576E]">
                     ⚡ Live Incoming Broadcast · {activeLiveCareRequest.specialty || "Diagnostic"}
                   </span>
                 </div>
@@ -633,7 +633,7 @@ function TechnicianHome() {
                   </p>
                 </div>
                 <div className="text-right">
-                  <span className="text-sm font-black text-[#0A7A54]">
+                  <span className="text-sm font-black text-[#10576E]">
                     ₹{activeLiveCareRequest.fare || 700}
                   </span>
                 </div>
@@ -651,7 +651,7 @@ function TechnicianHome() {
                   type="button"
                   disabled={acceptingId === activeLiveCareRequest.id}
                   onClick={() => handleAcceptCareRequest(activeLiveCareRequest.id)}
-                  className="flex-1 rounded-xl bg-[#0C9668] px-4 py-2 text-xs font-extrabold text-white shadow-md hover:bg-[#0A7A54] disabled:opacity-50"
+                  className="flex-1 rounded-xl bg-[#177B94] px-4 py-2 text-xs font-extrabold text-white shadow-md hover:bg-[#10576E] disabled:opacity-50"
                 >
                   {acceptingId === activeLiveCareRequest.id ? "Accepting..." : "Accept Request · Start Visit"}
                 </button>
@@ -967,7 +967,7 @@ function TechnicianHome() {
               <button
                 type="submit"
                 disabled={save.isPending}
-                className="min-h-[48px] w-full rounded-full bg-[#0C9668] px-6 text-sm font-bold text-white disabled:opacity-60"
+                className="min-h-[48px] w-full rounded-full bg-[#177B94] px-6 text-sm font-bold text-white disabled:opacity-60"
               >
                 {save.isPending ? "Saving…" : profile ? "Save profile" : "Create my technician profile"}
               </button>
