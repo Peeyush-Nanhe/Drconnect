@@ -90,13 +90,12 @@ export type CareRequest = {
   otp_verified_at?: string | null;
   arrival_deadline?: string | null;
   completed_at?: string | null;
-  scheduled_at?: string | null;
   created_at: string;
   updated_at: string;
 };
 
 const CARE_REQUEST_SAFE_COLUMNS =
-  "id, patient_id, specialty, emergency, lat, lng, fare, accepted_by, accepted_at, status, my_doctor_id, preferred_id, notification_stage, stage_started_at, paid_at, amount, otp, otp_verified_at, arrival_deadline, completed_at, scheduled_at, created_at, updated_at";
+  "id, patient_id, specialty, emergency, lat, lng, fare, accepted_by, accepted_at, status, my_doctor_id, preferred_id, notification_stage, stage_started_at, paid_at, amount, otp, otp_verified_at, arrival_deadline, completed_at, created_at, updated_at";
 
 
 function normalizeCareRequest(row: CareRequest): CareRequest {
@@ -210,7 +209,6 @@ export async function createCareRequest(input: {
   my_doctor_id?: string | null;
   preferred_id?: string | null;
   notification_stage?: "my_doctor" | "preferred" | "broadcast" | null;
-  scheduled_at?: string | null;
 }) {
   const { data: sess } = await supabase.auth.getSession();
   const uid = sess.session?.user?.id;
