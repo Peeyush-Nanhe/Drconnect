@@ -1,0 +1,1 @@
+import{t as e}from"./jsx-runtime-NZYk81nU.js";var t=e(),n=({error:e})=>(0,t.jsxs)(`main`,{className:`mx-auto max-w-md p-6 text-sm`,children:[`Could not load this authorization request:`,` `,String(e?.message??e)]});export{n as errorComponent};

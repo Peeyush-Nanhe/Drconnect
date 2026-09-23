@@ -1,0 +1,1 @@
+import{t as e}from"./jsx-runtime-NZYk81nU.js";import{n as t}from"./DispatchScreens-B3t6ivon.js";var n=e();function r(){return(0,n.jsx)(t,{kind:`hospital`})}export{r as component};

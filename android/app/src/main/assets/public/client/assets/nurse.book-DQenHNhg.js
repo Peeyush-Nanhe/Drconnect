@@ -1,0 +1,1 @@
+import{r as e}from"./rolldown-runtime-hePW80VL.js";import{t}from"./react-CwJFpaho.js";import{t as n}from"./jsx-runtime-NZYk81nU.js";var r=e(t()),i=n();function a(){return(0,r.useEffect)(()=>{window.location.replace(`/care-booking?role=nurse`)},[]),(0,i.jsx)(`p`,{style:{padding:24,textAlign:`center`},children:`Opening booking…`})}export{a as component};
